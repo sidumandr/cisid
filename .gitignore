@@ -19,3 +19,6 @@ coverage.*
 .vscode/
 *.swp
 .DS_Store
+
+# Design skill working files
+.taste-skill/

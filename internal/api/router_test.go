@@ -137,7 +137,7 @@ func TestRouterRoutes(t *testing.T) {
 		ui := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
 		h := NewRouter(Handlers{Webhook: http.NotFoundHandler(), Agents: http.NotFoundHandler(), UI: ui, DB: &mockPinger{}},
 			slog.New(slog.DiscardHandler))
-		for _, path := range []string{"/", "/jobs/7", "/ui/app.js"} {
+		for _, path := range []string{"/", "/jobs/7", "/repos", "/repos/sidumandr/cisid", "/ui/app.js"} {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 			assert.Equal(t, http.StatusTeapot, rec.Code, path)

@@ -17,7 +17,7 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 
 func TestPagesServeTheApp(t *testing.T) {
 	h := Handler()
-	for _, path := range []string{"/", "/jobs/42"} {
+	for _, path := range []string{"/", "/jobs/42", "/repos", "/repos/sidumandr/cisid"} {
 		rec := get(h, path)
 		assert.Equal(t, http.StatusOK, rec.Code, path)
 		assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))
@@ -37,7 +37,20 @@ func TestAssets(t *testing.T) {
 	assert.Equal(t, http.StatusOK, css.Code)
 	assert.Contains(t, css.Header().Get("Content-Type"), "text/css")
 
+	font := get(h, "/ui/fonts/authentic-sans-90.woff2")
+	assert.Equal(t, http.StatusOK, font.Code, "fonts are served from this origin, as the CSP requires")
+	assert.Equal(t, "font/woff2", font.Header().Get("Content-Type"))
+
 	assert.Equal(t, http.StatusNotFound, get(h, "/ui/missing.js").Code)
+}
+
+// TestNoLongDashes keeps the em dash out of the UI's words, by the
+// design's rule.
+func TestNoLongDashes(t *testing.T) {
+	h := Handler()
+	for _, path := range []string{"/", "/ui/app.js", "/ui/app.css"} {
+		assert.NotContains(t, get(h, path).Body.String(), "—", path)
+	}
 }
 
 func TestSecurityHeaders(t *testing.T) {

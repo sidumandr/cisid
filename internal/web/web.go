@@ -1,6 +1,7 @@
-// Package web serves cisid's browser UI: a job list and a job page with
-// live logs. It is a static page embedded in the binary that talks to the
-// JSON API; it loads nothing from other origins.
+// Package web serves cisid's browser UI: jobs, a job's steps and live logs,
+// and repositories with their schedules and secrets. It is a static page
+// embedded in the binary that talks to the JSON API; it loads nothing,
+// fonts included, from other origins.
 package web
 
 import (
@@ -19,9 +20,11 @@ const contentSecurityPolicy = "default-src 'self'; img-src 'self' data:; " +
 
 // Handler serves the UI:
 //
-//	GET /             job list
-//	GET /jobs/{id}    job page
-//	GET /ui/...       scripts and styles
+//	GET /                       job list
+//	GET /jobs/{id}              job page
+//	GET /repos                  repositories
+//	GET /repos/{owner}/{repo}   a repository's builds, schedules and secrets
+//	GET /ui/...                 scripts, styles and fonts
 func Handler() http.Handler {
 	files, err := fs.Sub(static, "static")
 	if err != nil {
@@ -41,6 +44,8 @@ func Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", page)
 	mux.HandleFunc("GET /jobs/{id}", page)
+	mux.HandleFunc("GET /repos", page)
+	mux.HandleFunc("GET /repos/{owner}/{repo}", page)
 	mux.Handle("GET /ui/", http.StripPrefix("/ui/", http.FileServerFS(files)))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -94,6 +94,8 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	if h.UI != nil {
 		mux.Handle("GET /{$}", h.UI)
 		mux.Handle("GET /jobs/{id}", h.UI)
+		mux.Handle("GET /repos", h.UI)
+		mux.Handle("GET /repos/{owner}/{repo}", h.UI)
 		mux.Handle("GET /ui/", h.UI)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

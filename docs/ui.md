@@ -1,21 +1,51 @@
 # Web arayüzü
 
-Server, job'ları izlemek için küçük bir web arayüzü sunar (`internal/web`). Arayüz binary'nin içine gömülüdür. Dışarıdan hiçbir CDN ya da kütüphane yüklemez, bütün verisini [Job API](api.md)'sinden alır.
+Server, job'ları izlemek ve yönetmek için bir web arayüzü sunar (`internal/web`). Arayüz binary'nin içine gömülüdür. Dışarıdan hiçbir CDN, kütüphane ya da font yüklemez; bütün verisini [Job API](api.md)'sinden alır.
+
+## Ekranlar
 
 | Sayfa | İçerik |
 |---|---|
-| `/` | Son 50 job: durum, repo, branch, commit, agent, süre. 5 sn'de bir yenilenir. |
-| `/jobs/{id}` | Job özeti ve adım adım canlı loglar. Loglar SSE akışıyla gelir ([api.md](api.md#canlı-akış)). |
+| `/` | Son 200 job. Üstte durumu özetleyen tek cümle: kaç job çalışıyor, son 24 saatte kaçı kırıldı, en sonuncusu hangi adımda. Sekmeler (Tümü, Çalışanlar, Kırılanlar, Pull request'ler) sayılarıyla birlikte; repo, branch ya da commit ile filtre. 5 saniyede bir yenilenir. |
+| `/jobs/{id}` | Job'un durumu tek cümlede ("Failed at test with exit code 1 after 1m 48s."), tetikleyen olay, commit, agent, başlama zamanı ve süre. Altında adım şeridi ve seçilen adımın canlı logu. |
+| `/repos` | Son job'larda görünen repolar: son build'leri, durumları, build sayıları. |
+| `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları ve secret'ları, sekmelerde. |
 
-- Loglar adım adlarıyla gruplanır. Başarısız ya da iptal edilen adım işaretlenir. stderr satırları farklı renkte gösterilir, ANSI renk kodları temizlenir.
-- Log en alttayken yeni satırlar geldikçe sayfa otomatik kayar. Kullanıcı yukarı kaydırmışsa yerinde kalır.
-- Job listesindeki **Run build** butonu bir repo ve branch sorar, branch'in son commit'ini hemen derler ([api.md](api.md#elle-ve-zamanlanmış-buildler)).
-- **Run build**, **Cancel** ve **Rerun** butonları API token'ı ister. Token ilk kullanımda sorulur ve sadece o sekmenin oturumunda (`sessionStorage`) tutulur.
-- Açık ve koyu tema, işletim sisteminin ayarına göre seçilir.
+Diyaloglar: **Run build** (repo ve branch), API token'ı, okuma için oturum açma, yeni zamanlama, yeni secret ve silme onayları.
+
+## Adım şeridi
+
+Her job'un adımları (clone, test, chart…) yan yana segmentler olarak çizilir. Segmentin rengi adımın durumunu söyler: geçti (yeşil), kırıldı (kırmızı), çalışıyor (turuncu, yavaşça yanıp söner), iptal edildi (gri), çalışmadı ya da sırası gelmedi (koyu gri).
+
+- Listede her satırda küçük bir şerit vardır; hangi job'un nerede kırıldığı tek bakışta görülür.
+- Job sayfasında şerit büyüktür ve tıklanır. Tıklanan adımın logu gösterilir. Sayfa açılınca çalışan adım, yoksa kırılan adım, o da yoksa son adım seçilir. Job çalışırken seçim, siz bir adıma tıklayana kadar o an çalışan adımı izler.
+- Çalışan bir job'un hangi adımda olduğunu API, logu en son akan adımdan bilir (`current_step`, [api.md](api.md)).
+
+## Loglar
+
+- Loglar SSE akışıyla gelir ([api.md](api.md#canlı-akış)). ANSI renk kodları temizlenir, stderr satırları daha soluk gösterilir.
+- Log paneli çıktıyla büyür, ekranı doldurunca kendi içinde kayar. En alttayken yeni satırlar geldikçe otomatik kayar; yukarı kaydırmışsanız yerinde kalır.
+- Saklama süresi dolan logların yerinde ne zaman silindikleri yazar.
+
+## Görünüm
+
+- **Renkler:** Koyu temada siyah zemin üzerinde turuncu, açık temada beyaz zemin. Tema işletim sisteminin ayarına uyar; kenar çubuğunun altındaki düğmeyle değiştirilir ve tarayıcıda hatırlanır.
+- **Renk yalnızca veride:** Turuncu; birincil düğmede, çalışan adımda ve seçili olanı gösteren 1px çizgide (sekme, kenar çubuğu, adım) kullanılır. Durumlar soluk zemin üzerinde aynı tonda yazıyla gösterilir.
+- **Yazı:** Metinler [Authentic Sans](https://authentic.website/sans), rakamlar, commit SHA'ları, süreler ve loglar sistemin monospace fontuyla yazılır; böylece sütunlardaki rakamlar hizalı durur. Font dosyaları `internal/web/static/fonts/` altındadır; lisans notu [LICENSE.md](../internal/web/static/fonts/LICENSE.md) dosyasında.
+- **Telefon:** Kenar çubuğu alta, etiketli bir çubuğa dönüşür. Satırlar iki ya da üç satırlık kartlara, job sayfasındaki bilgiler bir listeye dönüşür.
+- Arayüz metinlerinde uzun tire (em dash, U+2014) kullanılmaz; `internal/web` testi bunu denetler.
+
+Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yapıldı (data terminal stili, seed 1222882761): ölçümleri 1440, 768 ve 390 piksel genişlikte bir tarayıcıda alındı.
+
+## Eylemler ve token'lar
+
+- **Run build**, **Cancel**, **Rerun**, zamanlama ve secret işlemleri API token'ı ister. Token ilk kullanımda bir diyalogla sorulur ve yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur. Yanlışsa yeniden sorulur.
+- Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir.
 - `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.
 
 ## Güvenlik
 
-- Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script yoktur, başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
+- Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script yoktur, fontlar dahil başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
 - API'den gelen her değer (log satırları dahil) sayfaya `textContent` ile eklenir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür.
 - `CISID_READ_TOKEN` tanımlıysa arayüz ilk okumada bir token sorar ve `POST /api/login` ile tarayıcıyı oturum açmış hâle getirir. Oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Tanımlı değilse sayfalar herkese açıktır.
+- Secret değerleri arayüzde hiçbir zaman gösterilmez; yalnızca adları, hangi build'lere verildikleri ve ne zaman güncellendikleri listelenir.
