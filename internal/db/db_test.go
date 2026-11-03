@@ -2,9 +2,12 @@ package db
 
 import (
 	"context"
+	"crypto/rand"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,9 +15,10 @@ import (
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
-// newTestPool connects to the database in CISID_TEST_DATABASE_URL and applies
-// the migrations. The test is skipped when the variable is not set.
-func newTestPool(t *testing.T) *pgxpool.Pool {
+// newTestDB creates an empty database on the server in
+// CISID_TEST_DATABASE_URL and drops it when the test ends. The test is
+// skipped when the variable is not set.
+func newTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
 	url := os.Getenv("CISID_TEST_DATABASE_URL")
@@ -23,21 +27,34 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 	}
 
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
+	admin, err := pgx.Connect(ctx, url)
 	require.NoError(t, err)
-	t.Cleanup(pool.Close)
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
 
-	migration, err := os.ReadFile("migrations/001_create_jobs.sql")
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, string(migration))
+	// The name is generated here, never taken from input.
+	name := pgx.Identifier{"cisid_test_" + strings.ToLower(rand.Text()[:10])}.Sanitize()
+	_, err = admin.Exec(ctx, "CREATE DATABASE "+name)
 	require.NoError(t, err)
 
+	cfg, err := pgxpool.ParseConfig(url)
+	require.NoError(t, err)
+	cfg.ConnConfig.Database = strings.Trim(name, `"`)
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		pool.Close()
+		_, err := admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		assert.NoError(t, err)
+	})
 	return pool
 }
 
 func TestStoreCreateJob(t *testing.T) {
-	pool := newTestPool(t)
-	ctx := context.Background()
+	pool := newTestDB(t)
+	ctx := t.Context()
+	_, err := Migrate(ctx, pool)
+	require.NoError(t, err)
 	store := New(pool)
 
 	job := models.Job{
@@ -50,9 +67,6 @@ func TestStoreCreateJob(t *testing.T) {
 
 	id, err := store.CreateJob(ctx, job)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM jobs WHERE id = $1", id)
-	})
 	assert.Positive(t, id)
 
 	var got models.Job
@@ -60,7 +74,10 @@ func TestStoreCreateJob(t *testing.T) {
 		"SELECT repo, clone_url, branch, commit_sha, status FROM jobs WHERE id = $1", id,
 	).Scan(&got.Repo, &got.CloneURL, &got.Branch, &got.CommitSHA, &got.Status)
 	require.NoError(t, err)
-
-	job.ID = 0
 	assert.Equal(t, job, got)
+}
+
+func TestStorePing(t *testing.T) {
+	pool := newTestDB(t)
+	require.NoError(t, New(pool).Ping(t.Context()))
 }

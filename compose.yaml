@@ -1,0 +1,25 @@
+# Local development dependencies.
+#
+#   docker compose up -d postgres
+#
+# Server:   CISID_DATABASE_URL=postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable
+# DB tests: CISID_TEST_DATABASE_URL=postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: cisid
+      POSTGRES_PASSWORD: cisid
+      POSTGRES_DB: cisid
+    ports:
+      - "${CISID_PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cisid -d cisid"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

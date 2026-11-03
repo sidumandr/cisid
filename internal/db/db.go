@@ -20,6 +20,14 @@ func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
+// Ping checks that the database is reachable.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+	return nil
+}
+
 // CreateJob inserts job and returns its generated ID.
 func (s *Store) CreateJob(ctx context.Context, job models.Job) (int64, error) {
 	const q = `
