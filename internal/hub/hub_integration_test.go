@@ -162,11 +162,13 @@ func (s *system) queue(t *testing.T, sha string) int64 {
 func (s *system) waitFinished(t *testing.T, id int64) models.Job {
 	t.Helper()
 	var job models.Job
+	// Generous: a job streams hundreds of log rows, which under -race and
+	// with every package's tests sharing the database can take a while.
 	require.Eventually(t, func() bool {
 		var err error
 		job, err = s.store.GetJob(t.Context(), id)
 		return err == nil && job.Status.Finished()
-	}, testTimeout, 20*time.Millisecond, "job %d did not finish", id)
+	}, 3*testTimeout, 20*time.Millisecond, "job %d did not finish", id)
 	return job
 }
 
