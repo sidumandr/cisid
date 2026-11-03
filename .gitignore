@@ -1,0 +1,21 @@
+# Binaries
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & coverage
+*.test
+*.out
+coverage.*
+
+# Env
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
