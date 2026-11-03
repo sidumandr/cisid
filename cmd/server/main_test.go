@@ -312,10 +312,14 @@ func TestRunEndToEnd(t *testing.T) {
 	store := db.New(pool)
 
 	var job models.Job
-	require.Eventually(t, func() bool {
+	// Generous like the other end-to-end waits: under -race the whole
+	// module's tests compete for the machine.
+	if !assert.Eventually(t, func() bool {
 		job, err = store.GetJob(t.Context(), queued.JobID)
 		return err == nil && job.Status.Finished()
-	}, testTimeout, 20*time.Millisecond, "job did not finish")
+	}, 3*testTimeout, 20*time.Millisecond) {
+		t.Fatalf("job did not finish (status %q); log:\n%s", job.Status, logs.String())
+	}
 	assert.Equal(t, models.JobStatusSuccess, job.Status)
 	assert.Equal(t, "e2e-agent", job.Agent)
 	assert.Equal(t, "main", job.Branch)
