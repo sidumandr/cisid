@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -73,13 +73,13 @@ func (m *memTriggers) Schedules(_ context.Context, repo string) ([]models.Schedu
 
 type stubResolver struct{ err error }
 
-func (r stubResolver) Repository(_ context.Context, repo string) (github.Repository, error) {
-	return github.Repository{CloneURL: "https://github.com/" + repo + ".git", DefaultBranch: "main"}, r.err
+func (r stubResolver) Repository(_ context.Context, repo string) (forge.Repository, error) {
+	return forge.Repository{CloneURL: "https://github.com/" + repo + ".git", DefaultBranch: "main"}, r.err
 }
 
 func (r stubResolver) BranchHead(_ context.Context, _, branch string) (string, error) {
 	if branch == "gone" {
-		return "", github.ErrNotFound
+		return "", forge.ErrNotFound
 	}
 	return headSHA, nil
 }
@@ -133,8 +133,32 @@ func TestManualBuild(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, call(h, http.MethodPost, target, writeToken, body).Code, body)
 	}
 
-	down := triggersRouter(&memTriggers{}, stubResolver{err: github.ErrTemporary}, nil, nil)
+	down := triggersRouter(&memTriggers{}, stubResolver{err: forge.ErrTemporary}, nil, nil)
 	assert.Equal(t, http.StatusServiceUnavailable, call(down, http.MethodPost, target, writeToken, "").Code)
+}
+
+func TestManualBuildOfOtherForges(t *testing.T) {
+	store := &memTriggers{}
+	h := triggersRouter(store, stubResolver{}, nil, nil)
+
+	rec := call(h, http.MethodPost, "/api/repos/gitlab:group%2Fsub/project/builds", writeToken, "")
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.Equal(t, "gitlab:group/sub/project", store.jobs[0].Repo, "the owner segment carries the forge and the groups")
+
+	rec = call(h, http.MethodPost, "/api/repos/gitea%3Aoffice/app/builds", writeToken, "")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.Equal(t, "gitea:office/app", store.jobs[1].Repo)
+
+	for _, target := range []string{
+		"/api/repos/svn:office/app/builds",      // unknown forge
+		"/api/repos/gitea:a%2Fb/app/builds",     // too deep outside GitLab
+		"/api/repos/sidumandr%2Fx/cisid/builds", // too deep on GitHub
+	} {
+		assert.Equal(t, http.StatusBadRequest, call(h, http.MethodPost, target, writeToken, "").Code, target)
+	}
+
+	unknown := triggersRouter(&memTriggers{}, stubResolver{err: forge.ErrUnknownForge}, nil, nil)
+	assert.Equal(t, http.StatusNotFound, call(unknown, http.MethodPost, "/api/repos/forgejo:office/app/builds", writeToken, "").Code)
 }
 
 func TestSchedulesAPI(t *testing.T) {

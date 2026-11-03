@@ -6,13 +6,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"regexp"
 
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/pkg/models"
 )
-
-var repoPartRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
 // SecretVault stores repository secrets. *secrets.Vault satisfies it.
 type SecretVault interface {
@@ -130,14 +128,14 @@ func (s *SecretsAPI) internalError(w http.ResponseWriter, r *http.Request, what 
 	writeError(w, http.StatusInternalServerError, "internal server error")
 }
 
-// repoParam returns "owner/repo" from the path, writing a 400 if invalid.
+// repoParam returns the repository key from the path, writing a 400 if
+// invalid. The key's last segment is {repo} and the rest {owner}, with the
+// forge and any slashes escaped: /api/repos/gitlab:group%2Fsub/project.
 func repoParam(w http.ResponseWriter, r *http.Request) (string, bool) {
-	owner, repo := r.PathValue("owner"), r.PathValue("repo")
-	for _, part := range []string{owner, repo} {
-		if !repoPartRe.MatchString(part) || part == "." || part == ".." {
-			writeError(w, http.StatusBadRequest, "invalid repository")
-			return "", false
-		}
+	key := r.PathValue("owner") + "/" + r.PathValue("repo")
+	if _, _, err := forge.SplitKey(key); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid repository")
+		return "", false
 	}
-	return owner + "/" + repo, true
+	return key, true
 }

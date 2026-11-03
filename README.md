@@ -2,7 +2,7 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1–5 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+> Durum: Faz 1–5 tamam, Faz 6 sürüyor. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.md).
 
 ## Dokümanlar
 
@@ -14,8 +14,9 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/secrets.md](docs/secrets.md): Şifreli repo secret'ları ve loglarda maskeleme
 - [docs/metrics.md](docs/metrics.md): Prometheus metrikleri
 - [docs/tracing.md](docs/tracing.md): OpenTelemetry trace'leri: webhook'tan adımlara tek trace
-- [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının GitHub'da commit status olarak gösterilmesi
-- [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
+- [docs/forges.md](docs/forges.md): GitHub, Gitea, Forgejo, GitLab ve Bitbucket kurulumu, repo adları ve özel repolar
+- [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının sağlayıcılarda commit status olarak gösterilmesi
+- [docs/webhook.md](docs/webhook.md): Webhook kurulumu ve davranışı
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
 - [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
 - [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
@@ -71,7 +72,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
 **Akış**
 
-1. GitHub push webhook'u `server`'a ulaşır, job PostgreSQL'e `pending` olarak yazılır.
+1. Sağlayıcının (GitHub, Gitea, Forgejo, GitLab, Bitbucket) push webhook'u `server`'a ulaşır, job PostgreSQL'e `pending` olarak yazılır.
 2. `agent` süreçleri bekleyen job'ları `server`'dan alır.
 3. `runner`, her adımı ayrı bir Docker container'ında çalıştırır.
 4. Loglar ve sonuçlar `server` üzerinden veritabanına geri yazılır.
@@ -91,10 +92,14 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── events/      # PostgreSQL LISTEN/NOTIFY ile job değişikliği bildirimleri
 │   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
 │   ├── metrics/     # Prometheus metrikleri
-│   ├── github/      # GitHub API istemcisi (.cisid.yml okuma)
+│   ├── forge/       # Sağlayıcılardan bağımsız arayüz, repo anahtarları
+│   ├── github/      # GitHub API istemcisi
+│   ├── gitea/       # Gitea ve Forgejo API istemcisi
+│   ├── gitlab/      # GitLab API istemcisi
+│   ├── bitbucket/   # Bitbucket Cloud API istemcisi
 │   ├── pipeline/    # .cisid.yml ayrıştırma, job → adımlar
 │   ├── secrets/     # AES-256-GCM ile şifreli secret'lar
-│   ├── status/      # GitHub commit status raporlama
+│   ├── status/      # Commit status raporlama
 │   ├── telemetry/   # OpenTelemetry trace kurulumu ve trace bağlamı taşıma
 │   ├── web/         # Gömülü web arayüzü
 │   ├── runner/      # Docker entegrasyonu

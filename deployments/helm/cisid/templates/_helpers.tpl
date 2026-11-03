@@ -125,12 +125,40 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- end }}
 
+{{/* The forges' tokens and webhook secrets, by key in the Secret. */}}
+{{- define "cisid.forgeSecrets" -}}
+webhook-secret: {{ .Values.secrets.webhookSecret | quote }}
+github-token: {{ .Values.secrets.githubToken | quote }}
+gitea-token: {{ .Values.secrets.giteaToken | quote }}
+gitea-webhook-secret: {{ .Values.secrets.giteaWebhookSecret | quote }}
+forgejo-token: {{ .Values.secrets.forgejoToken | quote }}
+forgejo-webhook-secret: {{ .Values.secrets.forgejoWebhookSecret | quote }}
+gitlab-token: {{ .Values.secrets.gitlabToken | quote }}
+gitlab-webhook-secret: {{ .Values.secrets.gitlabWebhookSecret | quote }}
+bitbucket-token: {{ .Values.secrets.bitbucketToken | quote }}
+bitbucket-webhook-secret: {{ .Values.secrets.bitbucketWebhookSecret | quote }}
+{{- end }}
+
+{{/* The server's settings read from optional Secret keys: env name to key. */}}
+{{- define "cisid.optionalSecretEnv" -}}
+CISID_API_TOKEN: api-token
+CISID_READ_TOKEN: read-token
+CISID_SECRET_KEY: secret-key
+CISID_GITHUB_TOKEN: github-token
+CISID_GITHUB_WEBHOOK_SECRET: webhook-secret
+CISID_GITEA_TOKEN: gitea-token
+CISID_GITEA_WEBHOOK_SECRET: gitea-webhook-secret
+CISID_FORGEJO_TOKEN: forgejo-token
+CISID_FORGEJO_WEBHOOK_SECRET: forgejo-webhook-secret
+CISID_GITLAB_TOKEN: gitlab-token
+CISID_GITLAB_WEBHOOK_SECRET: gitlab-webhook-secret
+CISID_BITBUCKET_TOKEN: bitbucket-token
+CISID_BITBUCKET_WEBHOOK_SECRET: bitbucket-webhook-secret
+{{- end }}
+
 {{/* Stops rendering with a clear message when a required value is missing. */}}
 {{- define "cisid.validate" -}}
 {{- if not .Values.secrets.existingSecret }}
-{{- if not .Values.secrets.webhookSecret }}
-{{- fail "secrets.webhookSecret is required (or name a Secret in secrets.existingSecret)" }}
-{{- end }}
 {{- if lt (len .Values.secrets.agentToken) 16 }}
 {{- fail "secrets.agentToken must be at least 16 characters (or name a Secret in secrets.existingSecret)" }}
 {{- end }}

@@ -72,25 +72,22 @@ spec:
               value: {{ .Values.server.logRetention | quote }}
             - name: CISID_BUILD_FORKS
               value: {{ .Values.server.buildForks | quote }}
-            {{- with .Values.server.githubAPIURL }}
-            - name: CISID_GITHUB_API_URL
+            {{- range $env, $url := dict "CISID_GITHUB_API_URL" .Values.server.githubAPIURL "CISID_GITEA_URL" .Values.server.giteaURL "CISID_FORGEJO_URL" .Values.server.forgejoURL "CISID_GITLAB_URL" .Values.server.gitlabURL }}
+            {{- with $url }}
+            - name: {{ $env }}
               value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- with include "cisid.publicURL" . }}
             - name: CISID_PUBLIC_URL
               value: {{ . | quote }}
             {{- end }}
-            - name: CISID_GITHUB_WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "cisid.secretName" . }}
-                  key: webhook-secret
             - name: CISID_AGENT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "cisid.secretName" . }}
                   key: agent-token
-            {{- range $env, $key := dict "CISID_API_TOKEN" "api-token" "CISID_READ_TOKEN" "read-token" "CISID_SECRET_KEY" "secret-key" "CISID_GITHUB_TOKEN" "github-token" }}
+            {{- range $env, $key := include "cisid.optionalSecretEnv" . | fromYaml }}
             - name: {{ $env }}
               valueFrom:
                 secretKeyRef:

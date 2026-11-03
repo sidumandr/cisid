@@ -14,7 +14,7 @@ import (
 	"unicode"
 
 	"github.com/sidumandr/cisid/internal/db"
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/internal/trigger"
 	"github.com/sidumandr/cisid/pkg/models"
@@ -69,7 +69,7 @@ func (a *TriggersAPI) register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/schedules/{name}", requireToken(a.token, a.deleteSchedule))
 }
 
-// validBranch accepts the branch names GitHub does, roughly.
+// validBranch accepts the branch names git hosts do, roughly.
 func validBranch(b string) bool {
 	return len(b) <= 255 && !strings.Contains(b, "..") && !strings.HasPrefix(b, "/") &&
 		!strings.HasPrefix(b, "-") && !strings.ContainsFunc(b, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
@@ -95,11 +95,14 @@ func (a *TriggersAPI) build(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	job, err := trigger.BranchJob(ctx, a.resolver, repo, body.Branch, models.EventManual)
 	switch {
-	case errors.Is(err, github.ErrNotFound):
+	case errors.Is(err, forge.ErrNotFound):
 		writeError(w, http.StatusNotFound, "repository or branch not found")
 		return
-	case errors.Is(err, github.ErrTemporary):
-		writeError(w, http.StatusServiceUnavailable, "GitHub is unavailable, try again")
+	case errors.Is(err, forge.ErrUnknownForge):
+		writeError(w, http.StatusNotFound, "the server is not configured for this repository's forge")
+		return
+	case errors.Is(err, forge.ErrTemporary):
+		writeError(w, http.StatusServiceUnavailable, "the forge is unavailable, try again")
 		return
 	case err != nil:
 		a.internalError(w, r, "resolve branch", err)

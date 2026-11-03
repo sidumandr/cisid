@@ -1,6 +1,8 @@
-# GitHub Webhook
+# Webhook'lar
 
-`internal/api/webhook.go` GitHub'dan gelen webhook'ları alır. Her branch push'u ve her pull request değişikliği için `jobs` tablosuna `pending` durumunda bir kayıt ekler.
+`internal/api/webhook.go` sağlayıcılardan gelen webhook'ları alır. Her branch push'u ve her pull request değişikliği için `jobs` tablosuna `pending` durumunda bir kayıt ekler. Her sağlayıcının kendi adresi vardır: `/webhooks/github`, `/webhooks/gitea`, `/webhooks/forgejo`, `/webhooks/gitlab`, `/webhooks/bitbucket`. Bir sağlayıcının adresi, webhook secret'ı verildiğinde açılır.
+
+Bu belge GitHub'ı anlatır; diğer sağlayıcıların kurulumu ve farkları [forges.md](forges.md)'dedir. Tekilleştirme, fork kuralı, PR iptali ve yanıtlar hepsinde aynıdır.
 
 ## GitHub tarafında kurulum
 
@@ -51,7 +53,7 @@ Aynı secret, server'a da verilmelidir. Secret boşsa `NewWebhookHandler` `ErrEm
 
 | Durum | Kod | Body |
 |---|---|---|
-| Job kuyruğa alındı | `202` | `{"status":"queued","job_id":42}` |
+| Job kuyruğa alındı | `202` | `{"status":"queued","job_id":42}` (birden fazla job açıldıysa ayrıca `"job_ids":[42,43]`) |
 | Tag push | `200` | `{"status":"ignored","reason":"not a branch push"}` |
 | Branch silindi | `200` | `{"status":"ignored","reason":"branch deleted"}` |
 | Aynı payload daha önce işlendi | `200` | `{"status":"ignored","reason":"duplicate delivery"}` |
@@ -67,6 +69,7 @@ Aynı secret, server'a da verilmelidir. Secret boşsa `NewWebhookHandler` `ErrEm
 | Body 25 MB'tan büyük | `413` | `{"status":"error","reason":"payload too large"}` |
 | `POST` dışında method | `405` | `{"status":"error","reason":"method not allowed"}` |
 | Veritabanı hatası | `500` | `{"status":"error","reason":"could not queue job"}` |
+| Sağlayıcının API'sine ulaşılamadı (yalnızca Bitbucket PR'larında) | `503` | `{"status":"error","reason":"bitbucket is unavailable, redeliver later"}` |
 
 ## Elle deneme
 

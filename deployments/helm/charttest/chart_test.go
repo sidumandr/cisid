@@ -157,7 +157,6 @@ func TestRequiredValues(t *testing.T) {
 		vals map[string]any
 		want string
 	}{
-		"no webhook secret":     {with(required(), "secrets.webhookSecret", ""), "secrets.webhookSecret is required"},
 		"short agent token":     {with(required(), "secrets.agentToken", "short"), "secrets.agentToken must be at least 16"},
 		"short API token":       {with(required(), "secrets.apiToken", "short"), "secrets.apiToken must be at least 16"},
 		"no database password":  {with(required(), "postgresql.auth.password", ""), "postgresql.auth.password is required"},
@@ -320,6 +319,46 @@ func TestSettingsReachTheProcesses(t *testing.T) {
 	assert.Equal(t, "2g", env(a, "CISID_STEP_MEMORY").Value)
 	assert.Equal(t, "1.5", env(a, "CISID_STEP_CPUS").Value)
 	assert.Equal(t, "http://proxy:3128", env(a, "HTTPS_PROXY").Value)
+}
+
+func TestForgeSettingsReachTheServer(t *testing.T) {
+	vals := required()
+	for path, value := range map[string]any{
+		"server.giteaURL":                "https://git.example.com",
+		"server.gitlabURL":               "https://gitlab.example.com",
+		"secrets.giteaToken":             "gitea-token",
+		"secrets.giteaWebhookSecret":     "gitea-hook",
+		"secrets.bitbucketToken":         "bb-token",
+		"secrets.gitlabWebhookSecret":    "gitlab-hook",
+		"secrets.forgejoWebhookSecret":   "",
+		"secrets.bitbucketWebhookSecret": "",
+	} {
+		vals = with(vals, path, value)
+	}
+	m := render(t, vals)
+
+	c := container(t, m.server(t).Spec.Template.Spec, "server")
+	assert.Equal(t, "https://git.example.com", env(c, "CISID_GITEA_URL").Value)
+	assert.Equal(t, "https://gitlab.example.com", env(c, "CISID_GITLAB_URL").Value)
+	assert.Nil(t, env(c, "CISID_FORGEJO_URL"), "an unset URL is left out")
+	for name, key := range map[string]string{
+		"CISID_GITEA_TOKEN": "gitea-token", "CISID_GITEA_WEBHOOK_SECRET": "gitea-webhook-secret",
+		"CISID_BITBUCKET_TOKEN": "bitbucket-token", "CISID_GITLAB_WEBHOOK_SECRET": "gitlab-webhook-secret",
+		"CISID_FORGEJO_TOKEN": "forgejo-token",
+	} {
+		ref := env(c, name).ValueFrom.SecretKeyRef
+		assert.Equal(t, key, ref.Key, name)
+		assert.True(t, *ref.Optional, "%s is optional", name)
+	}
+	data := m.secrets["ci-cisid"].Data
+	assert.Equal(t, "gitea-hook", string(data["gitea-webhook-secret"]))
+	assert.Equal(t, "bb-token", string(data["bitbucket-token"]))
+	assert.NotContains(t, data, "forgejo-webhook-secret", "empty values stay out of the Secret")
+}
+
+func TestNoWebhookSecretIsFine(t *testing.T) {
+	m := render(t, with(required(), "secrets.webhookSecret", ""))
+	assert.NotContains(t, m.secrets["ci-cisid"].Data, "webhook-secret", "a server that polls needs no webhook")
 }
 
 func TestLongReleaseNamesFit(t *testing.T) {

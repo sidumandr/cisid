@@ -38,7 +38,6 @@ import (
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/db/dbtest"
-	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/runner"
 	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/internal/telemetry/telemetrytest"
@@ -171,14 +170,21 @@ func (stepRunner) Run(_ context.Context, step runner.Step, stdout, _ io.Writer) 
 	return 0, err
 }
 
-// fakeGitHub serves .cisid.yml for any repository and ref.
+// ghStatus is a commit status as GitHub receives it.
+type ghStatus struct {
+	State       string `json:"state"`
+	TargetURL   string `json:"target_url"`
+	Description string `json:"description"`
+	Context     string `json:"context"`
+}
+
 // fakeGitHub serves .cisid.yml and records the commit statuses it receives.
-func fakeGitHub(t *testing.T) (url string, statuses func() []github.CommitStatus) {
+func fakeGitHub(t *testing.T) (url string, statuses func() []ghStatus) {
 	t.Helper()
 	const sha = "6113728f27ae82c7b1a177c8d03f9e96e0adf246"
 	var (
 		mu       sync.Mutex
-		received []github.CommitStatus
+		received []ghStatus
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer e2e-token", r.Header.Get("Authorization"))
@@ -187,7 +193,7 @@ func fakeGitHub(t *testing.T) (url string, statuses func() []github.CommitStatus
 			assert.Equal(t, sha, r.URL.Query().Get("ref"))
 			_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n    secrets: [DEPLOY_TOKEN]\n")
 		case "/repos/sidumandr/cisid/statuses/" + sha:
-			var st github.CommitStatus
+			var st ghStatus
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&st))
 			mu.Lock()
 			received = append(received, st)
@@ -199,10 +205,10 @@ func fakeGitHub(t *testing.T) (url string, statuses func() []github.CommitStatus
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv.URL, func() []github.CommitStatus {
+	return srv.URL, func() []ghStatus {
 		mu.Lock()
 		defer mu.Unlock()
-		return append([]github.CommitStatus(nil), received...)
+		return append([]ghStatus(nil), received...)
 	}
 }
 

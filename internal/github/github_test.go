@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sidumandr/cisid/internal/forge"
 )
 
 const sha = "6113728f27ae82c7b1a177c8d03f9e96e0adf246"
@@ -158,36 +160,64 @@ func TestCreateStatus(t *testing.T) {
 		assert.Equal(t, "/repos/sidumandr/cisid/statuses/"+sha, r.URL.Path)
 		assert.Equal(t, "Bearer ghp_test", r.Header.Get("Authorization"))
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
-		var got CommitStatus
+		var got commitStatus
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&got))
-		assert.Equal(t, CommitStatus{
+		assert.Equal(t, commitStatus{
 			State: "success", TargetURL: "https://ci.example.com/jobs/42",
 			Description: "Passed in 12s", Context: "cisid",
 		}, got)
 		w.WriteHeader(http.StatusCreated)
 	})
 
-	err := c.CreateStatus(t.Context(), "sidumandr/cisid", sha, CommitStatus{
-		State: "success", TargetURL: "https://ci.example.com/jobs/42", Description: "Passed in 12s", Context: "cisid",
+	err := c.CreateStatus(t.Context(), "sidumandr/cisid", sha, forge.CommitStatus{
+		State: forge.StateSuccess, TargetURL: "https://ci.example.com/jobs/42", Description: "Passed in 12s", Context: "cisid",
 	})
 	require.NoError(t, err)
 }
 
 func TestCreateStatusErrors(t *testing.T) {
-	forbidden := newClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+	forbidden := newClient(t, "ghp_test", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Resource not accessible by personal access token", http.StatusForbidden)
 	})
-	err := forbidden.CreateStatus(t.Context(), "sidumandr/cisid", sha, CommitStatus{State: "pending", Context: "cisid"})
+	err := forbidden.CreateStatus(t.Context(), "sidumandr/cisid", sha, forge.CommitStatus{State: forge.StatePending, Context: "cisid"})
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrTemporary)
 	assert.Contains(t, err.Error(), "Resource not accessible")
 
-	down := newClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+	down := newClient(t, "ghp_test", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unicorn", http.StatusServiceUnavailable)
 	})
-	err = down.CreateStatus(t.Context(), "sidumandr/cisid", sha, CommitStatus{State: "pending", Context: "cisid"})
+	err = down.CreateStatus(t.Context(), "sidumandr/cisid", sha, forge.CommitStatus{State: forge.StatePending, Context: "cisid"})
 	assert.ErrorIs(t, err, ErrTemporary)
 
-	err = forbidden.CreateStatus(t.Context(), "not-a-repo", sha, CommitStatus{})
+	err = forbidden.CreateStatus(t.Context(), "not-a-repo", sha, forge.CommitStatus{})
 	assert.ErrorIs(t, err, ErrInvalidRepo)
+
+	anonymous := &Client{APIURL: "http://127.0.0.1:1"}
+	err = anonymous.CreateStatus(t.Context(), "sidumandr/cisid", sha, forge.CommitStatus{State: forge.StatePending})
+	assert.ErrorIs(t, err, forge.ErrNoToken, "no request is sent without a token")
+}
+
+func TestCreateStatusMapsStates(t *testing.T) {
+	var got []string
+	c := newClient(t, "ghp_test", func(w http.ResponseWriter, r *http.Request) {
+		var st commitStatus
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&st))
+		got = append(got, st.State)
+		w.WriteHeader(http.StatusCreated)
+	})
+	for _, s := range []forge.State{forge.StatePending, forge.StateRunning, forge.StateSuccess,
+		forge.StateFailure, forge.StateCanceled, forge.StateError} {
+		require.NoError(t, c.CreateStatus(t.Context(), "sidumandr/cisid", sha, forge.CommitStatus{State: s, Context: "cisid"}))
+	}
+	assert.Equal(t, []string{"pending", "pending", "success", "failure", "error", "error"}, got)
+}
+
+func TestCloneCredentials(t *testing.T) {
+	user, token := (&Client{}).CloneCredentials()
+	assert.Empty(t, user+token, "public repositories clone anonymously")
+
+	user, token = (&Client{Token: "ghp_test"}).CloneCredentials()
+	assert.Equal(t, "x-access-token", user)
+	assert.Equal(t, "ghp_test", token)
 }

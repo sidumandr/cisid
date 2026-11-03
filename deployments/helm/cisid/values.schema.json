@@ -42,6 +42,30 @@
         },
         "githubToken": {
           "type": "string"
+        },
+        "giteaToken": {
+          "type": "string"
+        },
+        "giteaWebhookSecret": {
+          "type": "string"
+        },
+        "forgejoToken": {
+          "type": "string"
+        },
+        "forgejoWebhookSecret": {
+          "type": "string"
+        },
+        "gitlabToken": {
+          "type": "string"
+        },
+        "gitlabWebhookSecret": {
+          "type": "string"
+        },
+        "bitbucketToken": {
+          "type": "string"
+        },
+        "bitbucketWebhookSecret": {
+          "type": "string"
         }
       }
     },
@@ -115,6 +139,18 @@
           "type": "boolean"
         },
         "githubAPIURL": {
+          "type": "string",
+          "pattern": "^$|^https?://"
+        },
+        "giteaURL": {
+          "type": "string",
+          "pattern": "^$|^https?://"
+        },
+        "forgejoURL": {
+          "type": "string",
+          "pattern": "^$|^https?://"
+        },
+        "gitlabURL": {
           "type": "string",
           "pattern": "^$|^https?://"
         },

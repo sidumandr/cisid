@@ -70,11 +70,11 @@ curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 
 ## Elle ve zamanlanmış build'ler
 
-Bir branch'in son commit'i push beklemeden derlenebilir. Server commit'i ve clone adresini GitHub API'sinden alır (`CISID_GITHUB_TOKEN` özel repolar için gerekir). Bu uç noktalar API token'ı ister; zamanlamaları listelemek okuma erişimi ister.
+Bir branch'in son commit'i push beklemeden derlenebilir. Server commit'i ve clone adresini reponun sağlayıcısının API'sinden alır (özel repolar için sağlayıcının token'ı gerekir). Diğer sağlayıcıların repoları adreste önekiyle yazılır, ör. `/api/repos/gitea:office/app/builds` ya da `/api/repos/gitlab:group%2Fsub/project/builds` ([forges.md](forges.md#repo-adları)). Bu uç noktalar API token'ı ister; zamanlamaları listelemek okuma erişimi ister.
 
 | Yol | Açıklama |
 |---|---|
-| `POST /api/repos/{owner}/{repo}/builds` | `{"branch":"main"}` ile branch'in son commit'ini hemen derler; `branch` verilmezse varsayılan branch. `201` ve job döner. Repo ya da branch yoksa `404`, GitHub'a ulaşılamazsa `503`. |
+| `POST /api/repos/{owner}/{repo}/builds` | `{"branch":"main"}` ile branch'in son commit'ini hemen derler; `branch` verilmezse varsayılan branch. `201` ve job döner. Repo ya da branch yoksa ya da server o sağlayıcı için yapılandırılmamışsa `404`, sağlayıcıya ulaşılamazsa `503`. |
 | `GET /api/repos/{owner}/{repo}/schedules` | Repo'nun zamanlamaları: ad, cron, branch, `next_run_at`, `last_run_at`, `last_job_id` |
 | `PUT /api/repos/{owner}/{repo}/schedules/{name}` | `{"cron":"0 3 * * *","branch":"main"}` ile zamanlamayı oluşturur ya da değiştirir. Sonraki çalışma zamanıyla birlikte zamanlamayı döner. |
 | `DELETE /api/repos/{owner}/{repo}/schedules/{name}` | `204`, yoksa `404` |
@@ -88,7 +88,7 @@ curl -X PUT -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"cron":"CRON_TZ=Eur
 ```
 
 - **Cron:** Beş alanlı standart biçim (`dakika saat gün ay haftanın-günü`, ör. `0 3 * * 1-5`) ya da `@hourly`, `@daily`, `@weekly`, `@monthly`. Saatler UTC'dir; başka bir saat dilimi için başa `CRON_TZ=Europe/Istanbul ` ekleyin. Zamanlama adı küçük harf, rakam, `.`, `_` ve `-` içerebilir.
-- **Çalışma:** Server her 30 saniyede vakti gelen zamanlamaları alır ve branch'in son commit'i için bir job açar. Birden fazla server kopyası aynı zamanlamayı iki kez çalıştırmaz: zamanlama, veritabanında kilitlenerek tek bir kopyaya verilir. Server kapalıyken kaçırılan çalışmalar açılınca bir kez yapılır, her kaçırılan zaman için ayrı ayrı değil. GitHub'a ulaşılamazsa o çalışma atlanır, zamanlama sonraki zamanında devam eder.
+- **Çalışma:** Server her 30 saniyede vakti gelen zamanlamaları alır ve branch'in son commit'i için bir job açar. Birden fazla server kopyası aynı zamanlamayı iki kez çalıştırmaz: zamanlama, veritabanında kilitlenerek tek bir kopyaya verilir. Server kapalıyken kaçırılan çalışmalar açılınca bir kez yapılır, her kaçırılan zaman için ayrı ayrı değil. Sağlayıcıya ulaşılamazsa o çalışma atlanır, zamanlama sonraki zamanında devam eder.
 - **Job'lar:** `event` elle başlatılanlarda `manual`, zamanlananlarda `schedule` olur. `when.event` ile bunlara özel adımlar yazılabilir. Branch'e sınırlı secret'lar bu job'lara push'taki gibi verilir. Commit status'ları ayrı bağlamlarda görünür: `cisid/manual`, `cisid/schedule` ([commit-status.md](commit-status.md)).
 
 ## İptal ve yeniden çalıştırma

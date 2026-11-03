@@ -6,7 +6,8 @@ Bu belge cisid'in güvenlik önlemlerini tek yerde toplar. Ayrıntılar ilgili b
 
 | Taraf | Güven | Nasıl doğrulanır |
 |---|---|---|
-| GitHub (webhook) | Secret'ı bilen gönderici | HMAC-SHA256 imzası |
+| GitHub, Gitea, Forgejo, Bitbucket (webhook) | Secret'ı bilen gönderici | Gövdenin HMAC-SHA256 imzası |
+| GitLab (webhook) | Secret'ı bilen gönderici | `X-Gitlab-Token` başlığı, sabit zamanlı karşılaştırma. GitLab imzalamaz: adres HTTPS olmalı. |
 | Agent | Agent token'ını bilen süreç | `Authorization: Bearer`, isteğe bağlı TLS |
 | API istemcisi (yazma) | API token'ını bilen | `Authorization: Bearer` |
 | API istemcisi (okuma), web arayüzü | `CISID_READ_TOKEN` varsa token sahipleri, yoksa herkes | `Authorization: Bearer` ya da oturum cookie'si |
@@ -16,7 +17,8 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 ## Webhook
 
-- İmza `X-Hub-Signature-256` ile sabit zamanlı karşılaştırılır (`hmac.Equal`). Secret boşsa server başlamaz.
+- İmza sabit zamanlı karşılaştırılır (`hmac.Equal`): GitHub'da `X-Hub-Signature-256`, Gitea'da `X-Gitea-Signature`, Forgejo'da `X-Forgejo-Signature`, Bitbucket'ta `X-Hub-Signature`. GitLab secret'ı `X-Gitlab-Token` başlığında açık gönderir. Bir sağlayıcının webhook adresi yalnızca secret'ı verilince açılır.
+- `repository.pushed_at` yalnızca GitHub push'larında vardır; diğer sağlayıcıların push'larında 7 günlük tekrar penceresi uygulanmaz, imzalı gövdenin tekilleştirmesi uygulanır.
 - Gövde en fazla 25 MB okunur.
 - Aynı imzalı gövde bir kez job oluşturur. Tekilleştirme anahtarı gövdenin SHA-256 özetidir, kayıt job ile aynı transaction'da yazılır. `repository.pushed_at` 7 günden eskiyse istek reddedilir. Kayıtlar 8 gün sonra silinir ([webhook.md](webhook.md#tekrar-replay-koruması)).
 - Tüm repolar tek bir webhook secret'ı kullanır.
@@ -32,7 +34,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 - Değişiklik yapan uç noktalar (iptal, yeniden çalıştırma, secret'lar) `CISID_API_TOKEN` ister. Token tanımlı değilse bu uç noktalar kapalıdır (`403`).
 - Okuma uç noktaları (`/api/jobs`, loglar, canlı akış) ve `/metrics`, `CISID_READ_TOKEN` tanımlıysa okuma ya da API token'ı ister; tanımlı değilse herkese açıktır. Job listesi repo adlarını, commit'leri ve logları gösterir. Tarayıcı `POST /api/login` ile HttpOnly, `SameSite=Strict` bir cookie alır; cookie token'ın özetini taşır ve yalnızca okumaya izin verir ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` her zaman açıktır.
-- `/webhooks/github` ve `/api/` IP başına token bucket ile sınırlıdır (`CISID_RATE_LIMIT`, varsayılan 10 istek/sn). Reverse proxy arkasında `CISID_TRUST_PROXY=true` ile istemci adresi `X-Forwarded-For`'dan alınır. Proxy yoksa bu ayarı açmayın, başlık sahte olabilir.
+- `/webhooks/` ve `/api/` IP başına token bucket ile sınırlıdır (`CISID_RATE_LIMIT`, varsayılan 10 istek/sn). Reverse proxy arkasında `CISID_TRUST_PROXY=true` ile istemci adresi `X-Forwarded-For`'dan alınır. Proxy yoksa bu ayarı açmayın, başlık sahte olabilir.
 - Web arayüzü `Content-Security-Policy: default-src 'self'` ile sunulur, inline script yoktur. API'den gelen her değer `textContent` ile eklenir. API token'ı tarayıcıda yalnızca `sessionStorage`'da tutulur ([ui.md](ui.md#güvenlik)).
 
 ## Secret'lar
@@ -41,6 +43,11 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - API secret değerlerini hiçbir zaman geri döndürmez, yalnızca adlarını listeler.
 - Değerler yalnızca `secrets:` ile isteyen adımlara ortam değişkeni olarak verilir. Bir secret, server tarafında `branches` ile korumalı branch'lere sınırlanabilir; o zaman pull request'lere de verilmez ([secrets.md](secrets.md#secretı-branchlere-sınırlamak)). `when.branch` bir güvenlik sınırı değildir, çünkü `.cisid.yml` derlenen commit'ten okunur.
 - Agent, adımların çıktısında secret değerlerini `***` ile maskeler, parçalara bölünmüş değerler dahil. 3 karakterden kısa değerler maskelenmez. Maskeleme bir güvenlik sınırı değildir: değeri dönüştürüp (ör. base64) yazdıran bir adımı durdurmaz ([secrets.md](secrets.md)).
+
+## Clone token'ları
+
+- Sağlayıcının token'ı özel repoları clone'lamak için yalnızca clone adımına secret olarak verilir. Çıktıda maskelenir, `.git/config`'e yazılmaz (git onu `GIT_CONFIG_*` ortam değişkenleriyle tanımlanan bir yardımcıdan okur) ve kullanıcı adımlarına verilmez.
+- Token'ı olabildiğince dar yetkiyle oluşturun: okuma ve commit status. Bir sağlayıcının token'ı o sağlayıcıdaki bütün repolar için kullanılır.
 
 ## Step container'ları
 

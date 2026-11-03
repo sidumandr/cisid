@@ -63,14 +63,20 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 
 | Değer | Varsayılan | Açıklama |
 |---|---|---|
-| `secrets.webhookSecret` | — | **Zorunlu.** GitHub webhook secret'ı |
+| `secrets.webhookSecret` | — | GitHub webhook secret'ı; `/webhooks/github`'ı açar |
 | `secrets.agentToken` | — | **Zorunlu.** Agent token'ı, en az 16 karakter |
 | `secrets.apiToken` | — | İptal, yeniden çalıştırma ve secret uç noktalarını açar |
 | `secrets.readToken` | — | Job'ları, logları ve metrikleri okumak için token ister. Yoksa server'a ulaşan herkes okur. |
 | `secrets.secretKey` | — | Repo secret'larını şifreleyen anahtar (base64, 32 byte). Bir kopyasını ayrıca saklayın. |
 | `secrets.githubToken` | — | Özel repolar, rate limit ve commit status için |
+| `secrets.giteaToken`, `secrets.giteaWebhookSecret` | — | Gitea'nın token'ı ve webhook secret'ı (`server.giteaURL` ile) |
+| `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo'nun token'ı ve webhook secret'ı (`server.forgejoURL` ile) |
+| `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab'ın token'ı ve webhook secret'ı |
+| `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud'un token'ı ve webhook secret'ı |
 | `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
 | `server.replicaCount` | `1` | Server kopyası |
+| `server.giteaURL`, `server.forgejoURL` | — | Gitea ve Forgejo sunucularının adresi; verilince açılırlar |
+| `server.gitlabURL` | GitLab.com | Kendi GitLab kurulumunuzun adresi |
 | `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
 | `server.tls.secretName` | — | Server için HTTPS, agent'lar için `wss://` |
@@ -93,11 +99,11 @@ Secret'ları bir secrets operator'ı ya da GitOps aracıyla yönetiyorsanız `se
 
 | Anahtar | |
 |---|---|
-| `webhook-secret` | Zorunlu |
+| `webhook-secret` | İsteğe bağlı |
 | `agent-token` | Zorunlu |
 | `postgres-password` | Dahili PostgreSQL ile zorunlu |
 | `database-url` | Harici veritabanıyla zorunlu (`postgres://...`) |
-| `api-token`, `read-token`, `secret-key`, `github-token` | İsteğe bağlı |
+| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret` | İsteğe bağlı |
 
 Agent token'ını değiştirmek için anahtara önce `yeni,eski` yazın: server ikisini de kabul eder, agent'lar ilkini gönderir. Bütün agent'lar yeniden başladıktan sonra yalnızca `yeni`yi bırakın.
 

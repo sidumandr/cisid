@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"runtime/debug"
@@ -34,12 +35,15 @@ type statusResponse struct {
 
 // Handlers are the parts the router dispatches to.
 type Handlers struct {
-	Webhook http.Handler // GitHub webhook deliveries
-	Agents  http.Handler // agent WebSocket connections
-	Jobs    *JobsAPI     // job and log API; omitted when nil
-	Secrets *SecretsAPI  // repository secrets API; omitted when nil
-	UI      http.Handler // browser UI at /, /jobs/{id} and /ui/; omitted when nil
-	DB      Pinger       // readiness check
+	Webhook http.Handler // GitHub webhook deliveries; omitted when nil
+	// Webhooks are the other forges' deliveries, by forge name, served at
+	// /webhooks/{forge}.
+	Webhooks map[string]http.Handler
+	Agents   http.Handler // agent WebSocket connections
+	Jobs     *JobsAPI     // job and log API; omitted when nil
+	Secrets  *SecretsAPI  // repository secrets API; omitted when nil
+	UI       http.Handler // browser UI at /, /jobs/{id} and /ui/; omitted when nil
+	DB       Pinger       // readiness check
 	// RateLimit applies to the webhook and the API; nil means no limit.
 	RateLimit *RateLimiter
 	// Metrics serves GET /metrics; omitted when nil.
@@ -56,6 +60,7 @@ type Handlers struct {
 // NewRouter returns the server's HTTP handler:
 //
 //	POST /webhooks/github  GitHub webhook deliveries
+//	POST /webhooks/{forge} Gitea, Forgejo, GitLab and Bitbucket deliveries
 //	GET  /agent/ws         agent WebSocket connections
 //	GET  /api/jobs/...     jobs and logs (see JobsAPI)
 //	     /api/repos/...    repository secrets (see SecretsAPI)
@@ -66,7 +71,16 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	// The webhook and the API are rate limited; agents, the UI's static
 	// files and health checks are not.
 	limited := http.NewServeMux()
-	limited.Handle("/webhooks/github", h.Webhook)
+	webhooks := maps.Clone(h.Webhooks)
+	if h.Webhook != nil {
+		if webhooks == nil {
+			webhooks = map[string]http.Handler{}
+		}
+		webhooks["github"] = h.Webhook
+	}
+	for name, wh := range webhooks {
+		limited.Handle("/webhooks/"+name, wh)
+	}
 	if h.Jobs != nil {
 		h.Jobs.register(limited)
 	}
@@ -85,7 +99,7 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/webhooks/github", limitedHandler)
+	mux.Handle("/webhooks/", limitedHandler)
 	mux.Handle("/api/", limitedHandler)
 	mux.Handle("GET /agent/ws", h.Agents)
 	if h.Metrics != nil {

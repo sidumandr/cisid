@@ -23,12 +23,16 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | Değişken | Varsayılan | Açıklama |
 |---|---|---|
 | `CISID_DATABASE_URL` | **zorunlu** | `postgres://` bağlantı adresi |
-| `CISID_GITHUB_WEBHOOK_SECRET` | **zorunlu** | GitHub webhook secret'ı ([webhook.md](webhook.md)) |
+| `CISID_GITHUB_WEBHOOK_SECRET` | — | GitHub webhook secret'ı; `/webhooks/github`'ı açar ([webhook.md](webhook.md)). Webhook'suz bir server elle ve zamanlanmış build'ler çalıştırır. |
 | `CISID_HTTP_ADDR` | `:8080` | Dinlenecek adres |
 | `CISID_SHUTDOWN_TIMEOUT` | `15s` | Kapanışta devam eden istekler için beklenecek süre |
 | `CISID_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `CISID_GITHUB_TOKEN` | — | `.cisid.yml` okumak için GitHub token'ı. Özel repolar ve rate limit için gerekir ([pipeline.md](pipeline.md)). |
+| `CISID_GITHUB_TOKEN` | — | GitHub token'ı: özel repolar, rate limit ve commit status için ([forges.md](forges.md#github)) |
 | `CISID_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise Server için API adresi |
+| `CISID_GITEA_URL`, `CISID_GITEA_TOKEN`, `CISID_GITEA_WEBHOOK_SECRET` | — | Gitea sunucusu; adres verilince açılır ([forges.md](forges.md#gitea-ve-forgejo)) |
+| `CISID_FORGEJO_URL`, `CISID_FORGEJO_TOKEN`, `CISID_FORGEJO_WEBHOOK_SECRET` | — | Forgejo sunucusu; adres verilince açılır |
+| `CISID_GITLAB_URL`, `CISID_GITLAB_TOKEN`, `CISID_GITLAB_WEBHOOK_SECRET` | `https://gitlab.com` | GitLab ([forges.md](forges.md#gitlab)) |
+| `CISID_BITBUCKET_TOKEN`, `CISID_BITBUCKET_WEBHOOK_SECRET` | — | Bitbucket Cloud ([forges.md](forges.md#bitbucket-cloud)) |
 | `CISID_AGENT_TOKEN` | — | Agent'ların bağlanırken göstermesi gereken token, en az 16 karakter. Virgülle ayrılmış birden fazla token verilebilir; hepsi kabul edilir, böylece token'lar agent'lar kesilmeden değiştirilir ([agent.md](agent.md#kimlik-doğrulama-ve-tls)). Tanımlı değilse her istemci agent olarak bağlanabilir ve server bunu açılışta uyarı olarak loglar. |
 | `CISID_READ_TOKEN` | — | Tanımlıysa job'ları, logları ve `/metrics`'i okumak bu token'ı ya da API token'ını ister, en az 16 karakter ([api.md](api.md#okuma-erişimi)). Tanımlı değilse server'a ulaşan herkes okur. |
 | `CISID_TLS_CERT_FILE`, `CISID_TLS_KEY_FILE` | — | İkisi birlikte verilirse server HTTPS üzerinden servis eder (en az TLS 1.2). Agent'lar `wss://` ile bağlanır. |
@@ -48,6 +52,7 @@ Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapı
 | Yol | Açıklama |
 |---|---|
 | `POST /webhooks/github` | GitHub webhook'ları ([webhook.md](webhook.md)) |
+| `POST /webhooks/{gitea,forgejo,gitlab,bitbucket}` | Diğer sağlayıcıların webhook'ları ([forges.md](forges.md)); secret'ı verilmeyen sağlayıcınınki `404` döner |
 | `GET /agent/ws` | Agent WebSocket bağlantıları ([hub.md](hub.md)) |
 | `GET /api/jobs/...` | Job'lar, loglar ve canlı log akışı ([api.md](api.md)) |
 | `/api/repos/{owner}/{repo}/secrets` | Repo secret'ları ([secrets.md](secrets.md)) |

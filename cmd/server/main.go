@@ -23,10 +23,14 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/api"
+	"github.com/sidumandr/cisid/internal/bitbucket"
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/events"
+	"github.com/sidumandr/cisid/internal/forge"
+	"github.com/sidumandr/cisid/internal/gitea"
 	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/gitlab"
 	"github.com/sidumandr/cisid/internal/hub"
 	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/internal/pipeline"
@@ -71,7 +75,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	// Deferred first, so it runs last and exports the spans of shutdown too.
 	defer flushTraces(ctx, tracing, log)
-	// The HTTP and GitHub wrappers are left out entirely when tracing is off.
+	// The HTTP and forge wrappers are left out entirely when tracing is off.
 	var httpTracing trace.TracerProvider
 	if tracing.Enabled() {
 		httpTracing = tracing.Provider
@@ -97,10 +101,12 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	log.InfoContext(ctx, "database ready", "migrations_applied", applied)
 
-	gh := &github.Client{APIURL: cfg.GitHubAPIURL, Token: cfg.GitHubToken}
+	var forgeHTTP *http.Client
 	if httpTracing != nil {
-		gh.HTTP = github.TracedHTTPClient(httpTracing)
+		forgeHTTP = forge.TracedHTTPClient(httpTracing)
 	}
+	forges, bb := forgeClients(cfg, forgeHTTP)
+	log.InfoContext(ctx, "forges", "names", forges.Names())
 
 	// Interfaces stay nil (not a nil *Vault) when secrets are off.
 	var (
@@ -117,17 +123,18 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	} else {
 		log.InfoContext(ctx, "secrets disabled: CISID_SECRET_KEY is not set")
 	}
-	planner := pipeline.Planner{Configs: gh, Secrets: secretSrc}
+	planner := pipeline.Planner{Configs: forges, Secrets: secretSrc, Clones: forges}
 
-	// Commit statuses need a token with write access to them.
+	// Commit statuses need a token with write access to them; forges
+	// without one are skipped.
 	var reporter *status.Reporter
 	jobChanged := func(int64) {}
-	if cfg.GitHubToken != "" {
-		reporter = status.New(store, gh, status.WithLogger(log), status.WithJobURL(jobURL(cfg.PublicURL)),
+	if anyForgeToken(cfg) {
+		reporter = status.New(store, forges, status.WithLogger(log), status.WithJobURL(jobURL(cfg.PublicURL)),
 			status.WithTracerProvider(tracing.Provider))
 		jobChanged = func(int64) { reporter.Wake() }
 	} else {
-		log.InfoContext(ctx, "commit statuses disabled: CISID_GITHUB_TOKEN is not set")
+		log.InfoContext(ctx, "commit statuses disabled: no forge token is set")
 	}
 
 	if len(cfg.AgentTokens) == 0 {
@@ -135,12 +142,15 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	agents := hub.New(store, planner, hub.WithLogger(log), hub.WithJobChanged(jobChanged),
 		hub.WithAgentTokens(cfg.AgentTokens...), hub.WithTracerProvider(tracing.Provider))
-	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, func(id int64) {
+	webhooks, err := webhookHandlers(cfg, wakeOnCreate{store, func(id int64) {
 		agents.Wake()
 		jobChanged(id)
-	}}, log, api.WithForkBuilds(cfg.BuildForks))
+	}}, bb, log)
 	if err != nil {
-		return fmt.Errorf("create webhook handler: %w", err)
+		return err
+	}
+	if len(webhooks) == 0 {
+		log.InfoContext(ctx, "no webhooks: set a forge's webhook secret, or build by hand and on schedules")
 	}
 
 	metrics.RegisterAgents(agents.Connected)
@@ -159,12 +169,12 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		agents.Wake()
 		jobChanged(id)
 	}
-	triggersAPI := api.NewTriggersAPI(store, gh, cfg.APIToken, read, queued, log)
-	scheduler := trigger.NewScheduler(store, gh, trigger.WithLogger(log), trigger.WithQueued(queued))
+	triggersAPI := api.NewTriggersAPI(store, forges, cfg.APIToken, read, queued, log)
+	scheduler := trigger.NewScheduler(store, forges, trigger.WithLogger(log), trigger.WithQueued(queued))
 
 	srv := &http.Server{
 		Handler: api.NewRouter(api.Handlers{
-			Webhook:   webhook,
+			Webhooks:  webhooks,
 			Agents:    agents,
 			Jobs:      jobsAPI,
 			Secrets:   api.NewSecretsAPI(vault, cfg.APIToken, log),
@@ -221,6 +231,53 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	log.InfoContext(ctx, "server stopped")
 	return nil
+}
+
+// forgeClients returns the clients of the configured forges. Bitbucket's
+// is returned on its own too: its webhooks expand abbreviated hashes.
+func forgeClients(cfg config.Config, httpClient *http.Client) (*forge.Set, *bitbucket.Client) {
+	s := forge.NewSet()
+	s.Add(forge.GitHub, &github.Client{APIURL: cfg.GitHubAPIURL, Token: cfg.GitHubToken, HTTP: httpClient})
+	if cfg.Gitea.Enabled() {
+		s.Add(forge.Gitea, &gitea.Client{URL: cfg.Gitea.URL, Token: cfg.Gitea.Token, HTTP: httpClient, Name: forge.Gitea})
+	}
+	if cfg.Forgejo.Enabled() {
+		s.Add(forge.Forgejo, &gitea.Client{URL: cfg.Forgejo.URL, Token: cfg.Forgejo.Token, HTTP: httpClient, Name: forge.Forgejo})
+	}
+	s.Add(forge.GitLab, &gitlab.Client{URL: cfg.GitLab.URL, Token: cfg.GitLab.Token, HTTP: httpClient})
+	bb := &bitbucket.Client{APIURL: cfg.Bitbucket.URL, Token: cfg.Bitbucket.Token, HTTP: httpClient}
+	s.Add(forge.Bitbucket, bb)
+	return s, bb
+}
+
+func anyForgeToken(cfg config.Config) bool {
+	return cfg.GitHubToken != "" || cfg.Gitea.Token != "" || cfg.Forgejo.Token != "" ||
+		cfg.GitLab.Token != "" || cfg.Bitbucket.Token != ""
+}
+
+// webhookHandlers returns a handler for every forge with a webhook secret,
+// by forge name.
+func webhookHandlers(cfg config.Config, jobs api.JobCreator, bb *bitbucket.Client, log *slog.Logger) (map[string]http.Handler, error) {
+	secrets := map[string]string{
+		forge.GitHub:    cfg.WebhookSecret,
+		forge.Gitea:     cfg.Gitea.WebhookSecret,
+		forge.Forgejo:   cfg.Forgejo.WebhookSecret,
+		forge.GitLab:    cfg.GitLab.WebhookSecret,
+		forge.Bitbucket: cfg.Bitbucket.WebhookSecret,
+	}
+	handlers := map[string]http.Handler{}
+	for name, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		h, err := api.NewWebhookHandler([]byte(secret), jobs, log, api.WithForkBuilds(cfg.BuildForks),
+			api.WithForge(name), api.WithCommitResolver(bb))
+		if err != nil {
+			return nil, fmt.Errorf("create %s webhook handler: %w", name, err)
+		}
+		handlers[name] = h
+	}
+	return handlers, nil
 }
 
 // wakeOnCreate calls wake whenever the webhook queues or cancels a job, so

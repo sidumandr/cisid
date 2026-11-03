@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -40,13 +40,13 @@ type fakeResolver struct {
 	repoErr, headErr error
 }
 
-func (f fakeResolver) Repository(_ context.Context, repo string) (github.Repository, error) {
-	return github.Repository{CloneURL: "https://github.com/" + repo + ".git", DefaultBranch: "main"}, f.repoErr
+func (f fakeResolver) Repository(_ context.Context, repo string) (forge.Repository, error) {
+	return forge.Repository{CloneURL: "https://github.com/" + repo + ".git", DefaultBranch: "main"}, f.repoErr
 }
 
 func (f fakeResolver) BranchHead(_ context.Context, repo, branch string) (string, error) {
 	if branch == "gone" {
-		return "", github.ErrNotFound
+		return "", forge.ErrNotFound
 	}
 	return sha, f.headErr
 }
@@ -64,7 +64,7 @@ func TestBranchJob(t *testing.T) {
 	assert.Equal(t, "release/1.0", job.Branch)
 
 	_, err = BranchJob(t.Context(), fakeResolver{}, "sidumandr/cisid", "gone", models.EventManual)
-	assert.ErrorIs(t, err, github.ErrNotFound)
+	assert.ErrorIs(t, err, forge.ErrNotFound)
 }
 
 // fakeStore hands out the schedules it holds as due and records the rest.

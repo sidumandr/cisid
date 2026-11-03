@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sidumandr/cisid/internal/forge"
 )
 
 func TestRepository(t *testing.T) {
@@ -17,7 +19,7 @@ func TestRepository(t *testing.T) {
 	got, err := c.Repository(t.Context(), "sidumandr/cisid")
 
 	require.NoError(t, err)
-	assert.Equal(t, Repository{CloneURL: "https://github.com/sidumandr/cisid.git", DefaultBranch: "main"}, got)
+	assert.Equal(t, forge.Repository{CloneURL: "https://github.com/sidumandr/cisid.git", DefaultBranch: "main"}, got)
 }
 
 func TestBranchHead(t *testing.T) {

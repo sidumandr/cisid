@@ -130,8 +130,16 @@ function repoTile(repo) {
   return el("span", { class: "tile", "aria-hidden": "true" }, name.slice(0, 1).toLowerCase());
 }
 
+// repoURL is a repository key as the two path segments the server routes:
+// the last segment, and the rest with the forge and any slashes escaped,
+// e.g. "gitlab:group/sub/project" -> "gitlab%3Agroup%2Fsub/project".
+function repoURL(repo) {
+  const i = repo.lastIndexOf("/");
+  return encodeURIComponent(repo.slice(0, i)) + "/" + encodeURIComponent(repo.slice(i + 1));
+}
+
 function repoPath(repo) {
-  return "/repos/" + repo.split("/").map(encodeURIComponent).join("/");
+  return "/repos/" + repoURL(repo);
 }
 
 const dash = () => el("span", { class: "dash" }, "-");
@@ -325,14 +333,17 @@ async function runBuild(repo, repos = []) {
     title: "Run a build",
     text: "Builds the latest commit of a branch, as a push would.",
     fields: [
-      { name: "repo", label: "Repository", value: repo, placeholder: "owner/name", list: "known-repos" },
+      { name: "repo", label: "Repository", value: repo, placeholder: "owner/name", list: "known-repos",
+        hint: "On GitHub owner/name; elsewhere prefix the forge, as in gitea:owner/name or gitlab:group/project." },
       { name: "branch", label: "Branch", hint: "Empty builds the repository's default branch." },
     ],
     submit: "Run build",
     onSubmit: async (v) => {
       const name = v.repo.trim();
-      if (!/^[^/\s]+\/[^/\s]+$/.test(name)) throw new Error("Write the repository as owner/name.");
-      const queued = await request("POST", `/api/repos/${name.split("/").map(encodeURIComponent).join("/")}/builds`,
+      if (!/^((gitea|forgejo|gitlab|bitbucket):)?[^/\s:]+(\/[^/\s:]+)+$/.test(name)) {
+        throw new Error("Write the repository as owner/name, or forge:owner/name.");
+      }
+      const queued = await request("POST", `/api/repos/${repoURL(name)}/builds`,
         { body: { branch: v.branch.trim() }, token: true });
       if (!queued) throw new Error("A build needs the API token.");
       v.job = queued;
@@ -491,7 +502,7 @@ function renderJobs() {
     count.textContent = `${shown.length} of the latest ${jobs.length} jobs`;
     lede.textContent = jobsFinding(jobs);
     if (jobs.length === 0) {
-      rows.replaceChildren(note("No jobs yet. Point a GitHub webhook at /webhooks/github, or run a build by hand."));
+      rows.replaceChildren(note("No jobs yet. Point a webhook at /webhooks/github (or gitea, forgejo, gitlab, bitbucket), or run a build by hand."));
     } else if (shown.length === 0) {
       rows.replaceChildren(jobsHeaderRow(), note("No jobs match this view."));
     } else {
@@ -761,7 +772,7 @@ function renderRepos() {
       : `${repos.length} ${repos.length === 1 ? "repository" : "repositories"} in the latest ${jobs.length} jobs. ` +
         (failing.length ? `${failing.length} failing now: ${failing.map((r) => r.repo).join(", ")}.` : "None failing now.");
     if (repos.length === 0) {
-      rows.replaceChildren(note("No repositories yet. Point a GitHub webhook at /webhooks/github to build the first one."));
+      rows.replaceChildren(note("No repositories yet. Point a webhook at /webhooks/github (or gitea, forgejo, gitlab, bitbucket) to build the first one."));
       return;
     }
     rows.replaceChildren(reposHeaderRow(), ...repos.map((r) => el("a", { class: "tr repos-grid", href: repoPath(r.repo), role: "row" },
@@ -787,7 +798,7 @@ const REPO_TABS = [
 function renderRepo(owner, name) {
   setNav("repos");
   const repo = `${owner}/${name}`;
-  const base = `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+  const base = `/api/repos/${repoURL(repo)}`;
   document.title = `${repo} · cisid`;
   let tab = "builds";
   let timer = null;

@@ -44,7 +44,7 @@ var (
 
 	CommitStatuses = factory.NewCounterVec(prometheus.CounterOpts{
 		Name: "cisid_commit_statuses_total",
-		Help: "Commit statuses posted to GitHub by outcome: sent, retry (GitHub unavailable) or failed.",
+		Help: "Commit statuses posted to the forges by outcome: sent, retry (forge unavailable), failed or skipped (statuses off for the forge).",
 	}, []string{"result"})
 
 	LogChunks = factory.NewCounter(prometheus.CounterOpts{

@@ -10,7 +10,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -33,13 +33,14 @@ func Next(spec string, after time.Time) (time.Time, error) {
 	return next, nil
 }
 
-// Resolver finds what to build for a branch. *github.Client satisfies it.
+// Resolver finds what to build for a branch of a repository key.
+// *forge.Set satisfies it.
 type Resolver interface {
-	Repository(ctx context.Context, repo string) (github.Repository, error)
+	Repository(ctx context.Context, repo string) (forge.Repository, error)
 	BranchHead(ctx context.Context, repo, branch string) (string, error)
 }
 
-var _ Resolver = (*github.Client)(nil)
+var _ Resolver = (*forge.Set)(nil)
 
 // BranchJob returns a pending job, triggered by event, for the head commit
 // of branch in repo, or of the default branch when branch is empty.

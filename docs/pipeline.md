@@ -146,6 +146,8 @@ Listedeki her dizin, repo'ya ait isimli bir Docker volume'u olarak bütün adım
 ## Çalışma şekli
 
 - **Clone:** İlk adım her zaman `clone`'dur. Derlenen commit `alpine/git:2.52.0` ile `/workspace` altına çekilir (`--depth=1`): push'larda pushlanan commit, pull request'lerde PR'ın son commit'i. Branch adı yerel branch olarak ayarlanır.
+  - Commit'i SHA'sıyla vermeyen bir sunucuda branch'in (pull request'lerde PR ref'inin, ör. `refs/pull/7/head` ya da GitLab'da `refs/merge-requests/7/head`) son 50 commit'i çekilir; derlenen commit bunların içinde olmalıdır.
+  - Sağlayıcının token'ı verilmişse özel repolar o token'la clone'lanır. Token yalnızca clone adımına secret olarak verilir, çıktıda maskelenir ve `.git/config`'e yazılmaz ([forges.md](forges.md#özel-repolar)).
 - **Workspace:** Bütün adımlar aynı job volume'unu `/workspace` altında paylaşır ve orada çalışır. Bir adımın ürettiği dosyalar sonraki adımlarda görünür.
 - **Komutlar:** Bir adımın komutları tek bir `/bin/sh` script'i olarak çalışır (`set -ex`). İlk hatalı komutta adım durur ve her komut çalışmadan önce stderr'a yazılır.
 - **Başarısızlık:** Bir adım başarısız olursa sonraki adımlar çalışmaz.
@@ -156,7 +158,7 @@ Listedeki her dizin, repo'ya ait isimli bir Docker volume'u olarak bütün adım
 | `CI`, `CISID` | `true` |
 | `CISID_JOB_ID` | Job numarası |
 | `CISID_STEP` | Adım adı |
-| `CISID_REPO` | `owner/name` |
+| `CISID_REPO` | Repo anahtarı: GitHub'da `owner/name`, diğer sağlayıcılarda ör. `gitlab:group/project` ([forges.md](forges.md#repo-adları)) |
 | `CISID_EVENT` | `push`, `pull_request`, `manual` ya da `schedule` |
 | `CISID_BRANCH` | Pushlanan branch; pull request'lerde PR'ın kendi branch'i |
 | `CISID_COMMIT_SHA` | Derlenen commit |
@@ -165,20 +167,15 @@ Listedeki her dizin, repo'ya ait isimli bir Docker volume'u olarak bütün adım
 
 ## Dosyanın okunması
 
-Server, job'u bir agent'a vermeden hemen önce `.cisid.yml`'yi **derlenen commit'ten** GitHub API ile okur (`internal/github`). Agent dosyayla hiç uğraşmaz.
+Server, job'u bir agent'a vermeden hemen önce `.cisid.yml`'yi **derlenen commit'ten** reponun sağlayıcısının API'siyle okur (`internal/forge`). Agent dosyayla hiç uğraşmaz.
 
 | Durum | Sonuç |
 |---|---|
 | Dosya yok | Job `failed`: `no .cisid.yml in repository` |
 | Dosya geçersiz | Job `failed`, bütün hatalar `error` alanında |
-| GitHub'a ulaşılamıyor, 5xx ya da rate limit | Job **başarısız sayılmaz**, kuyruğa geri döner ve sonraki turda (en geç 5 sn) tekrar denenir |
+| Sağlayıcıya ulaşılamıyor, 5xx ya da rate limit | Job **başarısız sayılmaz**, kuyruğa geri döner ve sonraki turda (en geç 5 sn) tekrar denenir |
 | Server kapanırken okuma yarıda kaldı | Job kuyruğa geri döner |
 
-Herkese açık repolar token olmadan okunur. Ancak GitHub kimliksiz isteklerde IP başına saatte 60 istek sınırı uygular. Özel repolar ya da yoğun kullanım için token verilmelidir:
-
-| Değişken | Varsayılan | Açıklama |
-|---|---|---|
-| `CISID_GITHUB_TOKEN` | — | Contents okuma yetkili token. Loglarda sadece `github_token_set=true` görünür. |
-| `CISID_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise Server için `https://<host>/api/v3` |
+Herkese açık repolar token olmadan okunur. Ancak sağlayıcılar kimliksiz isteklere düşük bir sınır uygular (GitHub'da IP başına saatte 60 istek). Özel repolar ya da yoğun kullanım için sağlayıcının token'ı verilmelidir: `CISID_GITHUB_TOKEN`, `CISID_GITEA_TOKEN`, `CISID_FORGEJO_TOKEN`, `CISID_GITLAB_TOKEN` ya da `CISID_BITBUCKET_TOKEN` ([forges.md](forges.md)). Loglarda token'ların yalnızca tanımlı olup olmadığı görünür.
 
 Dosya en fazla 64 KB olabilir.

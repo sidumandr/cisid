@@ -12,8 +12,8 @@ imagePullSecrets: []
 # existingSecret names a Secret you manage; README.md lists its keys.
 secrets:
   existingSecret: ""
-  # Required: the GitHub webhook secret, also entered in the repository's
-  # webhook settings.
+  # The GitHub webhook secret, also entered in the repository's webhook
+  # settings; enables /webhooks/github.
   webhookSecret: ""
   # Required: the token agents present to the server, 16+ characters. To
   # rotate it, set "new,old": the server takes both, agents send the first.
@@ -28,6 +28,16 @@ secrets:
   secretKey: ""
   # For private repositories, rate limits and commit statuses.
   githubToken: ""
+  # The other forges, each with an access token (private repositories,
+  # commit statuses) and a webhook secret (enables /webhooks/<forge>).
+  giteaToken: ""
+  giteaWebhookSecret: ""
+  forgejoToken: ""
+  forgejoWebhookSecret: ""
+  gitlabToken: ""
+  gitlabWebhookSecret: ""
+  bitbucketToken: ""
+  bitbucketWebhookSecret: ""
 
 # The database to use when postgresql.enabled is false.
 database:
@@ -57,6 +67,11 @@ server:
   buildForks: false
   # The GitHub Enterprise Server API, e.g. https://ghe.example.com/api/v3.
   githubAPIURL: ""
+  # Gitea and Forgejo servers to build from, e.g. https://git.example.com.
+  giteaURL: ""
+  forgejoURL: ""
+  # A self-managed GitLab instance; GitLab.com when empty.
+  gitlabURL: ""
   # How long finished jobs keep their logs, e.g. 30d or 72h; 0 keeps them.
   logRetention: 90d
   # How long shutdown waits for in-flight requests.

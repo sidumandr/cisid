@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -32,17 +32,25 @@ var (
 	// ErrNoConfig is returned when the commit has no .cisid.yml.
 	ErrNoConfig = errors.New("no " + ConfigFile + " in repository")
 	// ErrTemporary marks planning failures worth retrying later, such as
-	// GitHub being unreachable or rate limited.
+	// the forge being unreachable or rate limited.
 	ErrTemporary = errors.New("temporary planning failure")
 )
 
 // ConfigSource reads a file from a repository at a commit.
-// *github.Client satisfies it.
+// *forge.Set satisfies it.
 type ConfigSource interface {
 	FileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
 }
 
-var _ ConfigSource = (*github.Client)(nil)
+var _ ConfigSource = (*forge.Set)(nil)
+
+// CloneAuth returns the credentials git clones a repository with; an empty
+// token clones anonymously. *forge.Set satisfies it.
+type CloneAuth interface {
+	CloneCredentials(repo string) (user, token string)
+}
+
+var _ CloneAuth = (*forge.Set)(nil)
 
 // SecretSource returns the values of repository secrets.
 // *secrets.Vault satisfies it.
@@ -61,6 +69,9 @@ type Planner struct {
 	// Secrets provides the secrets steps ask for. When nil, a pipeline that
 	// uses secrets fails.
 	Secrets SecretSource
+	// Clones authenticates the clone step, for private repositories. When
+	// nil, repositories are cloned anonymously.
+	Clones CloneAuth
 }
 
 // Plan is the outcome of planning a job.
@@ -95,9 +106,9 @@ func (p Planner) Plan(ctx context.Context, job models.Job) (Plan, error) {
 
 	data, err := p.Configs.FileContent(ctx, job.Repo, job.CommitSHA, ConfigFile)
 	switch {
-	case errors.Is(err, github.ErrNotFound):
+	case errors.Is(err, forge.ErrNotFound):
 		return Plan{}, fmt.Errorf("%w (%s@%s)", ErrNoConfig, job.Repo, job.CommitSHA)
-	case errors.Is(err, github.ErrTemporary), err != nil && ctx.Err() != nil:
+	case errors.Is(err, forge.ErrTemporary), err != nil && ctx.Err() != nil:
 		return Plan{}, fmt.Errorf("%w: %w", ErrTemporary, err)
 	case err != nil:
 		return Plan{}, fmt.Errorf("read %s: %w", ConfigFile, err)
@@ -214,9 +225,18 @@ func secretAllowed(branches []string, job models.Job) bool {
 	return err == nil && m.Matches(job.Branch)
 }
 
+// credentialHelper answers git's request for credentials from the clone
+// step's environment, so the token never lands in .git/config.
+const credentialHelper = `!f() { test "$1" = get && echo "username=$CISID_CLONE_USER" && echo "password=$CISID_CLONE_TOKEN"; }; f`
+
 // cloneStep fetches exactly the pushed commit into the workspace. Values
 // from the webhook payload are passed as environment variables and only
 // referenced quoted in the script, so they cannot inject shell code.
+//
+// Servers that do not serve a commit by its SHA alone get the branch or
+// pull request ref instead, which must still contain the commit. With the
+// forge's token, private repositories clone too; the token is a secret of
+// this step only, masked in its output.
 func (p Planner) cloneStep(job models.Job) models.StepSpec {
 	image := p.CloneImage
 	if image == "" {
@@ -224,20 +244,47 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 	}
 	env := jobEnv(job)
 	env["CISID_CLONE_URL"] = job.CloneURL
+	env["CISID_FETCH_REF"] = fetchRef(job)
 	env["GIT_TERMINAL_PROMPT"] = "0"
-	return models.StepSpec{
+	step := models.StepSpec{
 		Name:  cloneStepName,
 		Image: image,
 		Commands: []string{
 			"git init -q .",
 			`git remote add origin "$CISID_CLONE_URL"`,
-			`git fetch -q --depth=1 origin "$CISID_COMMIT_SHA"`,
-			`git checkout -q -B "$CISID_BRANCH" FETCH_HEAD`,
+			`git fetch -q --depth=1 origin "$CISID_COMMIT_SHA" || git fetch -q --depth=50 origin "+$CISID_FETCH_REF:refs/remotes/origin/cisid"`,
+			`git checkout -q -B "$CISID_BRANCH" "$CISID_COMMIT_SHA"`,
 			"git log -1 --format='%H %s'",
 		},
 		Env:            env,
 		TimeoutSeconds: cloneTimeoutSeconds,
 	}
+	if p.Clones == nil {
+		return step
+	}
+	if user, token := p.Clones.CloneCredentials(job.Repo); token != "" {
+		// Configuration from the environment applies to every git command
+		// of the step and is not written anywhere.
+		env["GIT_CONFIG_COUNT"] = "1"
+		env["GIT_CONFIG_KEY_0"] = "credential.helper"
+		env["GIT_CONFIG_VALUE_0"] = credentialHelper
+		env["CISID_CLONE_USER"] = user
+		step.Secrets = map[string]string{"CISID_CLONE_TOKEN": token}
+	}
+	return step
+}
+
+// fetchRef is the ref that holds job's commit: the pull request's head ref
+// or the branch.
+func fetchRef(job models.Job) string {
+	if job.PullRequest > 0 {
+		name, _, err := forge.SplitKey(job.Repo)
+		if err != nil {
+			name = forge.GitHub
+		}
+		return forge.PullRequestRef(name, job.PullRequest, job.Branch)
+	}
+	return "refs/heads/" + job.Branch
 }
 
 func userStep(job models.Job, s Step, secretValues, combo map[string]string) models.StepSpec {

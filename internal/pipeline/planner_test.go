@@ -41,20 +41,61 @@ func TestPlanClonesTheCommit(t *testing.T) {
 		Commands: []string{
 			"git init -q .",
 			`git remote add origin "$CISID_CLONE_URL"`,
-			`git fetch -q --depth=1 origin "$CISID_COMMIT_SHA"`,
-			`git checkout -q -B "$CISID_BRANCH" FETCH_HEAD`,
+			`git fetch -q --depth=1 origin "$CISID_COMMIT_SHA" || git fetch -q --depth=50 origin "+$CISID_FETCH_REF:refs/remotes/origin/cisid"`,
+			`git checkout -q -B "$CISID_BRANCH" "$CISID_COMMIT_SHA"`,
 			"git log -1 --format='%H %s'",
 		},
 		Env: map[string]string{
 			"CISID_REPO":          "sidumandr/cisid",
 			"CISID_EVENT":         "push",
 			"CISID_CLONE_URL":     "https://github.com/sidumandr/cisid.git",
+			"CISID_FETCH_REF":     "refs/heads/feature/webhook",
 			"CISID_BRANCH":        "feature/webhook",
 			"CISID_COMMIT_SHA":    "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
 			"GIT_TERMINAL_PROMPT": "0",
 		},
 		TimeoutSeconds: 600,
 	}, steps[0])
+}
+
+// fakeClones hands out one token for every repository.
+type fakeClones struct{ user, token string }
+
+func (f fakeClones) CloneCredentials(string) (string, string) { return f.user, f.token }
+
+func TestPlanClonesPrivateRepositoriesWithTheForgeToken(t *testing.T) {
+	steps, err := stepsOf(Planner{Clones: fakeClones{"oauth2", "glpat-secret"}}.Plan(t.Context(), testJob()))
+
+	require.NoError(t, err)
+	clone := steps[0]
+	assert.Equal(t, map[string]string{"CISID_CLONE_TOKEN": "glpat-secret"}, clone.Secrets,
+		"the token is a secret, so it is masked in the output")
+	assert.Equal(t, "oauth2", clone.Env["CISID_CLONE_USER"])
+	assert.Equal(t, "credential.helper", clone.Env["GIT_CONFIG_KEY_0"])
+	assert.NotContains(t, clone.Env["GIT_CONFIG_VALUE_0"], "glpat-secret", "the helper reads the token from the environment")
+	for _, c := range clone.Commands {
+		assert.NotContains(t, c, "glpat-secret")
+	}
+
+	steps, err = stepsOf(Planner{Clones: fakeClones{}}.Plan(t.Context(), testJob()))
+	require.NoError(t, err)
+	assert.Nil(t, steps[0].Secrets, "without a token the clone is anonymous")
+	assert.NotContains(t, steps[0].Env, "GIT_CONFIG_COUNT")
+}
+
+func TestPlanFetchesPullRequestsByTheirRef(t *testing.T) {
+	for repo, want := range map[string]string{
+		"sidumandr/cisid":          "refs/pull/7/head",
+		"gitea:office/app":         "refs/pull/7/head",
+		"gitlab:group/sub/project": "refs/merge-requests/7/head",
+		"bitbucket:team/app":       "refs/heads/feature/webhook",
+	} {
+		job := testJob()
+		job.Repo, job.PullRequest, job.TargetBranch, job.Event = repo, 7, "main", models.EventPullRequest
+		steps, err := stepsOf(Planner{}.Plan(t.Context(), job))
+		require.NoError(t, err)
+		assert.Equal(t, want, steps[0].Env["CISID_FETCH_REF"], repo)
+	}
 }
 
 // fakeConfigs serves a fixed .cisid.yml or error.

@@ -309,3 +309,29 @@ func TestRouterServesMetrics(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "cisid_http_requests_total")
 	assert.Contains(t, rec.Body.String(), "go_goroutines")
 }
+
+func TestRouterRoutesEachForgesWebhook(t *testing.T) {
+	hit := map[string]int{}
+	hook := func(name string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hit[name]++
+			w.WriteHeader(http.StatusAccepted)
+		})
+	}
+	h := NewRouter(Handlers{
+		Webhooks: map[string]http.Handler{"gitea": hook("gitea"), "gitlab": hook("gitlab")},
+		Agents:   http.NotFoundHandler(), DB: &mockPinger{},
+	}, slog.New(slog.DiscardHandler))
+
+	for path, want := range map[string]int{
+		"/webhooks/gitea":     http.StatusAccepted,
+		"/webhooks/gitlab":    http.StatusAccepted,
+		"/webhooks/github":    http.StatusNotFound, // no secret, no endpoint
+		"/webhooks/bitbucket": http.StatusNotFound,
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+		assert.Equal(t, want, rec.Code, path)
+	}
+	assert.Equal(t, map[string]int{"gitea": 1, "gitlab": 1}, hit)
+}

@@ -1,8 +1,8 @@
-// Package status reports job results to GitHub as commit statuses.
+// Package status reports job results to the forges as commit statuses.
 //
 // The reporter compares each job's status with the one it last reported
 // (jobs.reported_status) and posts the difference, so no transition is lost
-// across restarts and a GitHub outage only delays reports.
+// across restarts and a forge outage only delays reports.
 package status
 
 import (
@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/sidumandr/cisid/internal/db"
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
@@ -31,7 +31,7 @@ const (
 	defaultInterval = 5 * time.Second
 	roundTimeout    = 30 * time.Second
 	batchSize       = 50
-	maxDescription  = 140 // GitHub's limit
+	maxDescription  = 140 // GitHub's limit, the strictest
 
 	tracerName = "github.com/sidumandr/cisid/internal/status"
 )
@@ -44,12 +44,12 @@ type Store interface {
 
 var _ Store = (*db.Store)(nil)
 
-// Poster sets commit statuses. *github.Client satisfies it.
+// Poster sets commit statuses. *forge.Set satisfies it.
 type Poster interface {
-	CreateStatus(ctx context.Context, repo, sha string, st github.CommitStatus) error
+	CreateStatus(ctx context.Context, repo, sha string, st forge.CommitStatus) error
 }
 
-var _ Poster = (*github.Client)(nil)
+var _ Poster = (*forge.Set)(nil)
 
 // Option configures a Reporter.
 type Option func(*Reporter)
@@ -75,7 +75,7 @@ func WithTracerProvider(tp trace.TracerProvider) Option {
 	return func(r *Reporter) { r.tracer = tp.Tracer(tracerName) }
 }
 
-// Reporter posts job statuses to GitHub.
+// Reporter posts job statuses to the forges.
 type Reporter struct {
 	store    Store
 	poster   Poster
@@ -171,12 +171,16 @@ func (r *Reporter) report(ctx context.Context, job models.Job) bool {
 		span.SetStatus(codes.Error, err.Error())
 	}
 	switch {
-	case errors.Is(err, github.ErrTemporary):
+	case errors.Is(err, forge.ErrTemporary):
 		metrics.CommitStatuses.WithLabelValues("retry").Inc()
 		if ctx.Err() == nil {
-			r.log.WarnContext(ctx, "GitHub unavailable, will retry commit status", "job_id", job.ID, "error", err)
+			r.log.WarnContext(ctx, "forge unavailable, will retry commit status", "job_id", job.ID, "error", err)
 		}
 		return false
+	case errors.Is(err, forge.ErrNoToken), errors.Is(err, forge.ErrUnknownForge):
+		// Statuses are off for this forge; nothing is wrong.
+		metrics.CommitStatuses.WithLabelValues("skipped").Inc()
+		r.log.DebugContext(ctx, "commit statuses are off for the forge", "job_id", job.ID, "repo", job.Repo)
 	case err != nil:
 		metrics.CommitStatuses.WithLabelValues("failed").Inc()
 		// Retrying cannot fix a missing permission or a deleted commit.
@@ -194,8 +198,8 @@ func (r *Reporter) report(ctx context.Context, job models.Job) bool {
 }
 
 // Describe returns the commit status for job, without a target URL.
-func Describe(job models.Job) github.CommitStatus {
-	st := github.CommitStatus{Context: Context}
+func Describe(job models.Job) forge.CommitStatus {
+	st := forge.CommitStatus{Context: Context}
 	// Apart from a push build of the same commit.
 	switch job.Event {
 	case models.EventPullRequest:
@@ -209,20 +213,20 @@ func Describe(job models.Job) github.CommitStatus {
 	}
 	switch job.Status {
 	case models.JobStatusPending:
-		st.State, st.Description = "pending", "Waiting for an agent"
+		st.State, st.Description = forge.StatePending, "Waiting for an agent"
 	case models.JobStatusRunning:
-		st.State, st.Description = "pending", "Running on "+job.Agent
+		st.State, st.Description = forge.StateRunning, "Running on "+job.Agent
 	case models.JobStatusSuccess:
-		st.State, st.Description = "success", "Passed"
+		st.State, st.Description = forge.StateSuccess, "Passed"
 		if d, ok := duration(job); ok {
 			st.Description += " in " + d.String()
 		}
 	case models.JobStatusFailed:
-		st.State, st.Description = "failure", failure(job)
+		st.State, st.Description = forge.StateFailure, failure(job)
 	case models.JobStatusCanceled:
-		st.State, st.Description = "error", "Canceled"
+		st.State, st.Description = forge.StateCanceled, "Canceled"
 	default:
-		st.State, st.Description = "error", fmt.Sprintf("Unknown status %q", job.Status)
+		st.State, st.Description = forge.StateError, fmt.Sprintf("Unknown status %q", job.Status)
 	}
 	st.Description = truncate(st.Description, maxDescription)
 	return st

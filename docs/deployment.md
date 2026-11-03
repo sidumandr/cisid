@@ -32,15 +32,19 @@ CISID_API_TOKEN=en-az-16-karakter-yazma-token
 CISID_SECRET_KEY=base64-32-byte-anahtar
 CISID_GITHUB_TOKEN=commit-status-için-github-token
 CISID_PUBLIC_URL=https://ci.example.com
+# Diğer sağlayıcılar, ör. ofisteki Gitea:
+CISID_GITEA_URL=https://git.example.com
+CISID_GITEA_TOKEN=gitea-erişim-token'ı
+CISID_GITEA_WEBHOOK_SECRET=uzun-rastgele-bir-değer
 ```
 
-`CISID_GITHUB_WEBHOOK_SECRET` ve `CISID_AGENT_TOKEN` zorunludur, eksikse compose başlamaz. Diğerleri isteğe bağlıdır, anlamları için [server.md](server.md) ve [secrets.md](secrets.md). Her komutta `-f` yazmamak için `.env`'e `COMPOSE_FILE=compose.stack.yaml` ekleyebilirsiniz.
+`CISID_AGENT_TOKEN` zorunludur, eksikse compose başlamaz. Sağlayıcıların ayarları ([forges.md](forges.md)) ve diğerleri isteğe bağlıdır. Diğerleri isteğe bağlıdır, anlamları için [server.md](server.md) ve [secrets.md](secrets.md). Her komutta `-f` yazmamak için `.env`'e `COMPOSE_FILE=compose.stack.yaml` ekleyebilirsiniz.
 
 ```bash
 docker compose -f compose.stack.yaml up -d --build --wait
 ```
 
-Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile değiştirilir). GitHub webhook adresi `/webhooks/github` yoludur ([webhook.md](webhook.md)). `.env`'deki `OTEL_EXPORTER_OTLP_ENDPOINT` server'a ve agent'a aktarılır ve trace'leri açar ([tracing.md](tracing.md)).
+Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile değiştirilir). Webhook adresleri `/webhooks/<sağlayıcı>` yollarıdır, ör. `/webhooks/github` ya da `/webhooks/gitea` ([forges.md](forges.md)). `.env`'deki `OTEL_EXPORTER_OTLP_ENDPOINT` server'a ve agent'a aktarılır ve trace'leri açar ([tracing.md](tracing.md)).
 
 Daha fazla agent:
 

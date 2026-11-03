@@ -43,7 +43,36 @@ func TestLoadDefaults(t *testing.T) {
 		GitHubAPIURL:    "https://api.github.com",
 		RateLimit:       10,
 		LogRetention:    90 * 24 * time.Hour,
+		GitLab:          Forge{URL: "https://gitlab.com"},
+		Bitbucket:       Forge{URL: "https://api.bitbucket.org/2.0"},
 	}, cfg)
+}
+
+func TestLoadWithoutWebhooks(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"CISID_DATABASE_URL": required["CISID_DATABASE_URL"]}))
+	require.NoError(t, err, "a server that only polls or builds by hand needs no webhook secret")
+	assert.Empty(t, cfg.WebhookSecret)
+}
+
+func TestLoadForges(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{
+		"CISID_GITEA_URL":                "https://git.example.com/",
+		"CISID_GITEA_TOKEN":              "gitea-token",
+		"CISID_GITEA_WEBHOOK_SECRET":     "gitea-hook",
+		"CISID_GITLAB_URL":               "https://gitlab.example.com",
+		"CISID_GITLAB_TOKEN":             "glpat-token",
+		"CISID_BITBUCKET_WEBHOOK_SECRET": "bb-hook",
+	})))
+	require.NoError(t, err)
+	assert.Equal(t, Forge{URL: "https://git.example.com", Token: "gitea-token", WebhookSecret: "gitea-hook"}, cfg.Gitea)
+	assert.False(t, cfg.Forgejo.Enabled(), "Forgejo is off without its URL")
+	assert.Equal(t, Forge{URL: "https://gitlab.example.com", Token: "glpat-token"}, cfg.GitLab)
+	assert.Equal(t, Forge{URL: "https://api.bitbucket.org/2.0", WebhookSecret: "bb-hook"}, cfg.Bitbucket)
+
+	_, err = Load(env(with(map[string]string{"CISID_FORGEJO_TOKEN": "t"})))
+	assert.ErrorContains(t, err, "CISID_FORGEJO_URL is required")
+	_, err = Load(env(with(map[string]string{"CISID_GITEA_URL": "git.example.com"})))
+	assert.ErrorContains(t, err, "CISID_GITEA_URL must be an http(s) URL")
 }
 
 func TestLoadTokens(t *testing.T) {
@@ -116,9 +145,9 @@ func TestLoadErrors(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "missing required values are all reported",
-			vars: map[string]string{},
-			want: []string{"CISID_DATABASE_URL is required", "CISID_GITHUB_WEBHOOK_SECRET is required"},
+			name: "every problem is reported",
+			vars: map[string]string{"CISID_GITLAB_URL": "gitlab"},
+			want: []string{"CISID_DATABASE_URL is required", "CISID_GITLAB_URL must be an http(s) URL"},
 		},
 		{
 			name: "bad duration",

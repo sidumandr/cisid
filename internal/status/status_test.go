@@ -16,7 +16,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -30,11 +30,11 @@ func TestDescribe(t *testing.T) {
 	tests := []struct {
 		name  string
 		job   models.Job
-		state string
+		state forge.State
 		desc  string
 	}{
 		{"pending", models.Job{Status: models.JobStatusPending}, "pending", "Waiting for an agent"},
-		{"running", models.Job{Status: models.JobStatusRunning, Agent: "worker-1"}, "pending", "Running on worker-1"},
+		{"running", models.Job{Status: models.JobStatusRunning, Agent: "worker-1"}, "running", "Running on worker-1"},
 		{"success", models.Job{Status: models.JobStatusSuccess, StartedAt: &start, FinishedAt: &end}, "success", "Passed in 1m23s"},
 		{"success without times", models.Job{Status: models.JobStatusSuccess}, "success", "Passed"},
 		{"clone failed", models.Job{Status: models.JobStatusFailed, FailedStep: ptr(0), ExitCode: ptr(128)}, "failure", "Clone failed with exit code 128"},
@@ -42,12 +42,12 @@ func TestDescribe(t *testing.T) {
 		{"named step failed", models.Job{Status: models.JobStatusFailed, FailedStep: ptr(1), ExitCode: ptr(2),
 			StepNames: []string{"clone", "test"}}, "failure", `Step "test" failed with exit code 2`},
 		{"runner error", models.Job{Status: models.JobStatusFailed, Error: "no .cisid.yml in repository"}, "failure", "Failed: no .cisid.yml in repository"},
-		{"canceled", models.Job{Status: models.JobStatusCanceled}, "error", "Canceled"},
+		{"canceled", models.Job{Status: models.JobStatusCanceled}, "canceled", "Canceled"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := Describe(tt.job)
-			assert.Equal(t, github.CommitStatus{State: tt.state, Description: tt.desc, Context: "cisid"}, st)
+			assert.Equal(t, forge.CommitStatus{State: tt.state, Description: tt.desc, Context: "cisid"}, st)
 		})
 	}
 }
@@ -107,7 +107,7 @@ type fakePoster struct {
 	posts  chan struct{}
 }
 
-func (p *fakePoster) CreateStatus(_ context.Context, repo, sha string, st github.CommitStatus) error {
+func (p *fakePoster) CreateStatus(_ context.Context, repo, sha string, st forge.CommitStatus) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	defer func() {
@@ -168,15 +168,31 @@ func TestReporterReportsEachTransitionOnce(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	assert.Equal(t, []string{
 		"sidumandr/cisid@6113728 pending Waiting for an agent https://ci.example.com/jobs/1",
-		"sidumandr/cisid@6113728 pending Running on w1 https://ci.example.com/jobs/1",
+		"sidumandr/cisid@6113728 running Running on w1 https://ci.example.com/jobs/1",
 	}, poster.all())
 }
 
-func TestReporterRetriesWhenGitHubIsDown(t *testing.T) {
+func TestReporterSkipsForgesWithoutStatuses(t *testing.T) {
+	for _, err := range []error{forge.ErrNoToken, forge.ErrUnknownForge} {
+		store := &fakeStore{}
+		store.set(job(1, models.JobStatusSuccess))
+		poster := &fakePoster{err: fmt.Errorf("post: %w", err), posts: make(chan struct{}, 10)}
+		startReporter(t, store, poster)
+
+		<-poster.posts
+		require.Eventually(t, func() bool {
+			store.mu.Lock()
+			defer store.mu.Unlock()
+			return store.reported[1] == models.JobStatusSuccess
+		}, time.Second, 5*time.Millisecond, "a forge without statuses is not asked again")
+	}
+}
+
+func TestReporterRetriesWhenTheForgeIsDown(t *testing.T) {
 	store := &fakeStore{}
 	store.set(job(1, models.JobStatusSuccess))
 	store.set(job(2, models.JobStatusFailed))
-	poster := &fakePoster{err: fmt.Errorf("post: %w", github.ErrTemporary), posts: make(chan struct{}, 10)}
+	poster := &fakePoster{err: fmt.Errorf("post: %w", forge.ErrTemporary), posts: make(chan struct{}, 10)}
 	r := startReporter(t, store, poster)
 
 	<-poster.posts

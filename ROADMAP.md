@@ -60,3 +60,11 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Elle ve zamanlanmış build'ler: API ve arayüzden branch build'i, veritabanında cron zamanlamaları; birden fazla server kopyası aynı çalışmayı iki kez başlatmaz ([docs/api.md](docs/api.md#elle-ve-zamanlanmış-buildler)).
 - [x] Birden fazla server kopyasının uçtan uca testi: aynı veritabanında iki server, kopyalar arası dağıtım, canlı log ve iptal (`TestRunTwoServers`).
 - [x] Sürüm yayımlama: `v*` etiketinde GitHub Actions testleri çalıştırır, image'ları (amd64, arm64) ve chart'ı ghcr.io'ya gönderir, release oluşturur ([docs/release.md](docs/release.md)).
+
+## Faz 6 — Herkes için
+
+- [x] İlk sürüm: v0.1.0, image'lar ve Helm chart ghcr.io'da ([docs/release.md](docs/release.md)).
+- [x] Birden fazla git sağlayıcısı: GitHub, Gitea, Forgejo, GitLab ve Bitbucket Cloud; webhook'lar, commit status, özel repoları clone'lama ([docs/forges.md](docs/forges.md)).
+- [ ] Webhook'suz push build'leri: branch'leri yoklama (polling).
+- [ ] Kullanıcı hesapları ve roller; sağlayıcılarla (OAuth) giriş.
+- [ ] Dokümanlar İngilizce ve Türkçe.
