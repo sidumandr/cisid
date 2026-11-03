@@ -12,6 +12,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -150,6 +153,15 @@ func (c *Client) do(ctx context.Context, method, u, accept string, body []byte) 
 		return nil, fmt.Errorf("%w: %w", ErrTemporary, err)
 	}
 	return resp, nil
+}
+
+// TracedHTTPClient returns a client for Client.HTTP that records each
+// request as a client span of tp. No trace headers are sent to GitHub.
+func TracedHTTPClient(tp trace.TracerProvider) *http.Client {
+	return &http.Client{
+		Timeout:   requestTimeout,
+		Transport: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithTracerProvider(tp)),
+	}
 }
 
 func (c *Client) httpClient() *http.Client {

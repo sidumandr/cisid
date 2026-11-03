@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -39,6 +40,8 @@ import (
 	"github.com/sidumandr/cisid/internal/db/dbtest"
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/runner"
+	"github.com/sidumandr/cisid/internal/telemetry"
+	"github.com/sidumandr/cisid/internal/telemetry/telemetrytest"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -145,6 +148,17 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrInvalidConfig)
 }
 
+func TestRunRejectsInvalidTracingConfig(t *testing.T) {
+	env := map[string]string{
+		"CISID_DATABASE_URL":          "postgres://cisid@127.0.0.1:1/cisid",
+		"CISID_GITHUB_WEBHOOK_SECRET": "secret",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
+		"OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+	}
+	err := run(t.Context(), func(k string) string { return env[k] }, io.Discard)
+	assert.ErrorContains(t, err, "set up tracing")
+}
+
 // stepRunner stands in for Docker in the end-to-end test.
 type stepRunner struct{}
 
@@ -202,7 +216,8 @@ func (stepRunner) StartService(_ context.Context, svc runner.Service) (string, e
 
 // TestRunEndToEnd starts the real server on a fresh database with a real
 // agent, delivers a signed webhook, waits for the job to finish and shuts
-// everything down. Skipped unless CISID_TEST_DATABASE_URL is set.
+// everything down. Both export traces to a collector. Skipped unless
+// CISID_TEST_DATABASE_URL is set.
 func TestRunEndToEnd(t *testing.T) {
 	dbURL := dbtest.NewURL(t)
 	// Without keep-alives the client never leaves a connected but idle
@@ -215,8 +230,10 @@ func TestRunEndToEnd(t *testing.T) {
 	require.NoError(t, ln.Close())
 
 	ghURL, statuses := fakeGitHub(t)
+	collector := telemetrytest.NewCollector(t)
 	const apiToken = "e2e-api-token-0123456789"
 	env := map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": collector.URL(),
 		"CISID_HTTP_ADDR":             addr,
 		"CISID_DATABASE_URL":          dbURL,
 		"CISID_GITHUB_WEBHOOK_SECRET": secret,
@@ -252,12 +269,17 @@ func TestRunEndToEnd(t *testing.T) {
 	putResp.Body.Close()
 	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
 
+	agentTracing, err := telemetry.Setup(t.Context(), "cisid-agent", func(k string) string {
+		return map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": collector.URL()}[k]
+	})
+	require.NoError(t, err)
 	a, err := agent.New(agent.Config{
-		ServerURL:    "ws://" + addr + "/agent/ws",
-		Name:         "e2e-agent",
-		MinBackoff:   10 * time.Millisecond,
-		MaxBackoff:   50 * time.Millisecond,
-		FlushTimeout: 2 * time.Second,
+		ServerURL:      "ws://" + addr + "/agent/ws",
+		Name:           "e2e-agent",
+		MinBackoff:     10 * time.Millisecond,
+		MaxBackoff:     50 * time.Millisecond,
+		FlushTimeout:   2 * time.Second,
+		TracerProvider: agentTracing.Provider,
 	}, stepRunner{}, discard)
 	require.NoError(t, err)
 	agentCtx, stopAgent := context.WithCancel(t.Context())
@@ -356,14 +378,57 @@ func TestRunEndToEnd(t *testing.T) {
 	case <-time.After(testTimeout):
 		t.Fatal("agent did not stop")
 	}
+	flushCtx, flushed := context.WithTimeout(t.Context(), testTimeout)
+	defer flushed()
+	require.NoError(t, agentTracing.Shutdown(flushCtx))
+
+	// One trace runs from the webhook through dispatch to the agent's steps.
+	webhook := findSpan(t, collector, "cisid-server", "POST /webhooks/github")
+	dispatch := findSpan(t, collector, "cisid-server", "dispatch job")
+	run := findSpan(t, collector, "cisid-agent", "run job")
+	assert.Equal(t, webhook.SpanID, dispatch.ParentID, "dispatch continues the webhook's trace")
+	assert.Equal(t, dispatch.SpanID, run.ParentID, "the agent continues the dispatch")
+	assert.Equal(t, strconv.FormatInt(queued.JobID, 10), run.Attrs["cisid.job.id"])
+	for _, name := range []string{"step clone", "step test"} {
+		step := findSpan(t, collector, "cisid-agent", name)
+		assert.Equal(t, run.SpanID, step.ParentID, name)
+	}
+	var fetches, reports int
+	for _, s := range collector.Spans() {
+		if strings.Contains(s.Name, " /api/") {
+			continue // the test's own API calls are traces of their own
+		}
+		assert.Equal(t, webhook.TraceID, s.TraceID, "%s/%s belongs to another trace", s.Service, s.Name)
+		if s.ParentID == dispatch.SpanID && s.Service == "cisid-server" {
+			fetches++ // the .cisid.yml request to GitHub
+		}
+		if s.Name == "report commit status" {
+			reports++
+		}
+	}
+	assert.Equal(t, 1, fetches)
+	assert.GreaterOrEqual(t, reports, 2, "pending and success")
 
 	out := logs.String()
+	assert.Contains(t, out, "trace_id="+webhook.TraceID, "logs carry the trace ID")
 	assert.NotContains(t, out, secret, "secrets must not be logged")
 	assert.NotContains(t, out, "dep_e2e_s3cret")
 	assert.NotContains(t, out, apiToken)
 	assert.Contains(t, out, "job assigned")
 	assert.Contains(t, out, "job finished")
 	assert.Contains(t, out, "server stopped")
+}
+
+// findSpan returns the span service exported under name.
+func findSpan(t *testing.T, c *telemetrytest.Collector, service, name string) telemetrytest.Span {
+	t.Helper()
+	for _, s := range c.Spans() {
+		if s.Service == service && s.Name == name {
+			return s
+		}
+	}
+	t.Fatalf("no %s span %q among %d spans", service, name, len(c.Spans()))
+	return telemetrytest.Span{}
 }
 
 // syncBuffer is a bytes.Buffer safe for concurrent writes from the logger.

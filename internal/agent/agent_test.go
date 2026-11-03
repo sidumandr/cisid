@@ -22,8 +22,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/sidumandr/cisid/internal/runner"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -214,16 +219,20 @@ func (sc *serverConn) collectJob(t *testing.T, jobID int64) ([]models.JobLog, mo
 }
 
 // startAgent runs an agent until the test ends. It returns the agent's cancel
-// func and a wait func that returns Run's result.
-func startAgent(t *testing.T, fs *fakeServer, r StepRunner) (context.CancelFunc, func() error) {
+// func and a wait func that returns Run's result. opts adjust the config.
+func startAgent(t *testing.T, fs *fakeServer, r StepRunner, opts ...func(*Config)) (context.CancelFunc, func() error) {
 	t.Helper()
-	a, err := New(Config{
+	cfg := Config{
 		ServerURL:    fs.url(),
 		Name:         "test-agent",
 		MinBackoff:   10 * time.Millisecond,
 		MaxBackoff:   50 * time.Millisecond,
 		FlushTimeout: 2 * time.Second,
-	}, r, slog.New(slog.DiscardHandler))
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	a, err := New(cfg, r, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -791,6 +800,60 @@ func TestAgentStartsServicesOnAJobNetwork(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, []string{"create network", "start db", "run step", "stop db", "remove network", "remove volume"}, order)
+	r.AssertExpectations(t)
+}
+
+// TestAgentTracesJob checks a job's spans: one for the job under the trace
+// the server sent, and beneath it one per service and step, with the
+// failing step marked.
+func TestAgentTracesJob(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	inSpan := mock.MatchedBy(func(ctx context.Context) bool { return trace.SpanContextFromContext(ctx).IsValid() })
+
+	fs := newFakeServer(t)
+	r := &mockRunner{}
+	r.On("CreateNetwork", mock.Anything, mock.Anything).Return(nil).Once()
+	r.On("StartService", inSpan, mock.Anything).Return("svc-db", nil).Once()
+	r.On("Run", inSpan, image("alpine/git:2.52.0"), mock.Anything, mock.Anything).Return(0, nil).Once()
+	r.On("Run", inSpan, image("golang:1.27"), mock.Anything, mock.Anything).Return(2, nil).Once()
+	r.On("StopService", mock.Anything, "svc-db").Return(nil).Once()
+	r.On("RemoveNetwork", mock.Anything, mock.Anything).Return(nil).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
+
+	startAgent(t, fs, r, func(c *Config) { c.TracerProvider = tp })
+	sc := fs.accept(t)
+	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID:       9,
+		TraceParent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+		Steps: []models.StepSpec{
+			{Name: "clone", Image: "alpine/git:2.52.0", Commands: []string{"git clone"}},
+			{Name: "test", Image: "golang:1.27", Commands: []string{"go test ./..."}},
+		},
+		Services: []models.ServiceSpec{{Name: "db", Image: "postgres:18-alpine"}},
+	})
+	_, res := sc.collectJob(t, 9)
+	require.Equal(t, models.JobStatusFailed, res.Status)
+
+	require.Eventually(t, func() bool { return len(rec.Ended()) == 4 }, testTimeout, 5*time.Millisecond)
+	spans := map[string]sdktrace.ReadOnlySpan{}
+	for _, s := range rec.Ended() {
+		spans[s.Name()] = s
+	}
+	job := spans["run job"]
+	require.NotNil(t, job)
+	assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", job.SpanContext().TraceID().String(), "the server's trace")
+	assert.Equal(t, "b7ad6b7169203331", job.Parent().SpanID().String())
+	assert.Equal(t, codes.Error, job.Status().Code)
+	assert.Contains(t, job.Attributes(), telemetry.AttrJobStatus.String("failed"))
+
+	for _, name := range []string{"service db", "step clone", "step test"} {
+		require.Contains(t, spans, name)
+		assert.Equal(t, job.SpanContext().SpanID(), spans[name].Parent().SpanID(), name)
+	}
+	assert.Equal(t, codes.Unset, spans["step clone"].Status().Code)
+	assert.Equal(t, codes.Error, spans["step test"].Status().Code)
+	assert.Contains(t, spans["step test"].Attributes(), telemetry.AttrExitCode.Int(2))
 	r.AssertExpectations(t)
 }
 

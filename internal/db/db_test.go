@@ -546,14 +546,14 @@ func TestStoreRerunJob(t *testing.T) {
 	ctx := t.Context()
 	id := createJobs(t, s, 1)[0]
 
-	job, err := s.RerunJob(ctx, id)
+	job, err := s.RerunJob(ctx, id, "")
 
 	require.NoError(t, err)
 	assert.Greater(t, job.ID, id)
 	assert.Equal(t, models.JobStatusPending, job.Status)
 	assert.Equal(t, "6113728f27ae82c7b1a177c8d03f9e96e0adf246", job.CommitSHA)
 
-	_, err = s.RerunJob(ctx, id+100)
+	_, err = s.RerunJob(ctx, id+100, "")
 	assert.ErrorIs(t, err, ErrJobNotFound)
 }
 
@@ -623,13 +623,46 @@ func TestStoreExpandMatrix(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, again, "an expanded job is not expanded twice")
 
-	rerun, err := s.RerunJob(ctx, ids[1])
+	rerun, err := s.RerunJob(ctx, ids[1], "")
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"GO": "1.28"}, rerun.Matrix, "a rerun keeps its combination")
 
 	plain, err := s.GetJob(ctx, createJobs(t, s, 1)[0])
 	require.NoError(t, err)
 	assert.Nil(t, plain.Matrix)
+}
+
+// TestStoreKeepsTraceParent checks where a job's trace context comes from:
+// the queuing request, the first job of a matrix, or the rerun request.
+func TestStoreKeepsTraceParent(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	const (
+		pushTrace  = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+		rerunTrace = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	)
+	job := pendingJob("6113728f27ae82c7b1a177c8d03f9e96e0adf246")
+	job.TraceParent = pushTrace
+	id, err := s.QueueJob(ctx, job, "hash-trace", "delivery-trace")
+	require.NoError(t, err)
+
+	claimed, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	require.NoError(t, err)
+	assert.Equal(t, pushTrace, claimed.TraceParent)
+
+	ids, err := s.ExpandMatrix(ctx, id, map[string]string{"GO": "1"}, []map[string]string{{"GO": "2"}})
+	require.NoError(t, err)
+	sib, err := s.GetJob(ctx, ids[0])
+	require.NoError(t, err)
+	assert.Equal(t, pushTrace, sib.TraceParent, "matrix jobs share the push's trace")
+
+	rerun, err := s.RerunJob(ctx, id, rerunTrace)
+	require.NoError(t, err)
+	assert.Equal(t, rerunTrace, rerun.TraceParent, "a rerun belongs to the rerun request's trace")
+
+	plain, err := s.GetJob(ctx, createJobs(t, s, 1)[0])
+	require.NoError(t, err)
+	assert.Empty(t, plain.TraceParent)
 }
 
 func TestStoreQueueJobOncePerPayload(t *testing.T) {

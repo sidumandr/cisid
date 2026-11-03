@@ -51,7 +51,7 @@ const CancelReason = "canceled by request"
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at, step_names,
-	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id`
+	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent`
 
 // leaseUntil is the SQL expression for a lease of $N seconds from now,
 // measured on the database clock so servers need not agree on the time.
@@ -80,12 +80,12 @@ func (s *Store) Ping(ctx context.Context) error {
 // CreateJob inserts job and returns its generated ID.
 func (s *Store) CreateJob(ctx context.Context, job models.Job) (int64, error) {
 	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, trace_parent)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id`
 
 	var id int64
-	err := s.pool.QueryRow(ctx, q, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status).Scan(&id)
+	err := s.pool.QueryRow(ctx, q, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status, job.TraceParent).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert job for %s@%s: %w", job.Repo, job.CommitSHA, err)
 	}
@@ -114,9 +114,9 @@ func (s *Store) QueueJob(ctx context.Context, job models.Job, payloadSHA256, del
 
 	var id int64
 	err = tx.QueryRow(ctx, `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status).Scan(&id)
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, trace_parent)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id`, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status, job.TraceParent).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert job for %s@%s: %w", job.Repo, job.CommitSHA, err)
 	}
@@ -260,15 +260,16 @@ func (s *Store) CancelRequestedJobs(ctx context.Context, agents []string) ([]mod
 }
 
 // RerunJob queues a new job for the same commit as job id and returns it.
-func (s *Store) RerunJob(ctx context.Context, id int64) (models.Job, error) {
+// traceParent is the trace the new job belongs to (see models.Job).
+func (s *Store) RerunJob(ctx context.Context, id int64, traceParent string) (models.Job, error) {
 	// A matrix job reruns its own combination only.
 	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id)
-		SELECT repo, clone_url, branch, commit_sha, 'pending', matrix, parent_id FROM jobs WHERE id = $1
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id, trace_parent)
+		SELECT repo, clone_url, branch, commit_sha, 'pending', matrix, parent_id, $2 FROM jobs WHERE id = $1
 		RETURNING id`
 
 	var newID int64
-	err := s.pool.QueryRow(ctx, q, id).Scan(&newID)
+	err := s.pool.QueryRow(ctx, q, id, traceParent).Scan(&newID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.Job{}, fmt.Errorf("%w: %d", ErrJobNotFound, id)
 	}
@@ -365,8 +366,8 @@ func (s *Store) ExpandMatrix(ctx context.Context, id int64, combo map[string]str
 	}
 
 	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id)
-		SELECT repo, clone_url, branch, commit_sha, 'pending', $2, id FROM jobs WHERE id = $1
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id, trace_parent)
+		SELECT repo, clone_url, branch, commit_sha, 'pending', $2, id, trace_parent FROM jobs WHERE id = $1
 		RETURNING id`
 	ids := make([]int64, 0, len(siblings))
 	for _, sib := range siblings {
@@ -587,6 +588,6 @@ func scanJob(row pgx.Row) (models.Job, error) {
 	var j models.Job
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
 		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt,
-		&j.Matrix, &j.ParentID)
+		&j.Matrix, &j.ParentID, &j.TraceParent)
 	return j, err
 }

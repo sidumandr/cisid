@@ -31,6 +31,6 @@ Veritabanına ulaşılamazsa `cisid_jobs` o scrape'te atlanır. Diğer metrikler
 
 ## Loglar
 
-Server ve agent yapılandırılmış log yazar (`log/slog`, `key=value` biçiminde). Seviye `CISID_LOG_LEVEL` ile ayarlanır. Secret değerleri, token'lar ve veritabanı şifresi loglara yazılmaz.
+Server ve agent yapılandırılmış log yazar (`log/slog`, `key=value` biçiminde). Seviye `CISID_LOG_LEVEL` ile ayarlanır. Secret değerleri, token'lar ve veritabanı şifresi loglara yazılmaz. Trace açıksa bir span içinde yazılan satırlar `trace_id` ve `span_id` taşır ([tracing.md](tracing.md)).
 
 > `/metrics` kimlik doğrulama istemez. Server'ı güvenilmeyen bir ağa açıyorsanız bu yolu reverse proxy'de kısıtlayın.

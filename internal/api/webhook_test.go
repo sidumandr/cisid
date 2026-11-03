@@ -9,9 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/sidumandr/cisid/internal/db"
-	"github.com/sidumandr/cisid/internal/metrics"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -20,10 +17,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/metrics"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -292,6 +295,36 @@ func TestWebhookHandlerPassesRequestContext(t *testing.T) {
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
 	store.AssertExpectations(t)
+}
+
+// TestWebhookStoresRequestTrace checks that the queued job remembers the
+// request's span, so its dispatch joins the trace, and the span describes
+// the push.
+func TestWebhookStoresRequestTrace(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	ctx, span := tp.Tracer("test").Start(context.Background(), "POST /webhooks/github")
+	sc := span.SpanContext()
+	want := "00-" + sc.TraceID().String() + "-" + sc.SpanID().String() + "-01"
+
+	body := loadPayload(t, "push.json")
+	store := &mockJobCreator{}
+	store.On("QueueJob", mock.Anything, mock.MatchedBy(func(j models.Job) bool { return j.TraceParent == want }),
+		mock.Anything, mock.Anything).Return(int64(5), nil).Once()
+	h := newTestHandler(t, store)
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-Hub-Signature-256", sign(testSecret, body))
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	span.End()
+
+	assert.Equal(t, http.StatusAccepted, resp.Code)
+	store.AssertExpectations(t)
+	attrs := rec.Ended()[0].Attributes()
+	assert.Contains(t, attrs, telemetry.AttrJobID.Int64(5))
+	assert.Contains(t, attrs, telemetry.AttrRepo.String("sidumandr/cisid"))
 }
 
 func signedPush(t *testing.T, h http.Handler, body []byte) *httptest.ResponseRecorder {

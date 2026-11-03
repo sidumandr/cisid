@@ -42,7 +42,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] ~~Agent ↔ server iletişimini gRPC'ye taşı (`api/proto`).~~ Ertelendi, protokol WebSocket'te kalıyor: [ADR 001](docs/adr/001-agent-protokolu-websocket.md).
 - [x] Agent kimlik doğrulama (ortak token) ve TLS (`CISID_TLS_*`, agent'ta `wss://` ve özel CA).
 - [x] Gözlemlenebilirlik: `slog` yapılandırılmış log ve Prometheus metrikleri ([docs/metrics.md](docs/metrics.md)).
-- [ ] OpenTelemetry trace.
+- [x] OpenTelemetry trace: webhook, dağıtım, GitHub istekleri, agent'ta servisler ve adımlar, commit status tek bir trace'te; OTLP/HTTP ile dışa aktarım ([docs/tracing.md](docs/tracing.md)).
 - [x] Container izolasyonu ve kaynak limitleri: bellek, CPU, süreç sayısı, `no-new-privileges`, job başına ağ, OOM tespiti.
 - [x] Rate limiting (IP başına token bucket) ve webhook replay koruması (imzalı gövdeye göre tekilleştirme ve 7 günden eski payload'ları reddetme).
 - [x] Dağıtım: Docker image'ları ve docker compose stack'i ([docs/deployment.md](docs/deployment.md)).

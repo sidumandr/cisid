@@ -17,6 +17,7 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 | `CISID_STEP_MEMORY` | — | Her adım ve servis container'ı için bellek limiti (`512m`, `2g`). Swap kullanılamaz, limiti aşan container öldürülür. |
 | `CISID_STEP_CPUS` | — | Container başına CPU limiti (`2`, `0.5`) |
 | `CISID_STEP_PIDS` | `4096` | Container başına süreç limiti (fork bomb koruması) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` vb. | — | Trace'lerin gönderileceği OTLP/HTTP collector. Verilmezse trace kapalıdır ([tracing.md](tracing.md)). |
 | `DOCKER_HOST` vb. | Docker varsayılanı | Docker daemon bağlantısı (`client.FromEnv`) |
 
 `SIGINT` / `SIGTERM` graceful shutdown başlatır (aşağıya bak).
@@ -36,7 +37,7 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 | Tip | Yön | Payload |
 |---|---|---|
 | `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, her bağlantıda ilk mesaj. `running_job_id`: elindeki ya da sonucu henüz gönderilmemiş job (yoksa alan yazılmaz) |
-| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}]}` |
+| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}],"trace_parent":"00-..."}`. `trace_parent` yalnızca server trace üretiyorsa vardır ([tracing.md](tracing.md)) |
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
 | `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |

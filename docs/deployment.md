@@ -40,7 +40,7 @@ CISID_PUBLIC_URL=https://ci.example.com
 docker compose -f compose.stack.yaml up -d --build --wait
 ```
 
-Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile değiştirilir). GitHub webhook adresi `/webhooks/github` yoludur ([webhook.md](webhook.md)).
+Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile değiştirilir). GitHub webhook adresi `/webhooks/github` yoludur ([webhook.md](webhook.md)). `.env`'deki `OTEL_EXPORTER_OTLP_ENDPOINT` server'a ve agent'a aktarılır ve trace'leri açar ([tracing.md](tracing.md)).
 
 Daha fazla agent:
 

@@ -19,9 +19,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/pipeline"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -299,6 +304,46 @@ func TestHubRunsJobLifecycle(t *testing.T) {
 	waitFor(t, claimedAgain, "agent to be offered the next job")
 
 	f.store.AssertExpectations(t)
+	f.planner.AssertExpectations(t)
+}
+
+// TestHubTracesDispatch checks that dispatching continues the trace stored
+// with the job: the planner sees the span (so its GitHub requests join the
+// trace) and the agent is told to continue under it.
+func TestHubTracesDispatch(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	const pushTrace = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	unplannable, traced := job(1), job(2)
+	unplannable.TraceParent, traced.TraceParent = pushTrace, pushTrace
+	inSpan := mock.MatchedBy(func(ctx context.Context) bool { return trace.SpanContextFromContext(ctx).IsValid() })
+
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(unplannable, nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(traced, nil).Once()
+		p.On("Plan", inSpan, unplannable).Return(nil, errors.New("no steps")).Once()
+		p.On("Plan", inSpan, traced).Return(cloneSteps, nil).Once()
+		s.On("FinishJob", mock.Anything, "agent-1", mock.Anything).Return(nil).Once()
+	}, WithTracerProvider(tp))
+
+	asg := f.connect(t, "agent-1", 0).expectAssignment(t)
+	require.Eventually(t, func() bool { return len(rec.Ended()) == 2 }, testTimeout, 5*time.Millisecond)
+	spans := rec.Ended()
+
+	for _, span := range spans {
+		assert.Equal(t, "dispatch job", span.Name())
+		assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", span.SpanContext().TraceID().String(), "the push's trace")
+		assert.Equal(t, "b7ad6b7169203331", span.Parent().SpanID().String())
+		assert.Contains(t, span.Attributes(), telemetry.AttrAgent.String("agent-1"))
+	}
+	assert.Contains(t, spans[0].Attributes(), telemetry.AttrJobID.Int64(1))
+	assert.Equal(t, codes.Error, spans[0].Status().Code, "a job that cannot be planned marks its span")
+	assert.Contains(t, spans[1].Attributes(), telemetry.AttrJobID.Int64(2))
+	assert.Equal(t, codes.Unset, spans[1].Status().Code)
+
+	assert.Equal(t, int64(2), asg.JobID)
+	assert.Equal(t, "00-0af7651916cd43dd8448eb211c80319c-"+spans[1].SpanContext().SpanID().String()+"-01", asg.TraceParent,
+		"the agent continues under the dispatch span")
 	f.planner.AssertExpectations(t)
 }
 

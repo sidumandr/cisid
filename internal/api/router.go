@@ -11,6 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/sidumandr/cisid/internal/metrics"
 )
 
@@ -39,6 +44,8 @@ type Handlers struct {
 	RateLimit *RateLimiter
 	// Metrics serves GET /metrics; omitted when nil.
 	Metrics http.Handler
+	// TracerProvider traces webhook and API requests; nil traces nothing.
+	TracerProvider trace.TracerProvider
 }
 
 // NewRouter returns the server's HTTP handler:
@@ -93,7 +100,22 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 		writeJSON(w, http.StatusOK, statusResponse{Status: "ok"})
 	})
 
-	return logRequests(log, recoverPanics(log, mux))
+	handler := logRequests(log, recoverPanics(log, mux))
+	if h.TracerProvider == nil {
+		return handler
+	}
+	return otelhttp.NewHandler(handler, "http request",
+		otelhttp.WithTracerProvider(h.TracerProvider),
+		otelhttp.WithPropagators(propagation.TraceContext{}),
+		otelhttp.WithFilter(traced))
+}
+
+// traced reports whether a request gets a span: webhooks and short API
+// calls do; agent connections and log streams, open for minutes, and the
+// UI, metrics and health checks do not.
+func traced(r *http.Request) bool {
+	p := r.URL.Path
+	return (strings.HasPrefix(p, "/webhooks/") || strings.HasPrefix(p, "/api/")) && !strings.HasSuffix(p, "/stream")
 }
 
 // recoverPanics turns a handler panic into a 500 response instead of a
@@ -132,6 +154,7 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 			route = "unmatched"
 		}
 		metrics.HTTPRequests.WithLabelValues(route, r.Method, strconv.Itoa(rec.status)).Inc()
+		nameSpan(r, route)
 		if !streaming(route) {
 			metrics.HTTPDuration.WithLabelValues(route).Observe(elapsed.Seconds())
 		}
@@ -143,6 +166,22 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 			"duration", elapsed,
 			"remote_addr", r.RemoteAddr)
 	})
+}
+
+// nameSpan names the request's span after the matched route, e.g.
+// "GET /api/jobs/{id}", which the mux only knows after routing.
+func nameSpan(r *http.Request, route string) {
+	span := trace.SpanFromContext(r.Context())
+	if !span.IsRecording() || r.Pattern == "" {
+		return
+	}
+	// Patterns may start with a method ("GET /api/jobs/{id}").
+	path := route
+	if _, p, ok := strings.Cut(route, " "); ok {
+		path = p
+	}
+	span.SetName(r.Method + " " + path)
+	span.SetAttributes(attribute.String("http.route", path))
 }
 
 // statusRecorder captures the response status. It forwards Hijack and Flush

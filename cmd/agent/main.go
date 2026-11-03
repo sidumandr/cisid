@@ -9,6 +9,7 @@
 //	CISID_STEP_MEMORY     memory limit per step and service container, e.g. 2g
 //	CISID_STEP_CPUS       CPU limit per container, e.g. 2 or 0.5
 //	CISID_STEP_PIDS       process limit per container (default 4096)
+//	OTEL_EXPORTER_OTLP_*  OTLP/HTTP trace export, see docs/tracing.md (off when unset)
 //	DOCKER_HOST etc.      Docker daemon connection, see client.FromEnv
 package main
 
@@ -24,20 +25,25 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/moby/moby/client"
 
 	"github.com/sidumandr/cisid/internal/agent"
 	"github.com/sidumandr/cisid/internal/runner"
+	"github.com/sidumandr/cisid/internal/telemetry"
 )
 
-const defaultServerURL = "ws://localhost:8080/agent/ws"
+const (
+	defaultServerURL  = "ws://localhost:8080/agent/ws"
+	traceFlushTimeout = 5 * time.Second
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log := slog.New(telemetry.LogHandler(slog.NewTextHandler(os.Stderr, nil)))
 	if err := run(ctx, log); err != nil {
 		log.Error("agent stopped", "error", err)
 		os.Exit(1)
@@ -77,6 +83,22 @@ func run(ctx context.Context, log *slog.Logger) error {
 	limits, err := limitsFromEnv(os.Getenv)
 	if err != nil {
 		return err
+	}
+
+	tracing, err := telemetry.Setup(ctx, "cisid-agent", os.Getenv)
+	if err != nil {
+		return fmt.Errorf("set up tracing: %w", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), traceFlushTimeout)
+		defer cancel()
+		if err := tracing.Shutdown(ctx); err != nil {
+			log.WarnContext(ctx, "could not export all spans", "error", err)
+		}
+	}()
+	if tracing.Enabled() {
+		cfg.TracerProvider = tracing.Provider
+		log.InfoContext(ctx, "tracing enabled", "endpoint", tracing.Endpoint)
 	}
 
 	cli, err := client.New(client.FromEnv)

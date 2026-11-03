@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/runner"
@@ -35,6 +37,8 @@ const (
 
 	dialTimeout         = 30 * time.Second
 	tlsHandshakeTimeout = 10 * time.Second
+
+	tracerName = "github.com/sidumandr/cisid/internal/agent"
 )
 
 // ErrInvalidConfig is returned by New for an unusable Config.
@@ -76,6 +80,9 @@ type Config struct {
 	// TLS configures wss:// connections, e.g. to trust a private CA; the
 	// system roots are used when nil.
 	TLS *tls.Config
+	// TracerProvider traces jobs, services and steps, continuing the trace
+	// the server sends with each job. Nothing is traced when nil.
+	TracerProvider trace.TracerProvider
 }
 
 // Agent is a worker that runs one job at a time.
@@ -84,6 +91,7 @@ type Agent struct {
 	runner StepRunner
 	log    *slog.Logger
 	client *http.Client
+	tracer trace.Tracer
 	out    *outbox
 	busy   atomic.Bool
 	// runningJob is the job accepted last whose result the server has not
@@ -123,8 +131,12 @@ func New(cfg Config, r StepRunner, log *slog.Logger) (*Agent, error) {
 	if log == nil {
 		log = slog.Default()
 	}
+	tp := cfg.TracerProvider
+	if tp == nil {
+		tp = noop.NewTracerProvider()
+	}
 	return &Agent{
-		cfg: cfg, runner: r, log: log, client: newHTTPClient(cfg.TLS),
+		cfg: cfg, runner: r, log: log, client: newHTTPClient(cfg.TLS), tracer: tp.Tracer(tracerName),
 		out: newOutbox(outboxSize), cancelLater: map[int64]bool{},
 	}, nil
 }

@@ -15,8 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/metrics"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -140,6 +143,12 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 		return
 	}
 
+	// The job continues this request's trace when it is dispatched.
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(telemetry.AttrDeliveryID.String(delivery), telemetry.AttrRepo.String(job.Repo),
+		telemetry.AttrBranch.String(job.Branch), telemetry.AttrCommit.String(job.CommitSHA))
+	job.TraceParent = telemetry.TraceParent(ctx)
+
 	sum := sha256.Sum256(body)
 	id, err := h.jobs.QueueJob(ctx, job, hex.EncodeToString(sum[:]), delivery)
 	if errors.Is(err, db.ErrDuplicateDelivery) {
@@ -156,6 +165,7 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 	}
 
 	metrics.Webhooks.WithLabelValues("queued").Inc()
+	span.SetAttributes(telemetry.AttrJobID.Int64(id))
 	h.log.InfoContext(ctx, "job queued", "delivery", delivery, "job_id", id,
 		"repo", job.Repo, "branch", job.Branch, "commit", job.CommitSHA)
 	writeJSON(w, http.StatusAccepted, webhookResponse{Status: "queued", JobID: id})

@@ -84,6 +84,9 @@ type JobAssignment struct {
 	JobID    int64         `json:"job_id"`
 	Steps    []StepSpec    `json:"steps"`
 	Services []ServiceSpec `json:"services,omitempty"`
+	// TraceParent is the W3C traceparent the agent's spans continue;
+	// empty when the server does not trace.
+	TraceParent string `json:"trace_parent,omitempty"`
 }
 
 // ServiceSpec is a container running alongside the steps of a job; steps

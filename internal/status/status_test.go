@@ -12,8 +12,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -134,10 +138,10 @@ func job(id int64, st models.JobStatus) models.Job {
 	return models.Job{ID: id, Repo: "sidumandr/cisid", CommitSHA: "6113728f27ae82c7b1a177c8d03f9e96e0adf246", Status: st, Agent: "w1"}
 }
 
-func startReporter(t *testing.T, store Store, poster Poster) *Reporter {
+func startReporter(t *testing.T, store Store, poster Poster, opts ...Option) *Reporter {
 	t.Helper()
-	r := New(store, poster, WithLogger(slog.New(slog.DiscardHandler)), WithInterval(time.Hour),
-		WithJobURL(func(id int64) string { return fmt.Sprintf("https://ci.example.com/jobs/%d", id) }))
+	r := New(store, poster, append([]Option{WithLogger(slog.New(slog.DiscardHandler)), WithInterval(time.Hour),
+		WithJobURL(func(id int64) string { return fmt.Sprintf("https://ci.example.com/jobs/%d", id) })}, opts...)...)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
@@ -185,6 +189,27 @@ func TestReporterRetriesWhenGitHubIsDown(t *testing.T) {
 	poster.setErr(nil)
 	r.Wake()
 	require.Eventually(t, func() bool { return len(poster.all()) == 2 }, time.Second, 5*time.Millisecond)
+}
+
+// TestReporterTracesReports checks that a report joins its job's trace and
+// a failed post marks the span.
+func TestReporterTracesReports(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	traced := job(1, models.JobStatusSuccess)
+	traced.TraceParent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	store := &fakeStore{}
+	store.set(traced)
+	poster := &fakePoster{err: errors.New("unexpected response 403 Forbidden")}
+	startReporter(t, store, poster, WithTracerProvider(tp))
+
+	require.Eventually(t, func() bool { return len(rec.Ended()) == 1 }, time.Second, 5*time.Millisecond)
+	span := rec.Ended()[0]
+	assert.Equal(t, "report commit status", span.Name())
+	assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", span.SpanContext().TraceID().String())
+	assert.Equal(t, "b7ad6b7169203331", span.Parent().SpanID().String())
+	assert.Contains(t, span.Attributes(), telemetry.AttrJobID.Int64(1))
+	assert.Equal(t, codes.Error, span.Status().Code)
 }
 
 func TestReporterGivesUpOnPermanentErrors(t *testing.T) {

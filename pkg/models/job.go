@@ -46,6 +46,10 @@ type Job struct {
 	Matrix   map[string]string `json:"matrix,omitempty"`
 	ParentID *int64            `json:"parent_id,omitempty"`
 
+	// TraceParent is the W3C traceparent of the span that queued the job;
+	// dispatching and running it continue that trace. Empty without tracing.
+	TraceParent string `json:"-"`
+
 	// Set once the job has finished.
 	ExitCode   *int       `json:"exit_code,omitempty"`
 	FailedStep *int       `json:"failed_step,omitempty"`

@@ -5,13 +5,18 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/sidumandr/cisid/internal/runner"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -40,7 +45,7 @@ func (a *Agent) executeJobs(ctx context.Context, jobs <-chan models.JobAssignmen
 			return
 		case job := <-jobs:
 			jobCtx := a.startJob(ctx, job.JobID)
-			res := a.execute(jobCtx, job)
+			res := a.run(jobCtx, job)
 			a.endJob(job.JobID)
 			a.report(ctx, res)
 			a.busy.Store(false)
@@ -72,6 +77,31 @@ func (a *Agent) endJob(jobID int64) {
 	delete(a.cancelLater, jobID)
 }
 
+// run executes job in a span that continues the trace the server sent.
+func (a *Agent) run(ctx context.Context, job models.JobAssignment) models.JobResult {
+	ctx, span := a.tracer.Start(telemetry.WithTraceParent(ctx, job.TraceParent), "run job",
+		trace.WithAttributes(telemetry.AttrJobID.Int64(job.JobID), telemetry.AttrAgent.String(a.cfg.Name)))
+	defer span.End()
+
+	res := a.execute(ctx, job)
+	span.SetAttributes(telemetry.AttrJobStatus.String(string(res.Status)))
+	if res.Status == models.JobStatusFailed {
+		span.SetStatus(codes.Error, failureText(res))
+	}
+	return res
+}
+
+// failureText describes why a failed job failed.
+func failureText(res models.JobResult) string {
+	if res.Error != "" {
+		return res.Error
+	}
+	if res.FailedStep != nil {
+		return fmt.Sprintf("step %d exited with %d", *res.FailedStep, res.ExitCode)
+	}
+	return "failed"
+}
+
 // execute runs the steps of job in order on a shared workspace volume and
 // stops at the first failing step.
 func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.JobResult {
@@ -96,12 +126,17 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 			return a.runner.RemoveNetwork(ctx, network)
 		})
 		for _, svc := range job.Services {
-			id, err := a.runner.StartService(ctx, runner.Service{
+			svcCtx, span := a.tracer.Start(ctx, "service "+svc.Name, trace.WithAttributes(
+				telemetry.AttrService.String(svc.Name), telemetry.AttrStepImage.String(svc.Image)))
+			id, err := a.runner.StartService(svcCtx, runner.Service{
 				Name: svc.Name, Image: svc.Image, Env: svc.Env, Cmd: svc.Command, Network: network,
 			})
 			if err != nil {
+				span.SetStatus(codes.Error, err.Error())
+				span.End()
 				return a.setupFailed(ctx, res, "start service "+svc.Name, err)
 			}
+			span.End()
 			defer a.cleanup(ctx, "stop service "+svc.Name, func(ctx context.Context) error {
 				return a.runner.StopService(ctx, id)
 			})
@@ -114,7 +149,7 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 		stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}, spec.Secrets)
 		stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}, spec.Secrets)
 
-		code, err := a.runner.Run(ctx, toRunnerStep(job.JobID, spec, workspace, network), stdout, stderr)
+		code, err := a.runStep(ctx, i, spec, toRunnerStep(job.JobID, spec, workspace, network), stdout, stderr)
 		_ = stdout.Flush()
 		_ = stderr.Flush()
 		if err == nil && code == 0 {
@@ -137,6 +172,23 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 		return res
 	}
 	return res
+}
+
+// runStep runs one step in its own span.
+func (a *Agent) runStep(ctx context.Context, i int, spec models.StepSpec, step runner.Step, stdout, stderr io.Writer) (int, error) {
+	ctx, span := a.tracer.Start(ctx, "step "+spec.Name, trace.WithAttributes(telemetry.AttrStepIndex.Int(i),
+		telemetry.AttrStepName.String(spec.Name), telemetry.AttrStepImage.String(spec.Image)))
+	defer span.End()
+
+	code, err := a.runner.Run(ctx, step, stdout, stderr)
+	span.SetAttributes(telemetry.AttrExitCode.Int(code))
+	switch {
+	case err != nil:
+		span.SetStatus(codes.Error, err.Error())
+	case code != 0:
+		span.SetStatus(codes.Error, fmt.Sprintf("exit code %d", code))
+	}
+	return code, err
 }
 
 // report queues the job result. It still works after ctx is canceled, so a

@@ -13,9 +13,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/metrics"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -27,6 +32,8 @@ const (
 	roundTimeout    = 30 * time.Second
 	batchSize       = 50
 	maxDescription  = 140 // GitHub's limit
+
+	tracerName = "github.com/sidumandr/cisid/internal/status"
 )
 
 // Store tracks which job statuses have been reported. *db.Store satisfies it.
@@ -63,6 +70,11 @@ func WithJobURL(f func(jobID int64) string) Option {
 	return func(r *Reporter) { r.jobURL = f }
 }
 
+// WithTracerProvider traces each report as part of its job's trace.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(r *Reporter) { r.tracer = tp.Tracer(tracerName) }
+}
+
 // Reporter posts job statuses to GitHub.
 type Reporter struct {
 	store    Store
@@ -70,6 +82,7 @@ type Reporter struct {
 	log      *slog.Logger
 	interval time.Duration
 	jobURL   func(int64) string
+	tracer   trace.Tracer
 	wake     chan struct{}
 }
 
@@ -80,6 +93,7 @@ func New(store Store, poster Poster, opts ...Option) *Reporter {
 		poster:   poster,
 		log:      slog.Default(),
 		interval: defaultInterval,
+		tracer:   noop.NewTracerProvider().Tracer(tracerName),
 		wake:     make(chan struct{}, 1),
 	}
 	for _, opt := range opts {
@@ -148,7 +162,14 @@ func (r *Reporter) report(ctx context.Context, job models.Job) bool {
 		st.TargetURL = r.jobURL(job.ID)
 	}
 
+	ctx, span := r.tracer.Start(telemetry.WithTraceParent(ctx, job.TraceParent), "report commit status",
+		trace.WithAttributes(telemetry.AttrJobID.Int64(job.ID), telemetry.AttrJobStatus.String(string(job.Status))))
+	defer span.End()
+
 	err := r.poster.CreateStatus(ctx, job.Repo, job.CommitSHA, st)
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	}
 	switch {
 	case errors.Is(err, github.ErrTemporary):
 		metrics.CommitStatuses.WithLabelValues("retry").Inc()

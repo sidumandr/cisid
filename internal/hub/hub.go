@@ -13,9 +13,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/internal/pipeline"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -25,6 +30,8 @@ const (
 	defaultLease        = 5 * time.Minute
 	cancelPollInterval  = 2 * time.Second
 	roundTimeout        = 30 * time.Second
+
+	tracerName = "github.com/sidumandr/cisid/internal/hub"
 )
 
 // Store is the persistence the hub needs. *db.Store satisfies it.
@@ -91,6 +98,11 @@ func WithJobChanged(f func(jobID int64)) Option {
 	return func(h *Hub) { h.jobChanged = f }
 }
 
+// WithTracerProvider traces job dispatching, continuing each job's trace.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(h *Hub) { h.tracer = tp.Tracer(tracerName) }
+}
+
 // Hub dispatches jobs to connected agents. Serve agents with ServeHTTP and
 // run the dispatcher with Run.
 type Hub struct {
@@ -102,6 +114,7 @@ type Hub struct {
 	lease        time.Duration
 	agentToken   string
 	jobChanged   func(jobID int64)
+	tracer       trace.Tracer
 	wake         chan struct{}
 
 	mu      sync.Mutex
@@ -141,6 +154,7 @@ func New(store Store, planner Planner, opts ...Option) *Hub {
 		drainTimeout: defaultDrainTimeout,
 		lease:        defaultLease,
 		jobChanged:   func(int64) {},
+		tracer:       noop.NewTracerProvider().Tracer(tracerName),
 		wake:         make(chan struct{}, 1),
 		agents:       map[string]*agentConn{},
 		closing:      make(chan struct{}),
@@ -302,52 +316,74 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 			return false
 		}
 
-		plan, err := h.planner.Plan(ctx, job)
-		if errors.Is(err, pipeline.ErrTemporary) {
-			// Retry on a later round; continuing now would claim the same job again.
-			h.log.WarnContext(ctx, "planning failed, job requeued", "job_id", job.ID, "error", err)
-			h.requeue(ctx, job.ID, a.name)
-			return false
+		if retry, more := h.dispatchJob(ctx, a, job); !retry {
+			return more
 		}
-		if err != nil {
-			h.failJob(ctx, a.name, job.ID, "plan job: "+err.Error())
-			continue
-		}
-
-		if len(plan.Siblings) > 0 {
-			// The first job of a matrix: queue the other combinations.
-			ids, err := h.store.ExpandMatrix(ctx, job.ID, plan.Matrix, plan.Siblings)
-			if err != nil {
-				h.log.ErrorContext(ctx, "expand matrix, job requeued", "job_id", job.ID, "error", err)
-				h.requeue(ctx, job.ID, a.name)
-				return false
-			}
-			h.log.InfoContext(ctx, "matrix expanded", "job_id", job.ID, "jobs", ids)
-			for _, id := range ids {
-				h.jobChanged(id)
-			}
-		}
-
-		asg := plan.Assignment
-		asg.JobID = job.ID
-		names := make([]string, len(asg.Steps))
-		for i, s := range asg.Steps {
-			names[i] = s.Name
-		}
-		if err := h.store.SetJobSteps(ctx, job.ID, names); err != nil {
-			h.log.WarnContext(ctx, "record job steps", "job_id", job.ID, "error", err)
-		}
-
-		if h.assign(a, asg) {
-			h.log.InfoContext(ctx, "job assigned", "job_id", job.ID, "agent", a.name,
-				"steps", len(asg.Steps), "services", len(asg.Services))
-			h.jobChanged(job.ID)
-			return true
-		}
-		// The agent went away or became busy since idleAgents.
-		h.requeue(ctx, job.ID, a.name)
-		return true
 	}
+}
+
+// dispatchJob plans job, claimed for a, and sends it to a, in a span that
+// continues the job's trace. retry reports that the job failed planning and
+// another can be claimed for a; otherwise more is dispatchTo's result.
+func (h *Hub) dispatchJob(ctx context.Context, a *agentConn, job models.Job) (retry, more bool) {
+	ctx, span := h.tracer.Start(telemetry.WithTraceParent(ctx, job.TraceParent), "dispatch job",
+		trace.WithAttributes(telemetry.AttrJobID.Int64(job.ID), telemetry.AttrRepo.String(job.Repo),
+			telemetry.AttrCommit.String(job.CommitSHA), telemetry.AttrAgent.String(a.name)))
+	defer span.End()
+
+	plan, err := h.planner.Plan(ctx, job)
+	if errors.Is(err, pipeline.ErrTemporary) {
+		// Retry on a later round; continuing now would claim the same job again.
+		span.SetStatus(codes.Error, err.Error())
+		h.log.WarnContext(ctx, "planning failed, job requeued", "job_id", job.ID, "error", err)
+		h.requeue(ctx, job.ID, a.name)
+		return false, false
+	}
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+		h.failJob(ctx, a.name, job.ID, "plan job: "+err.Error())
+		return true, false
+	}
+	if len(plan.Matrix) > 0 {
+		span.SetAttributes(telemetry.AttrMatrix.String(models.MatrixLabel(plan.Matrix)))
+	}
+
+	if len(plan.Siblings) > 0 {
+		// The first job of a matrix: queue the other combinations.
+		ids, err := h.store.ExpandMatrix(ctx, job.ID, plan.Matrix, plan.Siblings)
+		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
+			h.log.ErrorContext(ctx, "expand matrix, job requeued", "job_id", job.ID, "error", err)
+			h.requeue(ctx, job.ID, a.name)
+			return false, false
+		}
+		h.log.InfoContext(ctx, "matrix expanded", "job_id", job.ID, "jobs", ids)
+		for _, id := range ids {
+			h.jobChanged(id)
+		}
+	}
+
+	asg := plan.Assignment
+	asg.JobID = job.ID
+	asg.TraceParent = telemetry.TraceParent(ctx)
+	names := make([]string, len(asg.Steps))
+	for i, s := range asg.Steps {
+		names[i] = s.Name
+	}
+	if err := h.store.SetJobSteps(ctx, job.ID, names); err != nil {
+		h.log.WarnContext(ctx, "record job steps", "job_id", job.ID, "error", err)
+	}
+
+	if h.assign(a, asg) {
+		h.log.InfoContext(ctx, "job assigned", "job_id", job.ID, "agent", a.name,
+			"steps", len(asg.Steps), "services", len(asg.Services))
+		h.jobChanged(job.ID)
+		return false, true
+	}
+	// The agent went away or became busy since idleAgents.
+	span.AddEvent("agent unavailable, job requeued")
+	h.requeue(ctx, job.ID, a.name)
+	return false, true
 }
 
 // requeue gives a claimed job back. It runs even when ctx is canceled, so

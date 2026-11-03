@@ -41,8 +41,8 @@ func (m *mockJobReader) CancelJob(ctx context.Context, id int64) (models.Job, er
 	return args.Get(0).(models.Job), args.Error(1)
 }
 
-func (m *mockJobReader) RerunJob(ctx context.Context, id int64) (models.Job, error) {
-	args := m.Called(ctx, id)
+func (m *mockJobReader) RerunJob(ctx context.Context, id int64, traceParent string) (models.Job, error) {
+	args := m.Called(ctx, id, traceParent)
 	return args.Get(0).(models.Job), args.Error(1)
 }
 
@@ -377,7 +377,7 @@ func TestWriteEndpointsNeedToken(t *testing.T) {
 			}
 		}
 		store.AssertNotCalled(t, "CancelJob", mock.Anything, mock.Anything)
-		store.AssertNotCalled(t, "RerunJob", mock.Anything, mock.Anything)
+		store.AssertNotCalled(t, "RerunJob", mock.Anything, mock.Anything, mock.Anything)
 	})
 }
 
@@ -405,8 +405,8 @@ func TestRerunJob(t *testing.T) {
 	store := &mockJobReader{}
 	again := runningJob(9)
 	again.Status = models.JobStatusPending
-	store.On("RerunJob", mock.Anything, int64(5)).Return(again, nil).Once()
-	store.On("RerunJob", mock.Anything, int64(6)).Return(models.Job{}, db.ErrJobNotFound).Once()
+	store.On("RerunJob", mock.Anything, int64(5), mock.Anything).Return(again, nil).Once()
+	store.On("RerunJob", mock.Anything, int64(6), mock.Anything).Return(models.Job{}, db.ErrJobNotFound).Once()
 	var changed []int64
 	_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken),
 		WithJobChanged(func(id int64) { changed = append(changed, id) }))

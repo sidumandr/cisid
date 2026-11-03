@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -37,7 +38,7 @@ type JobReader interface {
 type JobStore interface {
 	JobReader
 	CancelJob(ctx context.Context, id int64) (models.Job, error)
-	RerunJob(ctx context.Context, id int64) (models.Job, error)
+	RerunJob(ctx context.Context, id int64, traceParent string) (models.Job, error)
 }
 
 var _ JobStore = (*db.Store)(nil)
@@ -169,7 +170,7 @@ func (j *JobsAPI) rerun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	job, err := j.store.RerunJob(r.Context(), id)
+	job, err := j.store.RerunJob(r.Context(), id, telemetry.TraceParent(r.Context()))
 	if errors.Is(err, db.ErrJobNotFound) {
 		writeError(w, http.StatusNotFound, "job not found")
 		return

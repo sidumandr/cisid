@@ -6,17 +6,23 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/sidumandr/cisid/internal/metrics"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/sidumandr/cisid/internal/metrics"
+	"github.com/sidumandr/cisid/pkg/models"
 )
 
 type mockPinger struct {
@@ -150,6 +156,61 @@ func TestRouterRoutes(t *testing.T) {
 		f := newRouterFixture(t)
 		assert.Equal(t, http.StatusMethodNotAllowed, f.do(http.MethodPost, "/healthz").Code)
 	})
+}
+
+// TestRouterTraces checks that webhook and API requests get a span named
+// after their route, continuing a caller's trace, and agents and health
+// checks get none.
+func TestRouterTraces(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
+	store := &mockJobReader{}
+	store.On("GetJob", mock.Anything, int64(7)).Return(models.Job{ID: 7, Status: models.JobStatusSuccess}, nil)
+	jobs := NewJobsAPI(store, &fakeEvents{}, slog.New(slog.DiscardHandler))
+	t.Cleanup(jobs.Close)
+
+	var inWebhook trace.SpanContext
+	h := NewRouter(Handlers{
+		Webhook: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			inWebhook = trace.SpanContextFromContext(r.Context())
+			w.WriteHeader(http.StatusAccepted)
+		}),
+		Agents:         http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusSwitchingProtocols) }),
+		Jobs:           jobs,
+		DB:             &mockPinger{},
+		TracerProvider: tp,
+	}, slog.New(slog.DiscardHandler))
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/github", nil)
+	req.Header.Set("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	for _, path := range []string{"/api/jobs/7", "/healthz", "/agent/ws"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+
+	spans := rec.Ended()
+	require.Len(t, spans, 2, "only the webhook and the API call are traced")
+	assert.Equal(t, "POST /webhooks/github", spans[0].Name())
+	assert.Equal(t, "0af7651916cd43dd8448eb211c80319c", spans[0].SpanContext().TraceID().String(), "the caller's trace")
+	assert.Equal(t, spans[0].SpanContext(), inWebhook, "the handler runs in the span")
+	assert.Equal(t, "GET /api/jobs/{id}", spans[1].Name())
+	assert.Contains(t, spans[1].Attributes(), attribute.String("http.route", "/api/jobs/{id}"))
+}
+
+func TestRouterTracesOnlyShortRequests(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/webhooks/github":        true,
+		"/api/jobs":               true,
+		"/api/jobs/7/rerun":       true,
+		"/api/jobs/7/logs/stream": false,
+		"/agent/ws":               false,
+		"/metrics":                false,
+		"/healthz":                false,
+		"/ui/app.js":              false,
+		"/":                       false,
+	} {
+		assert.Equal(t, want, traced(httptest.NewRequest(http.MethodGet, path, nil)), path)
+	}
 }
 
 func TestRouterRecoversFromPanics(t *testing.T) {

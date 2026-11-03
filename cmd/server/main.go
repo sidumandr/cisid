@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/api"
@@ -31,6 +32,7 @@ import (
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/internal/status"
+	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/internal/web"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -38,6 +40,7 @@ import (
 const (
 	dbConnectTimeout  = 10 * time.Second
 	poolCloseTimeout  = 5 * time.Second
+	traceFlushTimeout = 5 * time.Second
 	deliveryRetention = 8 * 24 * time.Hour
 )
 
@@ -57,8 +60,21 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err != nil {
 		return err
 	}
-	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	log := slog.New(telemetry.LogHandler(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel})))
 	log.InfoContext(ctx, "server starting", "config", cfg)
+
+	tracing, err := telemetry.Setup(ctx, "cisid-server", getenv)
+	if err != nil {
+		return fmt.Errorf("set up tracing: %w", err)
+	}
+	// Deferred first, so it runs last and exports the spans of shutdown too.
+	defer flushTraces(ctx, tracing, log)
+	// The HTTP and GitHub wrappers are left out entirely when tracing is off.
+	var httpTracing trace.TracerProvider
+	if tracing.Enabled() {
+		httpTracing = tracing.Provider
+		log.InfoContext(ctx, "tracing enabled", "endpoint", tracing.Endpoint)
+	}
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -80,6 +96,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	log.InfoContext(ctx, "database ready", "migrations_applied", applied)
 
 	gh := &github.Client{APIURL: cfg.GitHubAPIURL, Token: cfg.GitHubToken}
+	if httpTracing != nil {
+		gh.HTTP = github.TracedHTTPClient(httpTracing)
+	}
 
 	// Interfaces stay nil (not a nil *Vault) when secrets are off.
 	var (
@@ -102,7 +121,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	var reporter *status.Reporter
 	jobChanged := func(int64) {}
 	if cfg.GitHubToken != "" {
-		reporter = status.New(store, gh, status.WithLogger(log), status.WithJobURL(jobURL(cfg.PublicURL)))
+		reporter = status.New(store, gh, status.WithLogger(log), status.WithJobURL(jobURL(cfg.PublicURL)),
+			status.WithTracerProvider(tracing.Provider))
 		jobChanged = func(int64) { reporter.Wake() }
 	} else {
 		log.InfoContext(ctx, "commit statuses disabled: CISID_GITHUB_TOKEN is not set")
@@ -112,7 +132,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		log.WarnContext(ctx, "agents are not authenticated: set CISID_AGENT_TOKEN on the server and the agents")
 	}
 	agents := hub.New(store, planner, hub.WithLogger(log), hub.WithJobChanged(jobChanged),
-		hub.WithAgentToken(cfg.AgentToken))
+		hub.WithAgentToken(cfg.AgentToken), hub.WithTracerProvider(tracing.Provider))
 	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, func(id int64) {
 		agents.Wake()
 		jobChanged(id)
@@ -142,6 +162,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			RateLimit: rateLimiter(cfg),
 			Metrics:   metrics.Handler(),
 			DB:        store,
+			// Webhook and API requests start the traces jobs continue.
+			TracerProvider: httpTracing,
 		}, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
@@ -239,6 +261,16 @@ func jobURL(publicURL string) func(int64) string {
 		return nil
 	}
 	return func(id int64) string { return fmt.Sprintf("%s/jobs/%d", publicURL, id) }
+}
+
+// flushTraces exports the spans still buffered, but gives up after a few
+// seconds so an unreachable collector cannot keep the process running.
+func flushTraces(ctx context.Context, tracing *telemetry.Tracing, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), traceFlushTimeout)
+	defer cancel()
+	if err := tracing.Shutdown(ctx); err != nil {
+		log.WarnContext(ctx, "could not export all spans", "error", err)
+	}
 }
 
 // closePool closes the database pool, but gives up waiting after a few
