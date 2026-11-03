@@ -27,6 +27,10 @@ var (
 	ErrInvalidJobResult = errors.New("invalid job result")
 )
 
+// JobEventsChannel is the PostgreSQL NOTIFY channel on which the ID of a
+// job is published whenever it gets new log output or finishes.
+const JobEventsChannel = "cisid_job_events"
+
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at,
@@ -143,6 +147,19 @@ func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) 
 	return int(tag.RowsAffected()), nil
 }
 
+// ListJobs returns the most recent jobs, newest first.
+func (s *Store) ListJobs(ctx context.Context, limit int) ([]models.Job, error) {
+	rows, err := s.pool.Query(ctx, "SELECT "+jobColumns+" FROM jobs ORDER BY id DESC LIMIT $1", limit)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (models.Job, error) { return scanJob(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	return jobs, nil
+}
+
 // RenewLeases extends the leases of all jobs running on the given agents,
 // which are known to be connected, and returns how many it renewed.
 func (s *Store) RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error) {
@@ -210,10 +227,14 @@ func (s *Store) FinishJob(ctx context.Context, agent string, res models.JobResul
 	}
 
 	const q = `
-		UPDATE jobs
-		SET status = $3, exit_code = $4, failed_step = $5, error = NULLIF($6, ''),
-		    lease_expires_at = NULL, finished_at = now(), updated_at = now()
-		WHERE id = $1 AND status = 'running' AND agent = $2`
+		WITH finished AS (
+			UPDATE jobs
+			SET status = $3, exit_code = $4, failed_step = $5, error = NULLIF($6, ''),
+			    lease_expires_at = NULL, finished_at = now(), updated_at = now()
+			WHERE id = $1 AND status = 'running' AND agent = $2
+			RETURNING id
+		)
+		SELECT pg_notify('` + JobEventsChannel + `', id::text) FROM finished`
 
 	tag, err := s.pool.Exec(ctx, q, res.JobID, agent, res.Status, res.ExitCode, res.FailedStep, res.Error)
 	if err != nil {
@@ -225,13 +246,17 @@ func (s *Store) FinishJob(ctx context.Context, agent string, res models.JobResul
 	return nil
 }
 
-// AppendJobLog stores a log chunk. A chunk already stored (same job and
-// seq) is ignored, so resending is safe.
+// AppendJobLog stores a log chunk and notifies JobEventsChannel. A chunk
+// already stored (same job and seq) is ignored, so resending is safe.
 func (s *Store) AppendJobLog(ctx context.Context, l models.JobLog) error {
 	const q = `
-		INSERT INTO job_logs (job_id, seq, step, stream, data)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (job_id, seq) DO NOTHING`
+		WITH inserted AS (
+			INSERT INTO job_logs (job_id, seq, step, stream, data)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (job_id, seq) DO NOTHING
+			RETURNING job_id
+		)
+		SELECT pg_notify('` + JobEventsChannel + `', job_id::text) FROM inserted`
 
 	// PostgreSQL text cannot hold NUL bytes.
 	data := strings.ReplaceAll(l.Data, "\x00", "")
@@ -241,11 +266,21 @@ func (s *Store) AppendJobLog(ctx context.Context, l models.JobLog) error {
 	return nil
 }
 
-// JobLogs returns the stored log chunks of a job in seq order.
+// JobLogs returns all stored log chunks of a job in seq order.
 func (s *Store) JobLogs(ctx context.Context, jobID int64) ([]models.JobLog, error) {
-	const q = `SELECT job_id, step, stream, seq, data FROM job_logs WHERE job_id = $1 ORDER BY seq`
+	return s.JobLogsAfter(ctx, jobID, 0, -1)
+}
 
-	rows, err := s.pool.Query(ctx, q, jobID)
+// JobLogsAfter returns up to limit log chunks of a job with seq greater
+// than after, in seq order. A negative limit means no limit.
+func (s *Store) JobLogsAfter(ctx context.Context, jobID, after int64, limit int) ([]models.JobLog, error) {
+	const q = `
+		SELECT job_id, step, stream, seq, data FROM job_logs
+		WHERE job_id = $1 AND seq > $2
+		ORDER BY seq
+		LIMIT CASE WHEN $3 < 0 THEN NULL ELSE $3 END`
+
+	rows, err := s.pool.Query(ctx, q, jobID, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query logs of job %d: %w", jobID, err)
 	}

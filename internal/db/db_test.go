@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -393,4 +395,69 @@ func TestStoreAdoptJob(t *testing.T) {
 		err = s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute)
 		assert.ErrorIs(t, err, ErrJobConflict)
 	})
+}
+
+func TestStoreListJobs(t *testing.T) {
+	s, _ := newStore(t)
+	ids := createJobs(t, s, 3)
+
+	jobs, err := s.ListJobs(t.Context(), 2)
+
+	require.NoError(t, err)
+	require.Len(t, jobs, 2)
+	assert.Equal(t, []int64{ids[2], ids[1]}, []int64{jobs[0].ID, jobs[1].ID}, "newest first")
+}
+
+func TestStoreJobLogsAfter(t *testing.T) {
+	s, _ := newStore(t)
+	id := createJobs(t, s, 1)[0]
+	for seq := int64(1); seq <= 5; seq++ {
+		require.NoError(t, s.AppendJobLog(t.Context(), models.JobLog{JobID: id, Seq: seq, Stream: models.StreamStdout, Data: "x"}))
+	}
+
+	logs, err := s.JobLogsAfter(t.Context(), id, 2, 2)
+
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+	assert.Equal(t, []int64{3, 4}, []int64{logs[0].Seq, logs[1].Seq})
+}
+
+func TestStoreNotifiesJobEvents(t *testing.T) {
+	s, pool := newStore(t)
+	ctx := t.Context()
+	id := createJobs(t, s, 1)[0]
+	_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	require.NoError(t, err)
+
+	conn, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	defer conn.Release()
+	_, err = conn.Exec(ctx, "LISTEN "+JobEventsChannel)
+	require.NoError(t, err)
+
+	next := func() (string, bool) {
+		wctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		defer cancel()
+		n, err := conn.Conn().WaitForNotification(wctx)
+		if err != nil {
+			return "", false
+		}
+		return n.Payload, true
+	}
+	want := strconv.FormatInt(id, 10)
+
+	l := models.JobLog{JobID: id, Seq: 1, Stream: models.StreamStdout, Data: "hello\n"}
+	require.NoError(t, s.AppendJobLog(ctx, l))
+	payload, ok := next()
+	require.True(t, ok, "a new log chunk is announced")
+	assert.Equal(t, want, payload)
+
+	require.NoError(t, s.AppendJobLog(ctx, l))
+	_, ok = next()
+	assert.False(t, ok, "a duplicate chunk is not announced")
+
+	require.NoError(t, s.FinishJob(ctx, "agent-1", models.JobResult{JobID: id, Status: models.JobStatusSuccess}))
+	payload, ok = next()
+	require.True(t, ok, "a finished job is announced")
+	assert.Equal(t, want, payload)
 }
