@@ -2,13 +2,14 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1 (MVP) tamam, Faz 2 geliştiriliyor. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+> Durum: Faz 1 (MVP) ve Faz 2 (streaming) tamam. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
 
 ## Dokümanlar
 
 - [ROADMAP.md](ROADMAP.md): fazlar ve ilerleme
 - [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
 - [docs/pipeline.md](docs/pipeline.md): `.cisid.yml` formatı ve adımların çalışma şekli
+- [docs/api.md](docs/api.md): Job API ve canlı log akışı (SSE)
 - [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
 - [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
@@ -76,6 +77,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
 │   ├── api/         # HTTP router, handler'lar, middleware
 │   ├── config/      # Ortam değişkenlerinden server yapılandırması
+│   ├── events/      # PostgreSQL LISTEN/NOTIFY ile job değişikliği bildirimleri
 │   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
 │   ├── github/      # GitHub API istemcisi (.cisid.yml okuma)
 │   ├── pipeline/    # .cisid.yml ayrıştırma, job → adımlar

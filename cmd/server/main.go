@@ -16,12 +16,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/api"
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/events"
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/hub"
 	"github.com/sidumandr/cisid/internal/pipeline"
@@ -75,20 +77,40 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		return fmt.Errorf("create webhook handler: %w", err)
 	}
 
+	broker := events.New(log)
+	jobsAPI := api.NewJobsAPI(store, broker, log)
+
 	srv := &http.Server{
-		Handler:           api.NewRouter(webhook, agents, store, log),
+		Handler: api.NewRouter(api.Handlers{
+			Webhook: webhook,
+			Agents:  agents,
+			Jobs:    jobsAPI,
+			DB:      store,
+		}, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
+	// Live log streams would otherwise keep Shutdown waiting.
+	srv.RegisterOnShutdown(jobsAPI.Close)
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.HTTPAddr, err)
 	}
 
-	// If either stops with an error, the other is shut down too.
+	// If one stops with an error, the others are shut down too.
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return agents.Run(gctx) })
+	g.Go(func() error {
+		return broker.Listen(gctx, func(ctx context.Context) (*pgx.Conn, error) {
+			c, err := pool.Acquire(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// LISTEN state must not return to the pool.
+			return c.Hijack(), nil
+		})
+	})
 	g.Go(func() error { return serve(gctx, srv, ln, cfg.ShutdownTimeout, log) })
 	if err := g.Wait(); err != nil {
 		return err

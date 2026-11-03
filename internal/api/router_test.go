@@ -52,7 +52,7 @@ func newRouterFixture(t *testing.T) *routerFixture {
 		f.agents = true
 		w.WriteHeader(http.StatusSwitchingProtocols)
 	})
-	f.handler = NewRouter(webhook, agents, f.db, log)
+	f.handler = NewRouter(Handlers{Webhook: webhook, Agents: agents, DB: f.db}, log)
 	return f
 }
 
@@ -62,10 +62,10 @@ func (f *routerFixture) do(method, target string) *httptest.ResponseRecorder {
 	return rec
 }
 
-func decodeHealth(t *testing.T, rec *httptest.ResponseRecorder) healthResponse {
+func decodeHealth(t *testing.T, rec *httptest.ResponseRecorder) statusResponse {
 	t.Helper()
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
-	var got healthResponse
+	var got statusResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	return got
 }
@@ -76,7 +76,7 @@ func TestHealthz(t *testing.T) {
 	rec := f.do(http.MethodGet, "/healthz")
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, healthResponse{Status: "ok"}, decodeHealth(t, rec))
+	assert.Equal(t, statusResponse{Status: "ok"}, decodeHealth(t, rec))
 	f.db.AssertNotCalled(t, "Ping", mock.Anything)
 }
 
@@ -88,7 +88,7 @@ func TestReadyz(t *testing.T) {
 		rec := f.do(http.MethodGet, "/readyz")
 
 		assert.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, healthResponse{Status: "ok"}, decodeHealth(t, rec))
+		assert.Equal(t, statusResponse{Status: "ok"}, decodeHealth(t, rec))
 		f.db.AssertExpectations(t)
 	})
 
@@ -99,7 +99,7 @@ func TestReadyz(t *testing.T) {
 		rec := f.do(http.MethodGet, "/readyz")
 
 		assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
-		assert.Equal(t, healthResponse{Status: "unavailable", Reason: "database unreachable"}, decodeHealth(t, rec))
+		assert.Equal(t, statusResponse{Status: "unavailable", Reason: "database unreachable"}, decodeHealth(t, rec))
 		assert.Contains(t, f.logs.String(), "connection refused")
 		f.db.AssertExpectations(t)
 	})
@@ -143,7 +143,7 @@ func TestRouterRecoversFromPanics(t *testing.T) {
 	rec := f.do(http.MethodPost, "/webhooks/github")
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
-	assert.Equal(t, healthResponse{Status: "error", Reason: "internal server error"}, decodeHealth(t, rec))
+	assert.Equal(t, statusResponse{Status: "error", Reason: "internal server error"}, decodeHealth(t, rec))
 	assert.Contains(t, f.logs.String(), "boom")
 
 	// The router keeps serving after a panic.

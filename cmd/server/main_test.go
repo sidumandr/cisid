@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -245,6 +247,23 @@ func TestRunEndToEnd(t *testing.T) {
 		"clone in alpine/git:2.52.0 at " + sha + "\n",
 		"test in golang:1.27 at " + sha + "\n",
 	}, lines, "the clone step runs first, then the steps of .cisid.yml")
+
+	// The API serves the job and replays its logs as a finished stream.
+	listResp, err := http.Get(base + "/api/jobs")
+	require.NoError(t, err)
+	var listed []models.Job
+	require.NoError(t, json.NewDecoder(listResp.Body).Decode(&listed))
+	listResp.Body.Close()
+	require.Len(t, listed, 1)
+	assert.Equal(t, queued.JobID, listed[0].ID)
+
+	streamResp, err := http.Get(fmt.Sprintf("%s/api/jobs/%d/logs/stream", base, queued.JobID))
+	require.NoError(t, err)
+	stream, err := io.ReadAll(streamResp.Body)
+	streamResp.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, 2, strings.Count(string(stream), "event: log\n"))
+	assert.Contains(t, string(stream), `"status":"success"`)
 
 	// Stop the server first: it asks the agent to close, then exits.
 	cancel()

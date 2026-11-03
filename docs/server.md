@@ -36,6 +36,7 @@ Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapı
 |---|---|
 | `POST /webhooks/github` | GitHub webhook'ları ([webhook.md](webhook.md)) |
 | `GET /agent/ws` | Agent WebSocket bağlantıları ([hub.md](hub.md)) |
+| `GET /api/jobs/...` | Job'lar, loglar ve canlı log akışı ([api.md](api.md)) |
 | `GET /healthz` | Liveness: süreç ayakta ise `200 {"status":"ok"}` |
 | `GET /readyz` | Readiness: veritabanı 2 sn içinde yanıt verirse `200`, vermezse `503 {"status":"unavailable","reason":"database unreachable"}` |
 

@@ -20,7 +20,7 @@ Hedef: GitHub'a push → container'da komut çalışır → sonuç veritabanınd
 Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
 - [x] Agent → server canlı log akışı (WebSocket, tek writer goroutine), logların veritabanına yazılması.
-- [ ] Server → istemci log yayını (WebSocket) ve log okuma API'si.
+- [x] Server → istemci canlı log yayını ve log okuma API'si. WebSocket yerine SSE kullanıldı, çünkü akış tek yönlü ve SSE `Last-Event-ID` ile kaldığı yerden devam ediyor. PostgreSQL `LISTEN/NOTIFY` ile server'lar arası çalışıyor.
 - [x] Agent reconnect: exponential backoff + jitter.
 - [x] Job lease + heartbeat: hiç geri dönmeyen agent'ın işi lease dolunca tekrar kuyruğa döner, geri dönen agent işini geri alır.
 - [x] Mesajların onaylı (ack) teslimi: kopan bağlantıda onaylanmamış mesajlar tekrar gönderilir, server tekrarlara karşı güvenlidir.

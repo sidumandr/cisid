@@ -17,35 +17,47 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// healthResponse is the JSON body of health checks and generic errors.
-type healthResponse struct {
+// statusResponse is the JSON body of health checks and generic errors.
+type statusResponse struct {
 	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
+}
+
+// Handlers are the parts the router dispatches to.
+type Handlers struct {
+	Webhook http.Handler // GitHub webhook deliveries
+	Agents  http.Handler // agent WebSocket connections
+	Jobs    *JobsAPI     // job and log API; omitted when nil
+	DB      Pinger       // readiness check
 }
 
 // NewRouter returns the server's HTTP handler:
 //
 //	POST /webhooks/github  GitHub webhook deliveries
 //	GET  /agent/ws         agent WebSocket connections
+//	GET  /api/jobs/...     jobs and logs (see JobsAPI)
 //	GET  /healthz          liveness: the process is serving requests
 //	GET  /readyz           readiness: the database is reachable
-func NewRouter(webhook, agents http.Handler, db Pinger, log *slog.Logger) http.Handler {
+func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/webhooks/github", webhook)
-	mux.Handle("GET /agent/ws", agents)
+	mux.Handle("/webhooks/github", h.Webhook)
+	mux.Handle("GET /agent/ws", h.Agents)
+	if h.Jobs != nil {
+		h.Jobs.register(mux)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+		writeJSON(w, http.StatusOK, statusResponse{Status: "ok"})
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), readyTimeout)
 		defer cancel()
-		if err := db.Ping(ctx); err != nil {
+		if err := h.DB.Ping(ctx); err != nil {
 			log.WarnContext(ctx, "readiness check failed", "error", err)
 			writeJSON(w, http.StatusServiceUnavailable,
-				healthResponse{Status: "unavailable", Reason: "database unreachable"})
+				statusResponse{Status: "unavailable", Reason: "database unreachable"})
 			return
 		}
-		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+		writeJSON(w, http.StatusOK, statusResponse{Status: "ok"})
 	})
 
 	return logRequests(log, recoverPanics(log, mux))
@@ -66,7 +78,7 @@ func recoverPanics(log *slog.Logger, next http.Handler) http.Handler {
 			log.ErrorContext(r.Context(), "handler panic",
 				"method", r.Method, "path", r.URL.Path, "panic", rec, "stack", string(debug.Stack()))
 			writeJSON(w, http.StatusInternalServerError,
-				healthResponse{Status: "error", Reason: "internal server error"})
+				statusResponse{Status: "error", Reason: "internal server error"})
 		}()
 		next.ServeHTTP(w, r)
 	})
