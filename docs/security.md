@@ -48,6 +48,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - Servisli job'lar kendi Docker ağında çalışır. Workspace volume'u, ağ ve container'lar job bitince silinir.
 - Clone adımı repo adresini ve commit'i ortam değişkeni olarak alır, kabuk komutuna gömmez.
 - Agent host'un Docker daemon'ına tam erişimle çalışır. Bu root eşdeğeridir: kötü niyetli bir adım Docker API'sine ulaşamasa da container kaçışı ya da çekirdek açığı host'u etkiler. Agent'ları CI'a ayrılmış, yalıtılmış makinelerde ya da VM'lerde çalıştırın ([deployment.md](deployment.md#agent-ve-docker-socket)).
+- Kubernetes'te her agent pod'u privileged bir Docker-in-Docker sidecar'ı çalıştırır. Docker yalnızca pod içinde paylaşılan bir Unix socket'i dinler. Agent container'ının kendisi salt okunur dosya sistemiyle ve bütün capability'ler kapalı çalışır. Dahili PostgreSQL'e yalnızca server'ın bağlanmasına izin veren bir NetworkPolicy kurulur ([Helm chart](../deployments/helm/cisid/README.md)).
 
 ## Veritabanı ve loglar
 

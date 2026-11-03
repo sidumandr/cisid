@@ -1,0 +1,12 @@
+# The headless Service that governs the agent StatefulSet. Agents accept
+# no connections; it only gives the pods their stable names.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cisid.agentName" . }}
+  labels:
+    {{- include "cisid.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "cisid.selectorLabels" (dict "root" . "component" "agent") | nindent 4 }}

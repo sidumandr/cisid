@@ -1,0 +1,28 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cisid.serverName" . }}
+  labels:
+    {{- include "cisid.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cisid.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      {{- if eq (include "cisid.tls" .) "true" }}
+      scheme: https
+      tlsConfig:
+        serverName: {{ printf "%s.%s.svc" (include "cisid.serverName" .) .Release.Namespace }}
+        ca:
+          secret:
+            name: {{ .Values.server.tls.secretName }}
+            key: {{ .Values.server.tls.caKey }}
+      {{- end }}
+{{- end }}

@@ -2,7 +2,7 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1, 2 ve 3 tamam, Faz 4 (production) geliştiriliyor. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+> Durum: Faz 1–4 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.md).
 
 ## Dokümanlar
 
@@ -20,7 +20,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
 - [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
 - [docs/hub.md](docs/hub.md): Server tarafında job dağıtımı, sahiplik kuralları ve graceful shutdown
-- [docs/deployment.md](docs/deployment.md): Docker image'ları ve docker compose ile kurulum
+- [docs/deployment.md](docs/deployment.md): Docker image'ları, docker compose ve Kubernetes ile kurulum
+- [deployments/helm/cisid](deployments/helm/cisid/README.md): Helm chart
 - [docs/security.md](docs/security.md): Güven sınırları, güvenlik önlemleri ve production kontrol listesi
 - [docs/adr/](docs/adr/): Mimari karar kayıtları (ör. agent protokolü neden gRPC değil)
 
@@ -103,6 +104,10 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   └── models/      # Paylaşılan tipler
 ├── api/
 │   └── proto/       # gRPC tanımları (ileride)
+├── deployments/
+│   └── helm/
+│       ├── cisid/       # Helm chart
+│       └── charttest/   # Chart testleri (ayrı Go modülü)
 └── docs/            # Modül dokümanları
 ```
 
@@ -176,4 +181,10 @@ Gerçek Docker'a karşı entegrasyon testleri (alpine image'ını çeker):
 
 ```bash
 CISID_DOCKER_TESTS=1 go test ./internal/runner/ ./internal/agent/ ./internal/pipeline/ -run Integration -v
+```
+
+Helm chart testleri ayrı bir Go modülündedir (Helm SDK'sı ana modüle bağımlılık eklemesin diye):
+
+```bash
+cd deployments/helm/charttest && go test ./...
 ```

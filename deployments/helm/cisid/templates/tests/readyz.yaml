@@ -1,0 +1,42 @@
+{{- $tls := eq (include "cisid.tls" .) "true" }}
+# "helm test <release>" checks that the server answers and reaches its database.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ printf "%s-test" (include "cisid.serverName" .) }}
+  labels:
+    {{- include "cisid.componentLabels" (dict "root" . "component" "test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: readyz
+      # The server image has BusyBox wget.
+      image: {{ include "cisid.image" (dict "root" . "image" .Values.server.image) | quote }}
+      imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+      command:
+        - wget
+        - -q
+        - -O-
+        {{- if $tls }}
+        - --no-check-certificate
+        {{- end }}
+        - {{ printf "%s/readyz" (include "cisid.serverURL" .) | quote }}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]

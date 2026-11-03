@@ -1,0 +1,21 @@
+apiVersion: v2
+name: cisid
+description: Self-hosted CI/CD for GitHub repositories, with a server and Docker-based agents.
+type: application
+version: 0.1.0
+# The default tag of the server and agent images.
+appVersion: "0.1.0"
+# Agents run Docker-in-Docker as a native sidecar (init container with
+# restartPolicy: Always), so it starts before and stops after the agent.
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/sidumandr/cisid
+sources:
+  - https://github.com/sidumandr/cisid
+keywords:
+  - ci
+  - cd
+  - github
+  - docker
+maintainers:
+  - name: sidumandr
+    url: https://github.com/sidumandr

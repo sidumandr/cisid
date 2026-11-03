@@ -1,6 +1,6 @@
 # Dağıtım
 
-cisid iki binary'den oluşur: `cisid-server` (API, hub, web arayüzü) ve `cisid-agent` (job'ları Docker'da çalıştıran worker). İkisi de tek bir `Dockerfile` ile derlenir.
+cisid iki binary'den oluşur: `cisid-server` (API, hub, web arayüzü) ve `cisid-agent` (job'ları Docker'da çalıştıran worker). İkisi de tek bir `Dockerfile` ile derlenir. Tek makinede docker compose, Kubernetes'te Helm chart'ı kullanılır ([Kubernetes](#kubernetes)).
 
 ## Image'lar
 
@@ -72,4 +72,7 @@ Compose stack'te agent server'a compose'un özel ağı üzerinden `ws://server:8
 - Tasarım birden fazla server kopyasına uygundur: job'lar `FOR UPDATE SKIP LOCKED` ile dağıtılır, sahiplik lease'lerle veritabanında tutulur ve log akışı PostgreSQL `LISTEN/NOTIFY` ile tüm kopyalara ulaşır. Çok kopyalı kurulum henüz uçtan uca test edilmedi.
 - Veritabanı yedeğini düzenli alın. Secret'lar `CISID_SECRET_KEY` olmadan çözülemez, anahtarı ayrı saklayın.
 - `/metrics` ve `/readyz` kimlik doğrulama istemez. Server internete açıksa bu yolları reverse proxy'de kısıtlayın ([metrics.md](metrics.md)).
-- Helm chart henüz yok ([ROADMAP.md](../ROADMAP.md)).
+
+## Kubernetes
+
+[deployments/helm/cisid](../deployments/helm/cisid/README.md) chart'ı server'ı bir Deployment olarak, agent'ları ise Docker-in-Docker sidecar'lı bir StatefulSet olarak kurar. Deneme için tek kopya bir PostgreSQL de kurabilir. Kurulum, TLS, harici veritabanı ve güvenlik notları chart'ın README'sindedir.

@@ -46,5 +46,5 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Container izolasyonu ve kaynak limitleri: bellek, CPU, süreç sayısı, `no-new-privileges`, job başına ağ, OOM tespiti.
 - [x] Rate limiting (IP başına token bucket) ve webhook replay koruması (imzalı gövdeye göre tekilleştirme ve 7 günden eski payload'ları reddetme).
 - [x] Dağıtım: Docker image'ları ve docker compose stack'i ([docs/deployment.md](docs/deployment.md)).
-- [ ] Helm chart.
+- [x] Helm chart: server, Docker-in-Docker sidecar'lı agent'lar, isteğe bağlı PostgreSQL, TLS, ingress; testleri Helm SDK ile ([deployments/helm/cisid](deployments/helm/cisid/README.md)).
 - [x] cisid'in kendi CI'ını cisid üzerinde çalıştırmak (`.cisid.yml`).

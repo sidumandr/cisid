@@ -1,0 +1,171 @@
+# Default values for the cisid chart. README.md describes each setting.
+
+# Replaces the chart name in resource names.
+nameOverride: ""
+# Replaces the release-based prefix of resource names.
+fullnameOverride: ""
+
+# Secrets for pulling the images from a private registry, e.g. [{name: regcred}].
+imagePullSecrets: []
+
+# Sensitive settings. The chart keeps them in a Secret it creates, unless
+# existingSecret names a Secret you manage; README.md lists its keys.
+secrets:
+  existingSecret: ""
+  # Required: the GitHub webhook secret, also entered in the repository's
+  # webhook settings.
+  webhookSecret: ""
+  # Required: the token agents present to the server, 16+ characters.
+  agentToken: ""
+  # Enables the cancel, rerun and secret endpoints, 16+ characters.
+  apiToken: ""
+  # Base64 of 32 random bytes; encrypts repository secrets. Keep a copy:
+  # stored secrets cannot be read without it.
+  secretKey: ""
+  # For private repositories, rate limits and commit statuses.
+  githubToken: ""
+
+# The database to use when postgresql.enabled is false.
+database:
+  # A postgres:// URL, kept in the Secret.
+  url: ""
+
+server:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/sidumandr/cisid-server
+    # Defaults to the chart's appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # Where users reach the server, for commit status links. Defaults to the
+  # first ingress host.
+  publicURL: ""
+  # debug, info, warn or error.
+  logLevel: info
+  # Requests per second per client IP to the webhook and the API; 0 turns
+  # the limit off.
+  rateLimit: 10
+  # Take client IPs from X-Forwarded-For. Unset (null): true with an
+  # ingress, whose controller sets the header, false otherwise.
+  trustProxy: null
+  # The GitHub Enterprise Server API, e.g. https://ghe.example.com/api/v3.
+  githubAPIURL: ""
+  # How long shutdown waits for in-flight requests.
+  shutdownTimeout: 15s
+  # Keeps serving this long after the pod is told to stop, while the
+  # Service stops routing to it.
+  preStopSleepSeconds: 5
+  # Must exceed preStopSleepSeconds plus shutdownTimeout.
+  terminationGracePeriodSeconds: 30
+  # HTTPS for the server and wss:// for the agents, from a kubernetes.io/tls
+  # Secret (e.g. issued by cert-manager). Its certificate must cover the
+  # server Service, <fullname>-server.<namespace>.svc; NOTES.txt prints it.
+  tls:
+    secretName: ""
+    # The key holding the CA that agents trust; tls.crt for a self-signed
+    # certificate.
+    caKey: ca.crt
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  resources: {}
+  # Extra environment variables, e.g. [{name: CISID_LOG_LEVEL, value: debug}].
+  extraEnv: []
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+agent:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/sidumandr/cisid-agent
+    # Defaults to the chart's appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  # The server's agent endpoint. Defaults to the server's Service.
+  serverURL: ""
+  # Limits of each step and service container, e.g. 2g and 2.
+  stepMemory: ""
+  stepCPUs: ""
+  stepPids: 4096
+  docker:
+    # How steps reach Docker:
+    #   dind:       a Docker-in-Docker sidecar in every agent pod. It runs
+    #               privileged, but works on any cluster.
+    #   hostSocket: the node's Docker socket. The nodes must run Docker
+    #               Engine, and steps can control every container on them.
+    mode: dind
+    dind:
+      image:
+        repository: docker
+        tag: 29.8.2-dind
+        pullPolicy: IfNotPresent
+      resources: {}
+      # Keeps pulled images across pod restarts, one volume per agent.
+      persistence:
+        enabled: false
+        size: 20Gi
+        storageClass: ""
+    hostSocket:
+      path: /var/run/docker.sock
+  # Time to cancel a running job and report its result on shutdown.
+  terminationGracePeriodSeconds: 60
+  resources: {}
+  extraEnv: []
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# A single PostgreSQL instance for trying cisid out. In production use a
+# managed or replicated database: postgresql.enabled=false and database.url.
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 18-alpine
+    pullPolicy: IfNotPresent
+  auth:
+    # Required unless secrets.existingSecret holds postgres-password. Only
+    # letters, digits and . _ ~ - (it goes into the server's database URL).
+    password: ""
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  resources: {}
+  # Lets only the server connect, where the cluster enforces NetworkPolicy.
+  # Without it, any pod, including a step's containers, can try to.
+  networkPolicy:
+    enabled: true
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Host names routed to the server, e.g. [ci.example.com].
+  hosts: []
+  # e.g. [{secretName: ci-example-com-tls, hosts: [ci.example.com]}]
+  tls: []
+
+tracing:
+  # An OTLP/HTTP collector for the server's and agents' traces, e.g.
+  # http://otel-collector.observability:4318.
+  otlpEndpoint: ""
+
+metrics:
+  # A Prometheus Operator ServiceMonitor for the server's /metrics.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  annotations: {}

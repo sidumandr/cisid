@@ -1,0 +1,182 @@
+{{- include "cisid.validate" . }}
+{{- $tls := eq (include "cisid.tls" .) "true" }}
+{{- $scheme := ternary "HTTPS" "HTTP" $tls }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cisid.serverName" . }}
+  labels:
+    {{- include "cisid.componentLabels" (dict "root" . "component" "server") | nindent 4 }}
+spec:
+  replicas: {{ .Values.server.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # A new server takes over before the old one stops; agents reconnect.
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "cisid.selectorLabels" (dict "root" . "component" "server") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cisid.componentLabels" (dict "root" . "component" "server") | nindent 8 }}
+        {{- with .Values.server.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if or (not .Values.secrets.existingSecret) .Values.server.podAnnotations }}
+      annotations:
+        {{- if not .Values.secrets.existingSecret }}
+        # Restarts the pods when a secret changes.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.server.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "cisid.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: {{ include "cisid.image" (dict "root" . "image" .Values.server.image) | quote }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: CISID_HTTP_ADDR
+              value: ":8080"
+            - name: CISID_LOG_LEVEL
+              value: {{ .Values.server.logLevel | quote }}
+            - name: CISID_SHUTDOWN_TIMEOUT
+              value: {{ .Values.server.shutdownTimeout | quote }}
+            - name: CISID_RATE_LIMIT
+              value: {{ .Values.server.rateLimit | quote }}
+            - name: CISID_TRUST_PROXY
+              value: {{ include "cisid.trustProxy" . | quote }}
+            {{- with .Values.server.githubAPIURL }}
+            - name: CISID_GITHUB_API_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with include "cisid.publicURL" . }}
+            - name: CISID_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            - name: CISID_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cisid.secretName" . }}
+                  key: webhook-secret
+            - name: CISID_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cisid.secretName" . }}
+                  key: agent-token
+            {{- range $env, $key := dict "CISID_API_TOKEN" "api-token" "CISID_SECRET_KEY" "secret-key" "CISID_GITHUB_TOKEN" "github-token" }}
+            - name: {{ $env }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cisid.secretName" $ }}
+                  key: {{ $key }}
+                  optional: true
+            {{- end }}
+            {{- if .Values.postgresql.enabled }}
+            - name: CISID_PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cisid.secretName" . }}
+                  key: postgres-password
+            - name: CISID_DATABASE_URL
+              value: {{ printf "postgres://cisid:$(CISID_PG_PASSWORD)@%s:5432/cisid?sslmode=disable" (include "cisid.postgresqlName" .) | quote }}
+            {{- else }}
+            - name: CISID_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cisid.secretName" . }}
+                  key: database-url
+            {{- end }}
+            {{- if $tls }}
+            - name: CISID_TLS_CERT_FILE
+              value: /etc/cisid/tls/tls.crt
+            - name: CISID_TLS_KEY_FILE
+              value: /etc/cisid/tls/tls.key
+            {{- end }}
+            {{- with .Values.tracing.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.server.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              scheme: {{ $scheme }}
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+              scheme: {{ $scheme }}
+            periodSeconds: 5
+            failureThreshold: 3
+          {{- if gt (int .Values.server.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ .Values.server.preStopSleepSeconds | toString | quote }}]
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $tls }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/cisid/tls
+              readOnly: true
+          {{- end }}
+      {{- if $tls }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.server.tls.secretName }}
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+      {{- end }}
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

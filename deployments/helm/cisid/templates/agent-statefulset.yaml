@@ -1,0 +1,182 @@
+{{- $tls := eq (include "cisid.tls" .) "true" }}
+{{- $dind := eq .Values.agent.docker.mode "dind" }}
+{{- $dindCache := and $dind .Values.agent.docker.dind.persistence.enabled }}
+# A StatefulSet keeps each agent's name (its pod name) across restarts, so
+# the server hands a restarted agent's job back to the queue at once
+# instead of waiting for its lease to expire.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "cisid.agentName" . }}
+  labels:
+    {{- include "cisid.componentLabels" (dict "root" . "component" "agent") | nindent 4 }}
+spec:
+  serviceName: {{ include "cisid.agentName" . }}
+  replicas: {{ .Values.agent.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "cisid.selectorLabels" (dict "root" . "component" "agent") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cisid.componentLabels" (dict "root" . "component" "agent") | nindent 8 }}
+        {{- with .Values.agent.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if or (not .Values.secrets.existingSecret) .Values.agent.podAnnotations }}
+      annotations:
+        {{- if not .Values.secrets.existingSecret }}
+        # Restarts the pods when a secret changes.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.agent.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "cisid.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.agent.terminationGracePeriodSeconds }}
+      {{- if $dind }}
+      initContainers:
+        # A native sidecar: it starts before the agent and stops after it, so
+        # the agent can still stop a canceled job's containers on shutdown.
+        - name: dind
+          image: {{ include "cisid.image" (dict "root" . "image" .Values.agent.docker.dind.image) | quote }}
+          imagePullPolicy: {{ .Values.agent.docker.dind.image.pullPolicy }}
+          restartPolicy: Always
+          # Listen on a socket shared with the agent only, never on TCP.
+          args: ["dockerd", "--host=unix:///var/run/dind/docker.sock"]
+          securityContext:
+            privileged: true
+          startupProbe:
+            exec:
+              command: ["docker", "--host=unix:///var/run/dind/docker.sock", "version"]
+            periodSeconds: 2
+            failureThreshold: 60
+          {{- with .Values.agent.docker.dind.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run/dind
+            - name: docker-data
+              mountPath: /var/lib/docker
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ include "cisid.image" (dict "root" . "image" .Values.agent.image) | quote }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          env:
+            - name: CISID_SERVER_URL
+              value: {{ include "cisid.agentServerURL" . | quote }}
+            - name: CISID_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cisid.secretName" . }}
+                  key: agent-token
+            - name: DOCKER_HOST
+              value: {{ include "cisid.dockerHost" . | quote }}
+            {{- with .Values.agent.stepMemory }}
+            - name: CISID_STEP_MEMORY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.agent.stepCPUs }}
+            - name: CISID_STEP_CPUS
+              value: {{ . | quote }}
+            {{- end }}
+            - name: CISID_STEP_PIDS
+              value: {{ .Values.agent.stepPids | quote }}
+            {{- if and $tls (not .Values.agent.serverURL) }}
+            - name: CISID_SERVER_CA_FILE
+              value: /etc/cisid/server-ca/ca.crt
+            {{- end }}
+            {{- with .Values.tracing.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.agent.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            # Root only to use the Docker socket, which belongs to root.
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          {{- with .Values.agent.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if $dind }}
+            - name: docker-socket
+              mountPath: /var/run/dind
+            {{- else }}
+            - name: docker-socket
+              mountPath: {{ .Values.agent.docker.hostSocket.path }}
+            {{- end }}
+            {{- if and $tls (not .Values.agent.serverURL) }}
+            - name: server-ca
+              mountPath: /etc/cisid/server-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if $dind }}
+        - name: docker-socket
+          emptyDir: {}
+        {{- if not $dindCache }}
+        - name: docker-data
+          emptyDir: {}
+        {{- end }}
+        {{- else }}
+        - name: docker-socket
+          hostPath:
+            path: {{ .Values.agent.docker.hostSocket.path }}
+            type: Socket
+        {{- end }}
+        {{- if and $tls (not .Values.agent.serverURL) }}
+        - name: server-ca
+          secret:
+            secretName: {{ .Values.server.tls.secretName }}
+            # Only the CA, not the server's private key.
+            items:
+              - key: {{ .Values.server.tls.caKey }}
+                path: ca.crt
+        {{- end }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if $dindCache }}
+  volumeClaimTemplates:
+    - metadata:
+        name: docker-data
+        labels:
+          {{- include "cisid.selectorLabels" (dict "root" . "component" "agent") | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.agent.docker.dind.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.agent.docker.dind.persistence.size | quote }}
+  {{- end }}

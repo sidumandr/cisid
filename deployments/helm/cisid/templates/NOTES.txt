@@ -1,0 +1,47 @@
+cisid {{ .Chart.AppVersion }} kuruldu: {{ .Release.Name }} ({{ .Release.Namespace }}).
+
+Pod'lar:
+  kubectl get pods --namespace {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+Server'ı denemek:
+  helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}
+
+GitHub webhook'u (Settings → Webhooks, Content type: application/json, yalnızca push):
+{{- if include "cisid.publicURL" . }}
+  Payload URL: {{ include "cisid.publicURL" . }}/webhooks/github
+{{- else }}
+  Payload URL: server'ı dışarı açın (ingress.enabled=true ve ingress.hosts),
+               adres <dış adres>/webhooks/github olur.
+{{- end }}
+  Secret:      kubectl get secret {{ include "cisid.secretName" . }} --namespace {{ .Release.Namespace }} -o jsonpath='{.data.webhook-secret}' | base64 -d
+
+Web arayüzü:
+{{- if include "cisid.publicURL" . }}
+  {{ include "cisid.publicURL" . }}
+{{- else }}
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "cisid.serverName" . }} 8080:{{ .Values.server.service.port }}
+  ve {{ ternary "https" "http" (eq (include "cisid.tls" .) "true") }}://localhost:8080
+{{- end }}
+{{- if eq .Values.agent.docker.mode "dind" }}
+
+Not: Agent pod'ları privileged bir Docker-in-Docker sidecar'ı çalıştırır. Namespace'in
+Pod Security seviyesi "privileged" olmalıdır. Agent'ları CI'a ayrılmış node'larda
+çalıştırın (agent.nodeSelector, agent.tolerations).
+{{- else }}
+
+Not: Agent'lar node'un Docker socket'ini ({{ .Values.agent.docker.hostSocket.path }}) kullanır.
+Adımlar o node'daki bütün container'ları yönetebilir.
+{{- end }}
+{{- if eq (include "cisid.tls" .) "true" }}
+
+TLS: Sertifika {{ include "cisid.serverName" . }}.{{ .Release.Namespace }}.svc adını kapsamalıdır.
+{{- else }}
+
+Not: Agent'lar token'ı cluster içinde şifresiz ws:// ile gönderir ve açılışta bunu uyarı
+olarak loglar. server.tls.secretName ile TLS açabilirsiniz.
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+
+Not: Dahili PostgreSQL tek kopyadır ve deneme içindir. Production'da yönetilen bir
+veritabanı kullanın: postgresql.enabled=false ve database.url.
+{{- end }}

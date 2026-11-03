@@ -1,0 +1,179 @@
+# cisid Helm chart
+
+cisid'i Kubernetes'e kurar:
+
+- **server:** Deployment ve Service. İsteğe bağlı olarak Ingress ve ServiceMonitor.
+- **agent:** StatefulSet. Her pod'da adımları çalıştıran bir Docker-in-Docker sidecar'ı vardır.
+- **PostgreSQL:** Deneme için tek kopya bir StatefulSet. İsteğe bağlıdır, production'da harici bir veritabanı kullanılır.
+
+Kubernetes 1.29 veya üstü gerekir: Docker-in-Docker, native sidecar olarak çalışır.
+
+## Önce: image'lar
+
+Image'lar henüz bir registry'de yayımlanmıyor. Proje kökünden derleyip kendi registry'nize gönderin:
+
+```bash
+docker build --target server -t ghcr.io/<hesap>/cisid-server:0.1.0 .
+```
+
+```bash
+docker build --target agent -t ghcr.io/<hesap>/cisid-agent:0.1.0 .
+```
+
+```bash
+docker push ghcr.io/<hesap>/cisid-server:0.1.0 && docker push ghcr.io/<hesap>/cisid-agent:0.1.0
+```
+
+Etiket varsayılan olarak chart'ın `appVersion` değeridir (`0.1.0`). Farklıysa `server.image.tag` ve `agent.image.tag` ile verin. Özel registry için `imagePullSecrets` kullanın.
+
+## Kurulum
+
+Agent pod'ları privileged bir container (`hostSocket` modunda bir hostPath volume'u) kullandığı için namespace'in Pod Security seviyesi `privileged` olmalıdır:
+
+```bash
+kubectl create namespace ci && kubectl label namespace ci pod-security.kubernetes.io/enforce=privileged
+```
+
+```bash
+helm install ci deployments/helm/cisid --namespace ci \
+  --set server.image.repository=ghcr.io/<hesap>/cisid-server \
+  --set agent.image.repository=ghcr.io/<hesap>/cisid-agent \
+  --set-string secrets.webhookSecret=$(openssl rand -hex 32) \
+  --set-string secrets.agentToken=$(openssl rand -hex 24) \
+  --set-string postgresql.auth.password=$(openssl rand -hex 16)
+```
+
+Secret'ları `--set-string` ile verin. Yalnızca rakamlardan oluşan bir değer `--set` ile sayıya dönüşür ve şema doğrulamasından geçmez.
+
+Kurulumdan sonra Helm, GitHub webhook adresini ve webhook secret'ını okuma komutunu yazar. Server'ın veritabanına ulaştığını denemek için:
+
+```bash
+helm test ci --namespace ci
+```
+
+## Değerler
+
+Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.json` hatalı yazılmış anahtarları ve yanlış türleri kurulumda reddeder.
+
+| Değer | Varsayılan | Açıklama |
+|---|---|---|
+| `secrets.webhookSecret` | — | **Zorunlu.** GitHub webhook secret'ı |
+| `secrets.agentToken` | — | **Zorunlu.** Agent token'ı, en az 16 karakter |
+| `secrets.apiToken` | — | İptal, yeniden çalıştırma ve secret uç noktalarını açar |
+| `secrets.secretKey` | — | Repo secret'larını şifreleyen anahtar (base64, 32 byte). Bir kopyasını ayrıca saklayın. |
+| `secrets.githubToken` | — | Özel repolar, rate limit ve commit status için |
+| `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
+| `server.replicaCount` | `1` | Server kopyası |
+| `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
+| `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
+| `server.tls.secretName` | — | Server için HTTPS, agent'lar için `wss://` |
+| `agent.replicaCount` | `1` | Agent sayısı. Her agent aynı anda bir job çalıştırır. |
+| `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Adım ve servis container'larının sınırları |
+| `agent.docker.mode` | `dind` | `dind` ya da `hostSocket` |
+| `agent.docker.dind.persistence.enabled` | `false` | Çekilen image'ları agent başına bir volume'da saklar |
+| `postgresql.enabled` | `true` | Dahili PostgreSQL. Kapalıysa `database.url` gerekir. |
+| `postgresql.auth.password` | — | Dahili PostgreSQL'in şifresi. Yalnızca harf, rakam ve `. _ ~ -` içerebilir. |
+| `ingress.enabled`, `ingress.hosts`, `ingress.tls` | kapalı | Webhook ve arayüz için dış erişim |
+| `tracing.otlpEndpoint` | — | OTLP/HTTP collector ([tracing.md](../../../docs/tracing.md)) |
+| `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator için ServiceMonitor |
+
+## Var olan bir Secret
+
+Secret'ları bir secrets operator'ı ya da GitOps aracıyla yönetiyorsanız `secrets.existingSecret` ile adını verin. Chart o zaman kendi Secret'ını oluşturmaz ve şu anahtarları okur:
+
+| Anahtar | |
+|---|---|
+| `webhook-secret` | Zorunlu |
+| `agent-token` | Zorunlu |
+| `postgres-password` | Dahili PostgreSQL ile zorunlu |
+| `database-url` | Harici veritabanıyla zorunlu (`postgres://...`) |
+| `api-token`, `secret-key`, `github-token` | İsteğe bağlı |
+
+## Agent'lar Docker'a nasıl ulaşır
+
+**`dind` (varsayılan):** Her agent pod'unda bir `docker:dind` sidecar'ı çalışır. Agent ve adımlar yalnızca bu Docker'ı görür. Docker yalnızca pod içinde paylaşılan bir Unix socket'i dinler, TCP portu açmaz. Sidecar native sidecar olduğu için agent'tan önce başlar ve ondan sonra durur. Böylece kapanışta iptal edilen job'un container'ları temizlenebilir.
+
+Sidecar `privileged` çalışır. Bir container kaçışı node'u etkileyebilir. Agent'ları CI'a ayrılmış node'larda çalıştırın:
+
+```yaml
+agent:
+  nodeSelector:
+    workload: ci
+  tolerations:
+    - key: workload
+      value: ci
+      effect: NoSchedule
+```
+
+Docker'ın verileri (image'lar, adımların container'ları) varsayılan olarak pod'un geçici deposunda, yani node'un diskinde tutulur ve pod yeniden başladığında silinir. `agent.docker.dind.resources` ile `ephemeral-storage` sınırı verebilirsiniz. `agent.docker.dind.persistence.enabled=true`, her agent'a image'ların saklandığı bir PersistentVolume verir.
+
+**`hostSocket`:** Agent, node'un Docker socket'ini kullanır. Yalnızca Docker Engine çalıştıran node'larda işe yarar (çoğu cluster containerd kullanır). Adımlar o node'daki bütün container'ları yönetebilir.
+
+Agent'lar StatefulSet olduğu için her biri pod adını (`ci-cisid-agent-0` gibi) agent adı olarak kullanır. Yeniden başlayan bir agent aynı adla bağlanır ve server onun yarım kalan job'unu lease süresini beklemeden kuyruğa geri koyar.
+
+## TLS
+
+Cluster içinde agent'lar token'ı varsayılan olarak şifresiz `ws://` ile gönderir ve açılışta bunu uyarı olarak loglar. TLS için bir `kubernetes.io/tls` Secret'ı verin. Sertifika server Service'inin adını kapsamalıdır: `<fullname>-server.<namespace>.svc`. Kurulumdan sonraki notlar adın tamamını yazar. cert-manager ile:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cisid-server
+  namespace: ci
+spec:
+  secretName: cisid-server-tls
+  dnsNames:
+    - ci-cisid-server.ci.svc
+  issuerRef:
+    name: internal-ca
+    kind: ClusterIssuer
+```
+
+```bash
+helm upgrade ci deployments/helm/cisid --namespace ci --reuse-values --set server.tls.secretName=cisid-server-tls
+```
+
+Agent'lar Secret'ın yalnızca `ca.crt` anahtarını görür, private key'i görmez. Kendinden imzalı bir sertifikada `ca.crt` yoksa `server.tls.caKey=tls.crt` verin. Ingress kullanıyorsanız controller'a backend'in HTTPS olduğunu söyleyin. ingress-nginx için bu annotation `nginx.ingress.kubernetes.io/backend-protocol: HTTPS` şeklindedir.
+
+## Veritabanı
+
+Dahili PostgreSQL tek kopyadır, yedeklenmez ve yüksek erişilebilirlik sağlamaz. Denemek için uygundur. Production'da yönetilen ya da replikalı bir veritabanı kullanın:
+
+```bash
+--set postgresql.enabled=false --set-string database.url='postgres://cisid:...@db.example.com:5432/cisid?sslmode=require'
+```
+
+Dahili PostgreSQL'e yalnızca server pod'larının bağlanmasına izin veren bir NetworkPolicy kurulur. Adımlar da cluster içinde çalıştığı için bu önemlidir. NetworkPolicy'yi uygulayan bir CNI yoksa bu kural etkisizdir.
+
+## Ingress
+
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  hosts: [ci.example.com]
+  tls:
+    - secretName: ci-example-com-tls
+      hosts: [ci.example.com]
+```
+
+Ingress açıkken `server.publicURL` ilk host'tan türetilir (`https://ci.example.com`) ve server istemci IP'sini `X-Forwarded-For`'dan alır. Böylece rate limit, ingress controller'ın değil istemcinin adresine göre uygulanır. GitHub webhook adresi `https://ci.example.com/webhooks/github` olur.
+
+## Yükseltme ve kaldırma
+
+- Server güncellenirken önce yeni pod hazır olur, sonra eskisi kapanır. Bağlı agent'lar yeni server'a yeniden bağlanır ve job'lar kesilmez.
+- Agent'lar sırayla güncellenir. Kapanan bir agent'ın üzerindeki job **iptal edilir** (`canceled`). Gerekirse yeniden çalıştırın.
+- `helm uninstall`, StatefulSet'lerin PersistentVolumeClaim'lerini (veritabanı, image önbelleği) silmez. Verileri silmek için onları ayrıca silin.
+
+## Doğrulama
+
+Chart, [charttest](../charttest) modülündeki testlerle cluster olmadan doğrulanır:
+
+```bash
+cd deployments/helm/charttest && go test ./...
+```
+
+Testler chart'ı Helm SDK ile render eder ve `helm lint` kurallarını çalıştırır. Her nesneyi API server gibi, alan adlarına büyük-küçük harf duyarlı ve bilinmeyen alanları hata sayarak Kubernetes tipine çevirir. Nesneler arası bağlantıları da denetler: Service seçicileri, Secret anahtarları, volume'lar, probe portları, `$(VAR)` sırası, Ingress ve NetworkPolicy hedefleri. cisid'in kendi CI'ı bu testleri her push'ta çalıştırır.
+
+Chart henüz gerçek bir cluster'a kurulmadı. Pod'ların güvenlik ayarları Docker'da denendi: salt okunur dosya sistemi, bütün capability'ler kapalı, PostgreSQL için uid 70 ve server için uid 10001. Bu ayarlarla `hostSocket` modundaki bir agent, TLS üzerinden cisid'in kendi CI'ını başarıyla çalıştırdı. Docker-in-Docker sidecar'ı henüz denenmedi.
