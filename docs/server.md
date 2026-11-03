@@ -29,7 +29,8 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `CISID_GITHUB_TOKEN` | — | `.cisid.yml` okumak için GitHub token'ı. Özel repolar ve rate limit için gerekir ([pipeline.md](pipeline.md)). |
 | `CISID_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise Server için API adresi |
-| `CISID_AGENT_TOKEN` | — | Agent'ların bağlanırken göstermesi gereken token, en az 16 karakter. Tanımlı değilse her istemci agent olarak bağlanabilir ve server bunu açılışta uyarı olarak loglar. |
+| `CISID_AGENT_TOKEN` | — | Agent'ların bağlanırken göstermesi gereken token, en az 16 karakter. Virgülle ayrılmış birden fazla token verilebilir; hepsi kabul edilir, böylece token'lar agent'lar kesilmeden değiştirilir ([agent.md](agent.md#kimlik-doğrulama-ve-tls)). Tanımlı değilse her istemci agent olarak bağlanabilir ve server bunu açılışta uyarı olarak loglar. |
+| `CISID_READ_TOKEN` | — | Tanımlıysa job'ları, logları ve `/metrics`'i okumak bu token'ı ya da API token'ını ister, en az 16 karakter ([api.md](api.md#okuma-erişimi)). Tanımlı değilse server'a ulaşan herkes okur. |
 | `CISID_TLS_CERT_FILE`, `CISID_TLS_KEY_FILE` | — | İkisi birlikte verilirse server HTTPS üzerinden servis eder (en az TLS 1.2). Agent'lar `wss://` ile bağlanır. |
 | `CISID_RATE_LIMIT` | `10` | Webhook ve `/api` için istemci IP'si başına saniyedeki istek sayısı (ani yük için 2 katı kadar izin verilir). `0` limiti kapatır. Aşılırsa `429` döner. |
 | `CISID_TRUST_PROXY` | `false` | `true` ise istemci IP'si `X-Forwarded-For`'daki ilk adresten alınır. Sadece bu başlığı kendisi yazan bir reverse proxy arkasında açın, yoksa başlık sahte olabilir. |

@@ -59,13 +59,34 @@ function duration(job) {
   return m ? `${m}m ${s}s` : `${s}s`;
 }
 
-async function getJSON(url) {
-  const resp = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => ({}));
-    throw new Error(body.reason || resp.statusText);
+// signIn asks for a token once and lets the server keep the browser
+// signed in for reading (an HttpOnly cookie), which also covers log streams.
+let signInDeclined = false;
+async function signIn() {
+  if (signInDeclined) return false;
+  const token = prompt("Token to read jobs (CISID_READ_TOKEN or CISID_API_TOKEN):");
+  if (!token) {
+    signInDeclined = true;
+    return false;
   }
-  return resp.json();
+  const resp = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  return resp.ok;
+}
+
+async function getJSON(url) {
+  for (let attempt = 0; ; attempt++) {
+    const resp = await fetch(url, { headers: { Accept: "application/json" } });
+    if (resp.status === 401 && attempt < 3 && (await signIn())) continue;
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.reason || resp.statusText);
+    }
+    return resp.json();
+  }
 }
 
 // --- job list ---------------------------------------------------------------
@@ -209,38 +230,50 @@ function renderJob(id) {
   }
 
   const stripANSI = (s) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
-  const es = new EventSource(`/api/jobs/${id}/logs/stream`);
-  es.addEventListener("status", (e) => {
-    const j = JSON.parse(e.data);
-    showJob(j);
-    if (FINISHED.has(j.status)) {
-      es.close();
-      if (sections.size === 0) {
-        const note = j.logs_expired_at
-          ? `Logs were deleted on ${new Date(j.logs_expired_at).toLocaleDateString()} after the retention period.`
-          : "No output.";
-        steps.replaceChildren(el("div", { class: "card notice" }, note));
+  let es = null;
+  let stopped = false;
+
+  function openStream() {
+    es = new EventSource(`/api/jobs/${id}/logs/stream`);
+    es.addEventListener("status", (e) => {
+      const j = JSON.parse(e.data);
+      showJob(j);
+      if (FINISHED.has(j.status)) {
+        es.close();
+        if (sections.size === 0) {
+          const note = j.logs_expired_at
+            ? `Logs were deleted on ${new Date(j.logs_expired_at).toLocaleDateString()} after the retention period.`
+            : "No output.";
+          steps.replaceChildren(el("div", { class: "card notice" }, note));
+        }
       }
-    }
-  });
-  es.addEventListener("log", (e) => {
-    const l = JSON.parse(e.data);
-    const { pre } = section(l.step);
-    const follow = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
-    const text = stripANSI(l.data);
-    pre.append(l.stream === "stderr" ? el("span", { class: "err" }, text) : document.createTextNode(text));
-    if (follow) pre.scrollTop = pre.scrollHeight;
-  });
-  es.onerror = () => {
-    if (!job) {
-      es.close();
-      getJSON(`/api/jobs/${id}`).catch((err) =>
-        summary.replaceChildren(el("div", { class: "notice" }, "Could not load job: " + err.message)));
-    }
-  };
+    });
+    es.addEventListener("log", (e) => {
+      const l = JSON.parse(e.data);
+      const { pre } = section(l.step);
+      const follow = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+      const text = stripANSI(l.data);
+      pre.append(l.stream === "stderr" ? el("span", { class: "err" }, text) : document.createTextNode(text));
+      if (follow) pre.scrollTop = pre.scrollHeight;
+    });
+  }
+
+  // Load the job first: if reading needs a token, this signs the browser
+  // in, and the stream, which cannot send one itself, then gets through.
+  getJSON(`/api/jobs/${id}`)
+    .then((j) => {
+      if (stopped) return;
+      showJob(j);
+      openStream();
+    })
+    .catch((err) => summary.replaceChildren(el("div", { class: "notice" }, "Could not load job: " + err.message)));
 
   const ticker = setInterval(() => { if (job && !FINISHED.has(job.status)) showJob(job); }, 1000);
-  return () => { es.close(); clearInterval(ticker); };
+  return () => {
+    stopped = true;
+    if (es) es.close();
+    clearInterval(ticker);
+  };
 }
 
 // --- routing ----------------------------------------------------------------

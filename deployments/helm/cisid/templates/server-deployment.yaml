@@ -90,7 +90,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "cisid.secretName" . }}
                   key: agent-token
-            {{- range $env, $key := dict "CISID_API_TOKEN" "api-token" "CISID_SECRET_KEY" "secret-key" "CISID_GITHUB_TOKEN" "github-token" }}
+            {{- range $env, $key := dict "CISID_API_TOKEN" "api-token" "CISID_READ_TOKEN" "read-token" "CISID_SECRET_KEY" "secret-key" "CISID_GITHUB_TOKEN" "github-token" }}
             - name: {{ $env }}
               valueFrom:
                 secretKeyRef:

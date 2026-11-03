@@ -31,7 +31,8 @@ type Config struct {
 	PublicURL       string        // CISID_PUBLIC_URL, optional base URL users reach the server at
 	APIToken        string        // CISID_API_TOKEN, optional; enables cancel/rerun and secrets
 	SecretKey       []byte        // CISID_SECRET_KEY, optional base64 32-byte key; enables secrets
-	AgentToken      string        // CISID_AGENT_TOKEN, optional; required from agents when set
+	AgentTokens     []string      // CISID_AGENT_TOKEN, optional comma-separated tokens agents must present; agents send the first
+	ReadToken       string        // CISID_READ_TOKEN, optional; reading jobs, logs and metrics then needs it or the API token
 	TLSCertFile     string        // CISID_TLS_CERT_FILE, optional; serve HTTPS with TLSKeyFile
 	TLSKeyFile      string        // CISID_TLS_KEY_FILE
 	RateLimit       float64       // CISID_RATE_LIMIT, requests per second per client, default 10, 0 disables
@@ -54,7 +55,7 @@ func Load(getenv func(string) string) (Config, error) {
 		GitHubToken:   getenv("CISID_GITHUB_TOKEN"),
 		PublicURL:     strings.TrimSuffix(getenv("CISID_PUBLIC_URL"), "/"),
 		APIToken:      getenv("CISID_API_TOKEN"),
-		AgentToken:    getenv("CISID_AGENT_TOKEN"),
+		ReadToken:     getenv("CISID_READ_TOKEN"),
 		TLSCertFile:   getenv("CISID_TLS_CERT_FILE"),
 		TLSKeyFile:    getenv("CISID_TLS_KEY_FILE"),
 	}
@@ -114,8 +115,20 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.TrustProxy = b
 	}
 
-	if cfg.AgentToken != "" && len(cfg.AgentToken) < minAPITokenLen {
-		problems = append(problems, fmt.Errorf("CISID_AGENT_TOKEN must be at least %d characters", minAPITokenLen))
+	// Several tokens let agents move to a new one before the old one goes.
+	for _, t := range strings.Split(getenv("CISID_AGENT_TOKEN"), ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			cfg.AgentTokens = append(cfg.AgentTokens, t)
+		}
+	}
+	for _, t := range cfg.AgentTokens {
+		if len(t) < minAPITokenLen {
+			problems = append(problems, fmt.Errorf("CISID_AGENT_TOKEN must be at least %d characters", minAPITokenLen))
+			break
+		}
+	}
+	if cfg.ReadToken != "" && len(cfg.ReadToken) < minAPITokenLen {
+		problems = append(problems, fmt.Errorf("CISID_READ_TOKEN must be at least %d characters", minAPITokenLen))
 	}
 	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
 		problems = append(problems, fmt.Errorf("CISID_TLS_CERT_FILE and CISID_TLS_KEY_FILE must be set together"))
@@ -205,7 +218,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("public_url", c.PublicURL),
 		slog.Bool("api_token_set", c.APIToken != ""),
 		slog.Bool("secret_key_set", c.SecretKey != nil),
-		slog.Bool("agent_token_set", c.AgentToken != ""),
+		slog.Int("agent_tokens", len(c.AgentTokens)),
+		slog.Bool("read_token_set", c.ReadToken != ""),
 		slog.Bool("tls", c.TLSCertFile != ""),
 		slog.Float64("rate_limit", c.RateLimit),
 		slog.Bool("trust_proxy", c.TrustProxy),

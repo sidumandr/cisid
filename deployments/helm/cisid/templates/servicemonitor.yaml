@@ -16,6 +16,13 @@ spec:
     - port: http
       path: /metrics
       interval: {{ .Values.metrics.serviceMonitor.interval }}
+      {{- if .Values.metrics.serviceMonitor.authorize }}
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ include "cisid.secretName" . }}
+          key: read-token
+      {{- end }}
       {{- if eq (include "cisid.tls" .) "true" }}
       scheme: https
       tlsConfig:

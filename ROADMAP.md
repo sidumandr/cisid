@@ -55,7 +55,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Log saklama süresi: biten job'ların logları `CISID_LOG_RETENTION` sonunda silinir ([docs/server.md](docs/server.md)).
 - [x] Pull request build'leri: PR'a yeni commit gelince eski build'ler iptal edilir; fork'lar isteğe bağlıdır ve secret almaz ([docs/webhook.md](docs/webhook.md#pull-requestler)).
 - [x] Secret'ları server tarafında branch'lere sınırlama; sınırlı secret'lar pull request'lere verilmez ([docs/secrets.md](docs/secrets.md)).
-- [ ] Okuma erişimi için token, agent token'ı rotasyonu.
+- [x] Okuma erişimi için token (`CISID_READ_TOKEN`, arayüz için oturum cookie'si) ve agent token'ı rotasyonu ([docs/api.md](docs/api.md#okuma-erişimi)).
 - [ ] Job'lar arası önbellek.
 - [ ] Elle ve zamanlanmış build'ler.
 - [ ] Birden fazla server kopyasının uçtan uca testi.

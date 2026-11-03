@@ -129,11 +129,11 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		log.InfoContext(ctx, "commit statuses disabled: CISID_GITHUB_TOKEN is not set")
 	}
 
-	if cfg.AgentToken == "" {
+	if len(cfg.AgentTokens) == 0 {
 		log.WarnContext(ctx, "agents are not authenticated: set CISID_AGENT_TOKEN on the server and the agents")
 	}
 	agents := hub.New(store, planner, hub.WithLogger(log), hub.WithJobChanged(jobChanged),
-		hub.WithAgentToken(cfg.AgentToken), hub.WithTracerProvider(tracing.Provider))
+		hub.WithAgentTokens(cfg.AgentTokens...), hub.WithTracerProvider(tracing.Provider))
 	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, func(id int64) {
 		agents.Wake()
 		jobChanged(id)
@@ -146,8 +146,10 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	metrics.RegisterJobCounts(store.CountJobsByStatus, log)
 
 	broker := events.New(log)
+	read := api.NewReadAccess(cfg.ReadToken, cfg.APIToken)
 	jobsAPI := api.NewJobsAPI(store, broker, log,
 		api.WithWriteToken(cfg.APIToken),
+		api.WithReadAccess(read),
 		api.WithJobChanged(func(id int64) {
 			agents.Wake() // dispatches reruns and delivers cancels here at once
 			jobChanged(id)
@@ -162,6 +164,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			UI:        web.Handler(),
 			RateLimit: rateLimiter(cfg),
 			Metrics:   metrics.Handler(),
+			Read:      read,
 			DB:        store,
 			// Webhook and API requests start the traces jobs continue.
 			TracerProvider: httpTracing,

@@ -9,7 +9,7 @@ Bu belge cisid'in güvenlik önlemlerini tek yerde toplar. Ayrıntılar ilgili b
 | GitHub (webhook) | Secret'ı bilen gönderici | HMAC-SHA256 imzası |
 | Agent | Agent token'ını bilen süreç | `Authorization: Bearer`, isteğe bağlı TLS |
 | API istemcisi (yazma) | API token'ını bilen | `Authorization: Bearer` |
-| API istemcisi (okuma), web arayüzü | Herkes | Doğrulama yok, aşağıya bak |
+| API istemcisi (okuma), web arayüzü | `CISID_READ_TOKEN` varsa token sahipleri, yoksa herkes | `Authorization: Bearer` ya da oturum cookie'si |
 | Repodaki kod (`.cisid.yml` adımları) | Push yetkisi olan herkes | Container sınırları, ama agent makinesine erişebilir |
 
 Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve agent makinesinde kod çalıştırabilir. cisid bunu engellemez, etkisini sınırlar.
@@ -26,12 +26,12 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 - `CISID_AGENT_TOKEN` tanımlıysa token'sız ya da yanlış token'lı agent `401` alır. Karşılaştırma sabit zamanlıdır. Token en az 16 karakter olmalıdır. Tanımlı değilse server bir uyarı yazar ve her agent'ı kabul eder.
 - Server `CISID_TLS_CERT_FILE` ve `CISID_TLS_KEY_FILE` ile TLS 1.2+ sunar. Agent `wss://` ile bağlanır, özel bir CA için `CISID_SERVER_CA_FILE` kullanılır. Agent token'ı yerel olmayan bir adrese `ws://` ile gönderiyorsa uyarır.
-- Tüm agent'lar tek bir ortak token kullanır. Agent başına kimlik ve token iptali yoktur ([agent.md](agent.md#kimlik-doğrulama-ve-tls)).
+- Tüm agent'lar ortak bir token kullanır, agent başına kimlik yoktur. `CISID_AGENT_TOKEN` virgülle birden fazla token alır; böylece token, agent'lar kesilmeden değiştirilir ve eskisi listeden çıkarılarak iptal edilir ([agent.md](agent.md#kimlik-doğrulama-ve-tls)).
 
 ## API ve web arayüzü
 
 - Değişiklik yapan uç noktalar (iptal, yeniden çalıştırma, secret'lar) `CISID_API_TOKEN` ister. Token tanımlı değilse bu uç noktalar kapalıdır (`403`).
-- Okuma uç noktaları (`/api/jobs`, loglar, canlı akış), web arayüzü, `/metrics` ve `/readyz` kimlik doğrulama istemez. Job listesi repo adlarını, commit'leri ve logları gösterir. Server'ı güvenilmeyen bir ağa açacaksanız önüne erişim kontrolü olan bir reverse proxy koyun.
+- Okuma uç noktaları (`/api/jobs`, loglar, canlı akış) ve `/metrics`, `CISID_READ_TOKEN` tanımlıysa okuma ya da API token'ı ister; tanımlı değilse herkese açıktır. Job listesi repo adlarını, commit'leri ve logları gösterir. Tarayıcı `POST /api/login` ile HttpOnly, `SameSite=Strict` bir cookie alır; cookie token'ın özetini taşır ve yalnızca okumaya izin verir ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` her zaman açıktır.
 - `/webhooks/github` ve `/api/` IP başına token bucket ile sınırlıdır (`CISID_RATE_LIMIT`, varsayılan 10 istek/sn). Reverse proxy arkasında `CISID_TRUST_PROXY=true` ile istemci adresi `X-Forwarded-For`'dan alınır. Proxy yoksa bu ayarı açmayın, başlık sahte olabilir.
 - Web arayüzü `Content-Security-Policy: default-src 'self'` ile sunulur, inline script yoktur. API'den gelen her değer `textContent` ile eklenir. API token'ı tarayıcıda yalnızca `sessionStorage`'da tutulur ([ui.md](ui.md#güvenlik)).
 
@@ -62,13 +62,13 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 - [ ] `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` ve `CISID_API_TOKEN` için uzun, rastgele değerler.
 - [ ] Server TLS ile ya da TLS sonlandıran bir reverse proxy arkasında. Agent'lar `wss://` ile bağlanıyor.
-- [ ] Okuma uç noktaları, web arayüzü ve `/metrics` erişim kontrolü arkasında.
+- [ ] `CISID_READ_TOKEN` tanımlı ya da server erişim kontrolü olan bir reverse proxy arkasında.
 - [ ] `CISID_SECRET_KEY` veritabanı yedeklerinden ayrı saklanıyor.
 - [ ] Agent'lar ayrı makinelerde, `CISID_STEP_MEMORY` ve `CISID_STEP_CPUS` tanımlı.
 - [ ] Hassas secret'lar `branches` ile korumalı branch'lere sınırlı.
 
 ## Bilinen eksikler
 
-- Okuma uç noktalarında ve web arayüzünde kimlik doğrulama yok.
+- Okuma erişimi tek bir paylaşılan token'la korunur; kullanıcı hesabı ve repoya göre yetki yoktur.
 - Kullanıcı ya da rol kavramı yok: API token'ı olan her şeyi yapabilir.
-- Agent başına kimlik yok, token iptali server'ı yeniden başlatmayı gerektirir.
+- Agent başına kimlik yok; token değişikliği server'ın yeniden başlatılmasını gerektirir (rotasyon listesi kesintiyi önler).

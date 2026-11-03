@@ -57,6 +57,11 @@ func WithWriteToken(token string) JobsAPIOption {
 	return func(j *JobsAPI) { j.token = token }
 }
 
+// WithReadAccess makes reading jobs and logs need what a allows.
+func WithReadAccess(a *ReadAccess) JobsAPIOption {
+	return func(j *JobsAPI) { j.read = a }
+}
+
 // WithJobChanged registers a callback run after a job is canceled or
 // queued again, e.g. to wake the dispatcher. It must not block.
 func WithJobChanged(f func(jobID int64)) JobsAPIOption {
@@ -77,6 +82,7 @@ type JobsAPI struct {
 	log          *slog.Logger
 	pollInterval time.Duration
 	token        string
+	read         *ReadAccess
 	changed      func(jobID int64)
 
 	closing   chan struct{}
@@ -109,10 +115,10 @@ func (j *JobsAPI) Close() {
 }
 
 func (j *JobsAPI) register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/jobs", j.list)
-	mux.HandleFunc("GET /api/jobs/{id}", j.get)
-	mux.HandleFunc("GET /api/jobs/{id}/logs", j.logs)
-	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.stream)
+	mux.HandleFunc("GET /api/jobs", j.read.wrapFunc(j.list))
+	mux.HandleFunc("GET /api/jobs/{id}", j.read.wrapFunc(j.get))
+	mux.HandleFunc("GET /api/jobs/{id}/logs", j.read.wrapFunc(j.logs))
+	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.read.wrapFunc(j.stream))
 	mux.HandleFunc("POST /api/jobs/{id}/cancel", requireToken(j.token, j.cancel))
 	mux.HandleFunc("POST /api/jobs/{id}/rerun", requireToken(j.token, j.rerun))
 }

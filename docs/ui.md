@@ -17,4 +17,4 @@ Server, job'ları izlemek için küçük bir web arayüzü sunar (`internal/web`
 
 - Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script yoktur, başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
 - API'den gelen her değer (log satırları dahil) sayfaya `textContent` ile eklenir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür.
-- Okuma sayfaları kimlik doğrulama istemez (Faz 4). Server'ı güvenilmeyen bir ağa açmadan önce önüne erişim kontrolü koyun.
+- `CISID_READ_TOKEN` tanımlıysa arayüz ilk okumada bir token sorar ve `POST /api/login` ile tarayıcıyı oturum açmış hâle getirir. Oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Tanımlı değilse sayfalar herkese açıktır.

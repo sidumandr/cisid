@@ -31,13 +31,22 @@ var (
 	errBadHello  = errors.New("expected agent_hello")
 )
 
+// validToken compares got with every token in constant time.
+func validToken(got string, tokens []string) bool {
+	ok := 0
+	for _, t := range tokens {
+		ok |= subtle.ConstantTimeCompare([]byte(got), []byte(t))
+	}
+	return ok == 1
+}
+
 // ServeHTTP accepts an agent's WebSocket connection and serves it until the
 // agent disconnects, a newer connection with the same name replaces it, or
 // the hub shuts down.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.agentToken != "" {
+	if len(h.agentTokens) > 0 {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(h.agentToken)) != 1 {
+		if !ok || !validToken(got, h.agentTokens) {
 			h.log.WarnContext(r.Context(), "rejected agent with missing or wrong token", "remote_addr", r.RemoteAddr)
 			w.Header().Set("WWW-Authenticate", `Bearer realm="cisid-agents"`)
 			http.Error(w, "missing or wrong agent token", http.StatusUnauthorized)

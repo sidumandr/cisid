@@ -737,8 +737,24 @@ func TestHubRequeuesWhenMatrixCannotBeExpanded(t *testing.T) {
 	a.expectNoMessage(t)
 }
 
+// TestHubAcceptsEveryAgentToken checks token rotation: agents with the new
+// token and those still on the old one both connect.
+func TestHubAcceptsEveryAgentToken(t *testing.T) {
+	f := newFixture(t, nil, WithAgentTokens("new-token-0123456789", "old-token-0123456789"))
+
+	for _, token := range []string{"new-token-0123456789", "old-token-0123456789"} {
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		conn, _, err := websocket.Dial(ctx, f.url, &websocket.DialOptions{
+			HTTPHeader: http.Header{"Authorization": {"Bearer " + token}},
+		})
+		cancel()
+		require.NoError(t, err, token)
+		_ = conn.CloseNow()
+	}
+}
+
 func TestHubRequiresAgentToken(t *testing.T) {
-	f := newFixture(t, nil, WithAgentToken("agent-token-0123456789"))
+	f := newFixture(t, nil, WithAgentTokens("agent-token-0123456789"))
 
 	for _, token := range []string{"", "wrong"} {
 		header := http.Header{}

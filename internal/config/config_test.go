@@ -46,6 +46,24 @@ func TestLoadDefaults(t *testing.T) {
 	}, cfg)
 }
 
+func TestLoadTokens(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{
+		"CISID_AGENT_TOKEN": "new-agent-token-0123, old-agent-token-0123",
+		"CISID_READ_TOKEN":  "read-token-0123456789",
+	})))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"new-agent-token-0123", "old-agent-token-0123"}, cfg.AgentTokens, "rotation: both are accepted")
+	assert.Equal(t, "read-token-0123456789", cfg.ReadToken)
+
+	for name, vars := range map[string]map[string]string{
+		"short second agent token": {"CISID_AGENT_TOKEN": "new-agent-token-0123,old"},
+		"short read token":         {"CISID_READ_TOKEN": "short"},
+	} {
+		_, err := Load(env(with(vars)))
+		assert.ErrorIs(t, err, ErrInvalidConfig, name)
+	}
+}
+
 func TestLoadBuildForks(t *testing.T) {
 	cfg, err := Load(env(with(map[string]string{"CISID_BUILD_FORKS": "true"})))
 	require.NoError(t, err)

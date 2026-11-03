@@ -12,7 +12,7 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 |---|---|---|
 | `CISID_SERVER_URL` | `ws://localhost:8080/agent/ws` | Server'ın agent endpoint'i (`ws://` ya da `wss://`) |
 | `CISID_AGENT_NAME` | hostname | Server'a bildirilen ad (`X-Cisid-Agent` başlığı ve `agent_hello`) |
-| `CISID_AGENT_TOKEN` | — | Server'ın istediği agent token'ı. `Authorization: Bearer` başlığıyla gönderilir. |
+| `CISID_AGENT_TOKEN` | — | Server'ın istediği agent token'ı. `Authorization: Bearer` başlığıyla gönderilir. Virgülle ayrılmış bir liste verilirse ilki gönderilir. |
 | `CISID_SERVER_CA_FILE` | — | `wss://` için güvenilecek PEM CA dosyası (ör. kendinden imzalı ya da şirket içi CA) |
 | `CISID_STEP_MEMORY` | — | Her adım ve servis container'ı için bellek limiti (`512m`, `2g`). Swap kullanılamaz, limiti aşan container öldürülür. |
 | `CISID_STEP_CPUS` | — | Container başına CPU limiti (`2`, `0.5`) |
@@ -118,7 +118,7 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 
 - Server'da `CISID_AGENT_TOKEN` tanımlıysa agent'lar aynı token'ı göstermeden bağlanamaz (`401`). Agent token reddedilirse loglar ve backoff ile denemeye devam eder, böylece server'da token değiştirildiğinde agent'ı yeniden başlatmak yeterli olur.
 - Token ve secret'lar bağlantı üzerinden geçtiği için uzak server'lara `wss://` ile bağlanın. Agent, token'ı yerel olmayan bir adrese şifresiz `ws://` ile gönderiyorsa uyarır.
-- Şimdilik bütün agent'lar tek bir ortak token kullanır. Agent başına token ve token iptali ileride eklenebilir.
+- Bütün agent'lar ortak bir token kullanır. Token'ı değiştirmek için server'a `yeni,eski` verin: ikisi de kabul edilir. Agent'lar `yeni`ye geçtikten sonra listeden `eski`yi çıkarın; eski token artık reddedilir. Agent'lar da listeyi alabilir ve ilk token'ı gönderir, böylece ikisi aynı secret'ı paylaşabilir.
 
 ## Bilinen sınırlamalar
 

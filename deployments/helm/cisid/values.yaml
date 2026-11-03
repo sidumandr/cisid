@@ -15,10 +15,14 @@ secrets:
   # Required: the GitHub webhook secret, also entered in the repository's
   # webhook settings.
   webhookSecret: ""
-  # Required: the token agents present to the server, 16+ characters.
+  # Required: the token agents present to the server, 16+ characters. To
+  # rotate it, set "new,old": the server takes both, agents send the first.
   agentToken: ""
   # Enables the cancel, rerun and secret endpoints, 16+ characters.
   apiToken: ""
+  # Makes reading jobs, logs and metrics need this token (or the API
+  # token), 16+ characters. Without it anyone who reaches the server reads.
+  readToken: ""
   # Base64 of 32 random bytes; encrypts repository secrets. Keep a copy:
   # stored secrets cannot be read without it.
   secretKey: ""
@@ -168,6 +172,8 @@ metrics:
     enabled: false
     interval: 30s
     labels: {}
+    # Scrape with the read token, needed once secrets.readToken is set.
+    authorize: false
 
 serviceAccount:
   create: true

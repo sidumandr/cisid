@@ -137,6 +137,9 @@ app.kubernetes.io/component: {{ .component }}
 {{- if and .Values.secrets.apiToken (lt (len .Values.secrets.apiToken) 16) }}
 {{- fail "secrets.apiToken must be at least 16 characters" }}
 {{- end }}
+{{- if and .Values.secrets.readToken (lt (len .Values.secrets.readToken) 16) }}
+{{- fail "secrets.readToken must be at least 16 characters" }}
+{{- end }}
 {{- if .Values.postgresql.enabled }}
 {{- if not .Values.postgresql.auth.password }}
 {{- fail "postgresql.auth.password is required (or set postgresql.enabled=false and database.url)" }}

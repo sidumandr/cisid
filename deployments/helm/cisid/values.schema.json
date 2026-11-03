@@ -34,6 +34,9 @@
         "apiToken": {
           "type": "string"
         },
+        "readToken": {
+          "type": "string"
+        },
         "secretKey": {
           "type": "string"
         },
@@ -478,6 +481,9 @@
             },
             "labels": {
               "type": "object"
+            },
+            "authorize": {
+              "type": "boolean"
             }
           }
         }

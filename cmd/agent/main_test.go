@@ -9,6 +9,12 @@ import (
 	"github.com/sidumandr/cisid/internal/runner"
 )
 
+func TestFirstToken(t *testing.T) {
+	assert.Equal(t, "new-token", firstToken("new-token"))
+	assert.Equal(t, "new-token", firstToken(" new-token , old-token"), "a rotation list sends the first")
+	assert.Equal(t, "", firstToken(""))
+}
+
 func TestInsecureRemote(t *testing.T) {
 	for url, want := range map[string]bool{
 		"ws://ci.example.com/agent/ws":  true,

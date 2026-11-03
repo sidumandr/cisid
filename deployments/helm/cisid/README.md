@@ -60,6 +60,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `secrets.webhookSecret` | — | **Zorunlu.** GitHub webhook secret'ı |
 | `secrets.agentToken` | — | **Zorunlu.** Agent token'ı, en az 16 karakter |
 | `secrets.apiToken` | — | İptal, yeniden çalıştırma ve secret uç noktalarını açar |
+| `secrets.readToken` | — | Job'ları, logları ve metrikleri okumak için token ister. Yoksa server'a ulaşan herkes okur. |
 | `secrets.secretKey` | — | Repo secret'larını şifreleyen anahtar (base64, 32 byte). Bir kopyasını ayrıca saklayın. |
 | `secrets.githubToken` | — | Özel repolar, rate limit ve commit status için |
 | `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
@@ -78,6 +79,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `ingress.enabled`, `ingress.hosts`, `ingress.tls` | kapalı | Webhook ve arayüz için dış erişim |
 | `tracing.otlpEndpoint` | — | OTLP/HTTP collector ([tracing.md](../../../docs/tracing.md)) |
 | `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator için ServiceMonitor |
+| `metrics.serviceMonitor.authorize` | `false` | Metrikleri okuma token'ıyla çeker; `secrets.readToken` varsa açın |
 
 ## Var olan bir Secret
 
@@ -89,7 +91,9 @@ Secret'ları bir secrets operator'ı ya da GitOps aracıyla yönetiyorsanız `se
 | `agent-token` | Zorunlu |
 | `postgres-password` | Dahili PostgreSQL ile zorunlu |
 | `database-url` | Harici veritabanıyla zorunlu (`postgres://...`) |
-| `api-token`, `secret-key`, `github-token` | İsteğe bağlı |
+| `api-token`, `read-token`, `secret-key`, `github-token` | İsteğe bağlı |
+
+Agent token'ını değiştirmek için anahtara önce `yeni,eski` yazın: server ikisini de kabul eder, agent'lar ilkini gönderir. Bütün agent'lar yeniden başladıktan sonra yalnızca `yeni`yi bırakın.
 
 ## Agent'lar Docker'a nasıl ulaşır
 

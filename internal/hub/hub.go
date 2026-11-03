@@ -74,8 +74,8 @@ func WithPollInterval(d time.Duration) Option {
 
 // WithAgentToken makes agents present "Authorization: Bearer <token>" to
 // connect. Without a token any client may connect as an agent.
-func WithAgentToken(token string) Option {
-	return func(h *Hub) { h.agentToken = token }
+func WithAgentTokens(tokens ...string) Option {
+	return func(h *Hub) { h.agentTokens = tokens }
 }
 
 // WithDrainTimeout sets how long shutdown waits for agents to close their
@@ -112,7 +112,7 @@ type Hub struct {
 	pollInterval time.Duration
 	drainTimeout time.Duration
 	lease        time.Duration
-	agentToken   string
+	agentTokens  []string
 	jobChanged   func(jobID int64)
 	tracer       trace.Tracer
 	wake         chan struct{}

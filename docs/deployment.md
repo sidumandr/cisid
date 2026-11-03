@@ -71,7 +71,7 @@ Compose stack'te agent server'a compose'un özel ağı üzerinden `ws://server:8
 - Server durumsuzdur: tüm durum PostgreSQL'dedir. Server yeniden başlatıldığında agent'lar yeniden bağlanır ve çalışan job'lar kaldıkları yerden devam eder ([hub.md](hub.md)).
 - Tasarım birden fazla server kopyasına uygundur: job'lar `FOR UPDATE SKIP LOCKED` ile dağıtılır, sahiplik lease'lerle veritabanında tutulur ve log akışı PostgreSQL `LISTEN/NOTIFY` ile tüm kopyalara ulaşır. Çok kopyalı kurulum henüz uçtan uca test edilmedi.
 - Veritabanı yedeğini düzenli alın. Secret'lar `CISID_SECRET_KEY` olmadan çözülemez, anahtarı ayrı saklayın.
-- `/metrics` ve `/readyz` kimlik doğrulama istemez. Server internete açıksa bu yolları reverse proxy'de kısıtlayın ([metrics.md](metrics.md)).
+- Server internete açıksa `CISID_READ_TOKEN` tanımlayın; job'lar, loglar ve `/metrics` o zaman token ister ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` açık kalır.
 
 ## Kubernetes
 

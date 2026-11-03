@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -64,7 +65,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 		serverURL = defaultServerURL
 	}
 
-	cfg := agent.Config{ServerURL: serverURL, Name: name, Token: os.Getenv("CISID_AGENT_TOKEN")}
+	cfg := agent.Config{ServerURL: serverURL, Name: name, Token: firstToken(os.Getenv("CISID_AGENT_TOKEN"))}
 	if caFile := os.Getenv("CISID_SERVER_CA_FILE"); caFile != "" {
 		pem, err := os.ReadFile(caFile)
 		if err != nil {
@@ -119,6 +120,14 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 	log.InfoContext(ctx, "agent stopped")
 	return nil
+}
+
+// firstToken picks the token to send from CISID_AGENT_TOKEN. It may list
+// several, as the server's does while tokens are rotated, so one Secret
+// can serve both.
+func firstToken(v string) string {
+	t, _, _ := strings.Cut(v, ",")
+	return strings.TrimSpace(t)
 }
 
 // insecureRemote reports whether u is a ws:// URL to a host other than
