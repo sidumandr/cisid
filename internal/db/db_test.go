@@ -567,3 +567,30 @@ func TestStoreSetJobSteps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"clone", "test"}, got.StepNames)
 }
+
+func TestStoreSecrets(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	const repo = "sidumandr/cisid"
+
+	require.NoError(t, s.PutSecret(ctx, repo, "B_TOKEN", []byte("sealed-b")))
+	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a1")))
+	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a2")))
+	require.NoError(t, s.PutSecret(ctx, "other/repo", "A_TOKEN", []byte("other")))
+
+	infos, err := s.SecretNames(ctx, repo)
+	require.NoError(t, err)
+	require.Len(t, infos, 2)
+	assert.Equal(t, []string{"A_TOKEN", "B_TOKEN"}, []string{infos[0].Name, infos[1].Name})
+
+	sealed, err := s.SealedSecrets(ctx, repo, []string{"A_TOKEN", "MISSING"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]byte{"A_TOKEN": []byte("sealed-a2")}, sealed)
+
+	found, err := s.DeleteSecret(ctx, repo, "A_TOKEN")
+	require.NoError(t, err)
+	assert.True(t, found)
+	found, err = s.DeleteSecret(ctx, repo, "A_TOKEN")
+	require.NoError(t, err)
+	assert.False(t, found)
+}

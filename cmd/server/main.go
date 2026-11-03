@@ -27,6 +27,7 @@ import (
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/hub"
 	"github.com/sidumandr/cisid/internal/pipeline"
+	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/internal/status"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -72,7 +73,23 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	log.InfoContext(ctx, "database ready", "migrations_applied", applied)
 
 	gh := &github.Client{APIURL: cfg.GitHubAPIURL, Token: cfg.GitHubToken}
-	planner := pipeline.Planner{Configs: gh}
+
+	// Interfaces stay nil (not a nil *Vault) when secrets are off.
+	var (
+		vault     api.SecretVault
+		secretSrc pipeline.SecretSource
+	)
+	if cfg.SecretKey != nil {
+		c, err := secrets.NewCipher(cfg.SecretKey)
+		if err != nil {
+			return err
+		}
+		v := secrets.NewVault(store, c)
+		vault, secretSrc = v, v
+	} else {
+		log.InfoContext(ctx, "secrets disabled: CISID_SECRET_KEY is not set")
+	}
+	planner := pipeline.Planner{Configs: gh, Secrets: secretSrc}
 
 	// Commit statuses need a token with write access to them.
 	var reporter *status.Reporter
@@ -106,6 +123,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Webhook: webhook,
 			Agents:  agents,
 			Jobs:    jobsAPI,
+			Secrets: api.NewSecretsAPI(vault, cfg.APIToken, log),
 			DB:      store,
 		}, log),
 		ReadHeaderTimeout: 10 * time.Second,

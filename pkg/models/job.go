@@ -42,3 +42,9 @@ type Job struct {
 	Error      string     `json:"error,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
+
+// SecretInfo describes a repository secret without its value.
+type SecretInfo struct {
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updated_at"`
+}

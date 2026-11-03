@@ -86,10 +86,13 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 
 	var seq atomic.Int64
 	for i, spec := range job.Steps {
-		stdout := &logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}
-		stderr := &logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}
+		// Secrets are masked before output leaves the agent.
+		stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}, spec.Secrets)
+		stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}, spec.Secrets)
 
 		code, err := a.runner.Run(ctx, toRunnerStep(job.JobID, spec, workspace), stdout, stderr)
+		_ = stdout.Flush()
+		_ = stderr.Flush()
 		if err == nil && code == 0 {
 			continue
 		}
@@ -159,6 +162,7 @@ func toRunnerStep(jobID int64, spec models.StepSpec, workspace string) runner.St
 	if env == nil {
 		env = map[string]string{}
 	}
+	maps.Copy(env, spec.Secrets)
 	// Built-in variables cannot be overridden by the step.
 	env["CI"] = "true"
 	env["CISID"] = "true"

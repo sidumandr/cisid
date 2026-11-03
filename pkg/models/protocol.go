@@ -91,6 +91,9 @@ type StepSpec struct {
 	Commands       []string          `json:"commands"`
 	Env            map[string]string `json:"env,omitempty"`
 	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	// Secrets are extra environment variables whose values the agent masks
+	// in the step's output.
+	Secrets map[string]string `json:"secrets,omitempty"`
 }
 
 // JobRejected is the agent's answer to an assignment it cannot run.

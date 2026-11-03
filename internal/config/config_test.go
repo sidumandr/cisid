@@ -95,6 +95,11 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"CISID_GITHUB_API_URL must be an http(s) URL"},
 		},
 		{
+			name: "bad secret key",
+			vars: with(map[string]string{"CISID_SECRET_KEY": "c2hvcnQ="}),
+			want: []string{"CISID_SECRET_KEY", "invalid secret key"},
+		},
+		{
 			name: "API token too short",
 			vars: with(map[string]string{"CISID_API_TOKEN": "short"}),
 			want: []string{"CISID_API_TOKEN must be at least 16 characters"},
@@ -136,6 +141,7 @@ func TestConfigLogValueRedactsSecrets(t *testing.T) {
 	assert.NotContains(t, out, "ghp_secret")
 	assert.NotContains(t, out, "api-secret")
 	assert.Contains(t, out, "config.api_token_set=true")
+	assert.Contains(t, out, "config.secret_key_set=false")
 	assert.Contains(t, out, "config.github_token_set=true")
 	assert.Contains(t, out, "localhost:5432/cisid")
 	assert.Contains(t, out, "config.http_addr=:8080")

@@ -45,6 +45,7 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 - Adımlar sırayla çalışır ve ilk başarısız adımda durulur.
 - Her job'a özel bir Docker volume oluşturulur (`cisid-job-<id>-<rastgele>`). Volume tüm adımlarda `/workspace` yoluna bağlanır ve çalışma dizini olarak kullanılır. Job bitince volume silinir.
 - Komutlar tek bir shell script olarak çalıştırılır: `/bin/sh -c "set -ex\n<komutlar>"`. Böylece ilk hatalı komutta durulur ve her komut çalışmadan önce stderr'a yazılır.
+- Adımın istediği secret'lar ortam değişkeni olarak eklenir ve adımın çıktısında `***` ile maskelenir ([secrets.md](secrets.md#loglarda-maskeleme)).
 - Her adıma şu ortam değişkenleri eklenir: `CI=true`, `CISID=true`, `CISID_JOB_ID`, `CISID_STEP`. Bunları adımın kendi `env` alanı ezemez.
 - `timeout_seconds` runner'ın `Step.Timeout` alanına aktarılır.
 

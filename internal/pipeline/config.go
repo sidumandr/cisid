@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/sidumandr/cisid/internal/secrets"
 )
 
 // ConfigFile is the pipeline definition read from the repository root.
@@ -43,6 +45,7 @@ var (
 //	    timeout: 10m
 //	    when:
 //	      branch: [main, "release/*"]
+//	    secrets: [DEPLOY_TOKEN]
 type Config struct {
 	Steps []Step
 }
@@ -58,6 +61,9 @@ type Step struct {
 	// Branches limits the step to pushes to matching branches; nil runs
 	// it for every branch.
 	Branches *branchMatcher
+	// Secrets names the repository secrets the step gets as environment
+	// variables.
+	Secrets []string
 }
 
 // RunsOn reports whether the step runs for a push to branch.
@@ -76,6 +82,7 @@ type rawStep struct {
 	Environment map[string]string `yaml:"environment"`
 	Timeout     string            `yaml:"timeout"`
 	When        rawWhen           `yaml:"when"`
+	Secrets     []string          `yaml:"secrets"`
 }
 
 // ParseConfig parses and validates a .cisid.yml, reporting every problem
@@ -164,6 +171,21 @@ func ParseConfig(data []byte) (Config, error) {
 			}
 		}
 
+		seenSecret := map[string]bool{}
+		for _, name := range rs.Secrets {
+			switch err := secrets.ValidateName(name); {
+			case err != nil:
+				bad("secrets: %w", err)
+			case seenSecret[name]:
+				bad("secrets: %q is listed twice", name)
+			default:
+				if _, clash := rs.Environment[name]; clash {
+					bad("secrets: %q is also set in environment", name)
+				}
+			}
+			seenSecret[name] = true
+		}
+
 		var branches *branchMatcher
 		if rs.When.Branch != nil {
 			m, err := newBranchMatcher(rs.When.Branch)
@@ -180,6 +202,7 @@ func ParseConfig(data []byte) (Config, error) {
 			Environment: rs.Environment,
 			Timeout:     timeout,
 			Branches:    branches,
+			Secrets:     rs.Secrets,
 		})
 	}
 

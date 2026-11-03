@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -38,12 +40,23 @@ type ConfigSource interface {
 
 var _ ConfigSource = (*github.Client)(nil)
 
+// SecretSource returns the values of repository secrets.
+// *secrets.Vault satisfies it.
+type SecretSource interface {
+	Secrets(ctx context.Context, repo string, names []string) (map[string]string, error)
+}
+
+var _ SecretSource = (*secrets.Vault)(nil)
+
 // Planner builds the steps of a job.
 type Planner struct {
 	// CloneImage overrides DefaultCloneImage when set.
 	CloneImage string
 	// Configs reads .cisid.yml. When nil, a job only clones the repository.
 	Configs ConfigSource
+	// Secrets provides the secrets steps ask for. When nil, a pipeline that
+	// uses secrets fails.
+	Secrets SecretSource
 }
 
 // Plan returns the steps for job: the clone step, then the steps of the
@@ -77,12 +90,43 @@ func (p Planner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, e
 	if err != nil {
 		return nil, err
 	}
+	var run []Step
 	for _, s := range cfg.Steps {
 		if s.RunsOn(job.Branch) {
-			steps = append(steps, userStep(job, s))
+			run = append(run, s)
 		}
 	}
+	values, err := p.secretsFor(ctx, job, run)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range run {
+		steps = append(steps, userStep(job, s, values))
+	}
 	return steps, nil
+}
+
+// secretsFor fetches the secrets the steps ask for.
+func (p Planner) secretsFor(ctx context.Context, job models.Job, steps []Step) (map[string]string, error) {
+	var names []string
+	for _, s := range steps {
+		names = append(names, s.Secrets...)
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	if p.Secrets == nil {
+		return nil, fmt.Errorf("%w: steps use secrets but the server has none configured (CISID_SECRET_KEY)", ErrInvalidConfig)
+	}
+	slices.Sort(names)
+	values, err := p.Secrets.Secrets(ctx, job.Repo, slices.Compact(names))
+	switch {
+	case errors.Is(err, secrets.ErrNotFound), errors.Is(err, secrets.ErrCorrupt):
+		return nil, err
+	case err != nil:
+		return nil, fmt.Errorf("%w: read secrets: %w", ErrTemporary, err)
+	}
+	return values, nil
 }
 
 // cloneStep fetches exactly the pushed commit into the workspace. Values
@@ -111,19 +155,26 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 	}
 }
 
-func userStep(job models.Job, s Step) models.StepSpec {
+func userStep(job models.Job, s Step, secretValues map[string]string) models.StepSpec {
 	env := maps.Clone(s.Environment)
 	if env == nil {
 		env = map[string]string{}
 	}
 	maps.Copy(env, jobEnv(job)) // ParseConfig rejects CISID_* keys anyway
-	return models.StepSpec{
+	spec := models.StepSpec{
 		Name:           s.Name,
 		Image:          s.Image,
 		Commands:       s.Commands,
 		Env:            env,
 		TimeoutSeconds: int(s.Timeout.Seconds()),
 	}
+	if len(s.Secrets) > 0 {
+		spec.Secrets = make(map[string]string, len(s.Secrets))
+		for _, name := range s.Secrets {
+			spec.Secrets[name] = secretValues[name]
+		}
+	}
+	return spec
 }
 
 // jobEnv describes the pushed commit to every step.

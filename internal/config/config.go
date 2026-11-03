@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/sidumandr/cisid/internal/secrets"
 )
 
 // minAPITokenLen keeps API tokens out of guessing range.
@@ -26,7 +28,8 @@ type Config struct {
 	GitHubAPIURL    string        // CISID_GITHUB_API_URL, default https://api.github.com
 	GitHubToken     string        // CISID_GITHUB_TOKEN, optional (private repos, rate limits, commit statuses)
 	PublicURL       string        // CISID_PUBLIC_URL, optional base URL users reach the server at
-	APIToken        string        // CISID_API_TOKEN, optional; enables cancel/rerun
+	APIToken        string        // CISID_API_TOKEN, optional; enables cancel/rerun and secrets
+	SecretKey       []byte        // CISID_SECRET_KEY, optional base64 32-byte key; enables secrets
 }
 
 // Load reads the configuration through getenv (normally os.Getenv) and
@@ -67,6 +70,14 @@ func Load(getenv func(string) string) (Config, error) {
 		if u, err := url.Parse(cfg.PublicURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			problems = append(problems, fmt.Errorf("CISID_PUBLIC_URL must be an http(s) URL"))
 		}
+	}
+
+	if v := getenv("CISID_SECRET_KEY"); v != "" {
+		key, err := secrets.ParseKey(v)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("CISID_SECRET_KEY: %w", err))
+		}
+		cfg.SecretKey = key
 	}
 
 	if cfg.APIToken != "" && len(cfg.APIToken) < minAPITokenLen {
@@ -113,5 +124,6 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("github_token_set", c.GitHubToken != ""),
 		slog.String("public_url", c.PublicURL),
 		slog.Bool("api_token_set", c.APIToken != ""),
+		slog.Bool("secret_key_set", c.SecretKey != nil),
 	)
 }

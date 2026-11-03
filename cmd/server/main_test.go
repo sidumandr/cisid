@@ -140,7 +140,11 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 type stepRunner struct{}
 
 func (stepRunner) Run(_ context.Context, step runner.Step, stdout, _ io.Writer) (int, error) {
-	_, err := io.WriteString(stdout, step.Env["CISID_STEP"]+" in "+step.Image+" at "+step.Env["CISID_COMMIT_SHA"]+"\n")
+	out := step.Env["CISID_STEP"] + " in " + step.Image + " at " + step.Env["CISID_COMMIT_SHA"] + "\n"
+	if token := step.Env["DEPLOY_TOKEN"]; token != "" {
+		out += "token=" + token + "\n" // a careless step printing its secret
+	}
+	_, err := io.WriteString(stdout, out)
 	return 0, err
 }
 
@@ -158,7 +162,7 @@ func fakeGitHub(t *testing.T) (url string, statuses func() []github.CommitStatus
 		switch r.URL.Path {
 		case "/repos/sidumandr/cisid/contents/.cisid.yml":
 			assert.Equal(t, sha, r.URL.Query().Get("ref"))
-			_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n")
+			_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n    secrets: [DEPLOY_TOKEN]\n")
 		case "/repos/sidumandr/cisid/statuses/" + sha:
 			var st github.CommitStatus
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&st))
@@ -193,6 +197,7 @@ func TestRunEndToEnd(t *testing.T) {
 	require.NoError(t, ln.Close())
 
 	ghURL, statuses := fakeGitHub(t)
+	const apiToken = "e2e-api-token-0123456789"
 	env := map[string]string{
 		"CISID_HTTP_ADDR":             addr,
 		"CISID_DATABASE_URL":          dbURL,
@@ -201,6 +206,8 @@ func TestRunEndToEnd(t *testing.T) {
 		"CISID_GITHUB_API_URL":        ghURL,
 		"CISID_GITHUB_TOKEN":          "e2e-token",
 		"CISID_PUBLIC_URL":            "https://ci.example.com",
+		"CISID_API_TOKEN":             apiToken,
+		"CISID_SECRET_KEY":            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=", // 32 bytes
 	}
 	var logs syncBuffer
 	ctx, cancel := context.WithCancel(t.Context())
@@ -216,6 +223,16 @@ func TestRunEndToEnd(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode == http.StatusOK
 	}, testTimeout, 50*time.Millisecond, "server did not become ready")
+
+	// Store the secret the pipeline asks for.
+	putReq, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		base+"/api/repos/sidumandr/cisid/secrets/DEPLOY_TOKEN", strings.NewReader(`{"value":"dep_e2e_s3cret"}`))
+	require.NoError(t, err)
+	putReq.Header.Set("Authorization", "Bearer "+apiToken)
+	putResp, err := http.DefaultClient.Do(putReq)
+	require.NoError(t, err)
+	putResp.Body.Close()
+	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
 
 	a, err := agent.New(agent.Config{
 		ServerURL:    "ws://" + addr + "/agent/ws",
@@ -272,8 +289,8 @@ func TestRunEndToEnd(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"clone in alpine/git:2.52.0 at " + sha + "\n",
-		"test in golang:1.27 at " + sha + "\n",
-	}, lines, "the clone step runs first, then the steps of .cisid.yml")
+		"test in golang:1.27 at " + sha + "\ntoken=***\n",
+	}, lines, "the clone step runs first, then the steps of .cisid.yml; the secret is masked")
 
 	// GitHub sees the commit go from pending to success, linked to the job.
 	require.Eventually(t, func() bool {
@@ -322,6 +339,8 @@ func TestRunEndToEnd(t *testing.T) {
 
 	out := logs.String()
 	assert.NotContains(t, out, secret, "secrets must not be logged")
+	assert.NotContains(t, out, "dep_e2e_s3cret")
+	assert.NotContains(t, out, apiToken)
 	assert.Contains(t, out, "job assigned")
 	assert.Contains(t, out, "job finished")
 	assert.Contains(t, out, "server stopped")

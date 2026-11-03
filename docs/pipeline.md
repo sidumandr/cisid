@@ -32,6 +32,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../.cisid.y
 | `steps[].commands` | evet | Shell komutları |
 | `steps[].environment` | hayır | Ortam değişkenleri. Sayı ve bool değerler string'e çevrilir. `CI`, `CISID` ve `CISID_*` ayrılmıştır. |
 | `steps[].timeout` | hayır | Go süre formatında (`90s`, `10m`, `1h30m`). Varsayılan `1h`, en fazla `24h`. |
+| `steps[].secrets` | hayır | Adıma ortam değişkeni olarak verilecek repo secret'ları, loglarda maskelenir ([secrets.md](secrets.md)) |
 | `steps[].when.branch` | hayır | Adımı sadece bu branch'lere yapılan push'larda çalıştırır. Tek değer ya da liste olabilir (bkz. [Koşullar](#koşullar)). |
 
 Bilinmeyen alanlar hatadır. Örneğin `command:` yazılırsa job hemen `failed` olur ve hata mesajı yazım hatasını gösterir. Bütün sorunlar tek mesajda listelenir.

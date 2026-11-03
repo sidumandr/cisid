@@ -182,3 +182,23 @@ func TestBranchGlobs(t *testing.T) {
 		assert.Equal(t, tt.want, m.Matches(tt.branch), "%q vs %q", tt.pattern, tt.branch)
 	}
 }
+
+func TestParseConfigSecrets(t *testing.T) {
+	cfg, err := ParseConfig([]byte("steps:\n  - {name: a, image: x, commands: [true], secrets: [TOKEN, KEY]}\n"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"TOKEN", "KEY"}, cfg.Steps[0].Secrets)
+
+	_, err = ParseConfig([]byte(`
+steps:
+  - name: a
+    image: x
+    commands: [true]
+    secrets: [BAD-NAME, CISID_X, TOKEN, TOKEN, GOFLAGS]
+    environment:
+      GOFLAGS: -mod=mod
+`))
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	for _, want := range []string{"BAD-NAME", `"CISID_X" is reserved`, `"TOKEN" is listed twice`, `"GOFLAGS" is also set in environment`} {
+		assert.Contains(t, err.Error(), want)
+	}
+}

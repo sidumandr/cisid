@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sidumandr/cisid/internal/secrets"
 	"os"
 	"strings"
 	"testing"
@@ -227,4 +228,73 @@ steps:
 	steps, err = Planner{Configs: configs}.Plan(t.Context(), job)
 	require.NoError(t, err)
 	assert.Len(t, steps, 3)
+}
+
+// fakeSecrets serves fixed secret values.
+type fakeSecrets struct {
+	values map[string]string
+	err    error
+	asked  []string
+}
+
+func (f *fakeSecrets) Secrets(_ context.Context, repo string, names []string) (map[string]string, error) {
+	f.asked = names
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := map[string]string{}
+	for _, n := range names {
+		v, ok := f.values[n]
+		if !ok {
+			return nil, fmt.Errorf("%w: %s is not set for %s", secrets.ErrNotFound, n, repo)
+		}
+		out[n] = v
+	}
+	return out, nil
+}
+
+const secretsConfig = `
+steps:
+  - {name: test, image: golang:1.27, commands: [go test ./...]}
+  - {name: publish, image: alpine:3.22, commands: [./publish.sh], secrets: [NPM_TOKEN]}
+  - {name: deploy, image: alpine:3.22, commands: [./deploy.sh], secrets: [DEPLOY_TOKEN, NPM_TOKEN], when: {branch: main}}
+`
+
+func TestPlanGivesSecretsToTheStepsThatAsk(t *testing.T) {
+	src := &fakeSecrets{values: map[string]string{"NPM_TOKEN": "npm_abc", "DEPLOY_TOKEN": "dep_xyz"}}
+	job := testJob()
+	job.Branch = "main"
+
+	steps, err := Planner{Configs: &fakeConfigs{data: []byte(secretsConfig)}, Secrets: src}.Plan(t.Context(), job)
+
+	require.NoError(t, err)
+	require.Len(t, steps, 4)
+	assert.Equal(t, []string{"DEPLOY_TOKEN", "NPM_TOKEN"}, src.asked, "each secret is read once")
+	assert.Nil(t, steps[1].Secrets, "steps get only what they ask for")
+	assert.Equal(t, map[string]string{"NPM_TOKEN": "npm_abc"}, steps[2].Secrets)
+	assert.Equal(t, map[string]string{"DEPLOY_TOKEN": "dep_xyz", "NPM_TOKEN": "npm_abc"}, steps[3].Secrets)
+	assert.NotContains(t, steps[3].Env, "DEPLOY_TOKEN", "secrets stay out of the plain environment")
+}
+
+func TestPlanSecretsOnlyForStepsThatRun(t *testing.T) {
+	src := &fakeSecrets{values: map[string]string{"NPM_TOKEN": "npm_abc"}} // no DEPLOY_TOKEN
+
+	_, err := Planner{Configs: &fakeConfigs{data: []byte(secretsConfig)}, Secrets: src}.Plan(t.Context(), testJob())
+
+	require.NoError(t, err, "deploy is skipped on this branch, so its secret is not needed")
+	assert.Equal(t, []string{"NPM_TOKEN"}, src.asked)
+}
+
+func TestPlanSecretErrors(t *testing.T) {
+	configs := &fakeConfigs{data: []byte(secretsConfig)}
+
+	_, err := Planner{Configs: configs, Secrets: &fakeSecrets{}}.Plan(t.Context(), testJob())
+	assert.ErrorIs(t, err, secrets.ErrNotFound)
+	assert.NotErrorIs(t, err, ErrTemporary)
+
+	_, err = Planner{Configs: configs}.Plan(t.Context(), testJob())
+	assert.ErrorIs(t, err, ErrInvalidConfig, "secrets requested but none configured")
+
+	_, err = Planner{Configs: configs, Secrets: &fakeSecrets{err: errors.New("connection refused")}}.Plan(t.Context(), testJob())
+	assert.ErrorIs(t, err, ErrTemporary)
 }

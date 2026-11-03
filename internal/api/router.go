@@ -28,6 +28,7 @@ type Handlers struct {
 	Webhook http.Handler // GitHub webhook deliveries
 	Agents  http.Handler // agent WebSocket connections
 	Jobs    *JobsAPI     // job and log API; omitted when nil
+	Secrets *SecretsAPI  // repository secrets API; omitted when nil
 	DB      Pinger       // readiness check
 }
 
@@ -36,6 +37,7 @@ type Handlers struct {
 //	POST /webhooks/github  GitHub webhook deliveries
 //	GET  /agent/ws         agent WebSocket connections
 //	GET  /api/jobs/...     jobs and logs (see JobsAPI)
+//	     /api/repos/...    repository secrets (see SecretsAPI)
 //	GET  /healthz          liveness: the process is serving requests
 //	GET  /readyz           readiness: the database is reachable
 func NewRouter(h Handlers, log *slog.Logger) http.Handler {
@@ -44,6 +46,9 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	mux.Handle("GET /agent/ws", h.Agents)
 	if h.Jobs != nil {
 		h.Jobs.register(mux)
+	}
+	if h.Secrets != nil {
+		h.Secrets.register(mux)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, statusResponse{Status: "ok"})

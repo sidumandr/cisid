@@ -686,3 +686,42 @@ func TestAgentCancelsJobAcceptedButNotStarted(t *testing.T) {
 	a.endJob(7)
 	assert.Empty(t, a.cancelLater)
 }
+
+func TestAgentMasksSecretsInLogs(t *testing.T) {
+	fs := newFakeServer(t)
+	r := &mockRunner{}
+	r.On("Run", mock.Anything, mock.MatchedBy(func(s runner.Step) bool {
+		return s.Env["DEPLOY_TOKEN"] == "dep_s3cret_value"
+	}), mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		stderr := args.Get(3).(io.Writer)
+		_, _ = io.WriteString(stderr, "+ curl -H 'Authorization: dep_s3cr")
+		_, _ = io.WriteString(stderr, "et_value' https://deploy\n")
+		_, _ = io.WriteString(args.Get(2).(io.Writer), "token tail: dep_s3")
+	}).Return(0, nil).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
+
+	startAgent(t, fs, r)
+	sc := fs.accept(t)
+	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID: 61,
+		Steps: []models.StepSpec{{
+			Name: "deploy", Image: "alpine:3.22", Commands: []string{"./deploy.sh"},
+			Secrets: map[string]string{"DEPLOY_TOKEN": "dep_s3cret_value"},
+		}},
+	})
+
+	logs, res := sc.collectJob(t, 61)
+	require.Equal(t, models.JobStatusSuccess, res.Status)
+	var stdout, stderr strings.Builder
+	for _, l := range logs {
+		assert.NotContains(t, l.Data, "s3cret", "no chunk carries the secret")
+		if l.Stream == models.StreamStdout {
+			stdout.WriteString(l.Data)
+		} else {
+			stderr.WriteString(l.Data)
+		}
+	}
+	assert.Equal(t, "+ curl -H 'Authorization: ***' https://deploy\n", stderr.String())
+	assert.Equal(t, "token tail: dep_s3", stdout.String(), "a mere prefix is flushed as is when the step ends")
+	r.AssertExpectations(t)
+}

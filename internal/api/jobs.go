@@ -112,19 +112,20 @@ func (j *JobsAPI) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/jobs/{id}", j.get)
 	mux.HandleFunc("GET /api/jobs/{id}/logs", j.logs)
 	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.stream)
-	mux.HandleFunc("POST /api/jobs/{id}/cancel", j.authorized(j.cancel))
-	mux.HandleFunc("POST /api/jobs/{id}/rerun", j.authorized(j.rerun))
+	mux.HandleFunc("POST /api/jobs/{id}/cancel", requireToken(j.token, j.cancel))
+	mux.HandleFunc("POST /api/jobs/{id}/rerun", requireToken(j.token, j.rerun))
 }
 
-// authorized lets a request through only with the write token.
-func (j *JobsAPI) authorized(next http.HandlerFunc) http.HandlerFunc {
+// requireToken lets a request through only with "Authorization: Bearer
+// <token>". Without a configured token the endpoint is disabled.
+func requireToken(token string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if j.token == "" {
+		if token == "" {
 			writeError(w, http.StatusForbidden, "write API disabled: CISID_API_TOKEN is not set")
 			return
 		}
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(j.token)) != 1 {
+		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="cisid"`)
 			writeError(w, http.StatusUnauthorized, "missing or wrong API token")
 			return

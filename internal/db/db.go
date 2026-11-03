@@ -238,6 +238,65 @@ func (s *Store) SetJobSteps(ctx context.Context, id int64, names []string) error
 	return nil
 }
 
+// PutSecret stores a sealed secret value, replacing an existing one.
+func (s *Store) PutSecret(ctx context.Context, repo, name string, sealed []byte) error {
+	const q = `
+		INSERT INTO secrets (repo, name, value) VALUES ($1, $2, $3)
+		ON CONFLICT (repo, name) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`
+	if _, err := s.pool.Exec(ctx, q, repo, name, sealed); err != nil {
+		return fmt.Errorf("store secret %s of %s: %w", name, repo, err)
+	}
+	return nil
+}
+
+// DeleteSecret removes a secret and reports whether it existed.
+func (s *Store) DeleteSecret(ctx context.Context, repo, name string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM secrets WHERE repo = $1 AND name = $2", repo, name)
+	if err != nil {
+		return false, fmt.Errorf("delete secret %s of %s: %w", name, repo, err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// SecretNames lists the secrets of repo by name, without values.
+func (s *Store) SecretNames(ctx context.Context, repo string) ([]models.SecretInfo, error) {
+	rows, err := s.pool.Query(ctx, "SELECT name, updated_at FROM secrets WHERE repo = $1 ORDER BY name", repo)
+	if err != nil {
+		return nil, fmt.Errorf("list secrets of %s: %w", repo, err)
+	}
+	infos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[models.SecretInfo])
+	if err != nil {
+		return nil, fmt.Errorf("list secrets of %s: %w", repo, err)
+	}
+	return infos, nil
+}
+
+// SealedSecrets returns the sealed values of the named secrets of repo
+// that exist.
+func (s *Store) SealedSecrets(ctx context.Context, repo string, names []string) (map[string][]byte, error) {
+	rows, err := s.pool.Query(ctx, "SELECT name, value FROM secrets WHERE repo = $1 AND name = ANY($2)", repo, names)
+	if err != nil {
+		return nil, fmt.Errorf("read secrets of %s: %w", repo, err)
+	}
+	defer rows.Close()
+
+	sealed := map[string][]byte{}
+	for rows.Next() {
+		var (
+			name  string
+			value []byte
+		)
+		if err := rows.Scan(&name, &value); err != nil {
+			return nil, fmt.Errorf("read secrets of %s: %w", repo, err)
+		}
+		sealed[name] = value
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read secrets of %s: %w", repo, err)
+	}
+	return sealed, nil
+}
+
 // ListJobs returns the most recent jobs, newest first.
 func (s *Store) ListJobs(ctx context.Context, limit int) ([]models.Job, error) {
 	rows, err := s.pool.Query(ctx, "SELECT "+jobColumns+" FROM jobs ORDER BY id DESC LIMIT $1", limit)
