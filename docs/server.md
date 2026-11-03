@@ -27,6 +27,8 @@ curl http://localhost:8080/readyz
 | `CISID_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `CISID_GITHUB_TOKEN` | — | `.cisid.yml` okumak için GitHub token'ı. Özel repolar ve rate limit için gerekir ([pipeline.md](pipeline.md)). |
 | `CISID_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise Server için API adresi |
+| `CISID_AGENT_TOKEN` | — | Agent'ların bağlanırken göstermesi gereken token, en az 16 karakter. Tanımlı değilse her istemci agent olarak bağlanabilir ve server bunu açılışta uyarı olarak loglar. |
+| `CISID_TLS_CERT_FILE`, `CISID_TLS_KEY_FILE` | — | İkisi birlikte verilirse server HTTPS üzerinden servis eder (en az TLS 1.2). Agent'lar `wss://` ile bağlanır. |
 | `CISID_API_TOKEN` | — | İptal ve yeniden çalıştırma uç noktalarını açar, en az 16 karakter ([api.md](api.md#iptal-ve-yeniden-çalıştırma)) |
 | `CISID_SECRET_KEY` | — | Secret'ları şifreleyen 32 byte'lık anahtar, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | Kullanıcıların server'a eriştiği adres. Commit status bağlantılarında kullanılır ([commit-status.md](commit-status.md)). |

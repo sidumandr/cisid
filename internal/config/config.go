@@ -30,6 +30,9 @@ type Config struct {
 	PublicURL       string        // CISID_PUBLIC_URL, optional base URL users reach the server at
 	APIToken        string        // CISID_API_TOKEN, optional; enables cancel/rerun and secrets
 	SecretKey       []byte        // CISID_SECRET_KEY, optional base64 32-byte key; enables secrets
+	AgentToken      string        // CISID_AGENT_TOKEN, optional; required from agents when set
+	TLSCertFile     string        // CISID_TLS_CERT_FILE, optional; serve HTTPS with TLSKeyFile
+	TLSKeyFile      string        // CISID_TLS_KEY_FILE
 }
 
 // Load reads the configuration through getenv (normally os.Getenv) and
@@ -43,6 +46,9 @@ func Load(getenv func(string) string) (Config, error) {
 		GitHubToken:   getenv("CISID_GITHUB_TOKEN"),
 		PublicURL:     strings.TrimSuffix(getenv("CISID_PUBLIC_URL"), "/"),
 		APIToken:      getenv("CISID_API_TOKEN"),
+		AgentToken:    getenv("CISID_AGENT_TOKEN"),
+		TLSCertFile:   getenv("CISID_TLS_CERT_FILE"),
+		TLSKeyFile:    getenv("CISID_TLS_KEY_FILE"),
 	}
 	var problems []error
 
@@ -78,6 +84,13 @@ func Load(getenv func(string) string) (Config, error) {
 			problems = append(problems, fmt.Errorf("CISID_SECRET_KEY: %w", err))
 		}
 		cfg.SecretKey = key
+	}
+
+	if cfg.AgentToken != "" && len(cfg.AgentToken) < minAPITokenLen {
+		problems = append(problems, fmt.Errorf("CISID_AGENT_TOKEN must be at least %d characters", minAPITokenLen))
+	}
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		problems = append(problems, fmt.Errorf("CISID_TLS_CERT_FILE and CISID_TLS_KEY_FILE must be set together"))
 	}
 
 	if cfg.APIToken != "" && len(cfg.APIToken) < minAPITokenLen {
@@ -125,5 +138,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("public_url", c.PublicURL),
 		slog.Bool("api_token_set", c.APIToken != ""),
 		slog.Bool("secret_key_set", c.SecretKey != nil),
+		slog.Bool("agent_token_set", c.AgentToken != ""),
+		slog.Bool("tls", c.TLSCertFile != ""),
 	)
 }

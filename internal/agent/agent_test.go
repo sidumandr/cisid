@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,6 +85,8 @@ type fakeServer struct {
 	dials  atomic.Int32
 	// noAck stops the server from acknowledging messages.
 	noAck atomic.Bool
+	// token, if set, is required from agents.
+	token string
 }
 
 type serverConn struct {
@@ -102,6 +106,10 @@ func newFakeServer(t *testing.T) *fakeServer {
 			return
 		}
 		assert.Equal(t, "test-agent", r.Header.Get(agentHeader))
+		if fs.token != "" && r.Header.Get("Authorization") != "Bearer "+fs.token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 
 		conn, err := websocket.Accept(w, r, nil)
 		if !assert.NoError(t, err) {
@@ -813,4 +821,71 @@ func TestAgentFailsJobWhenServiceDoesNotStart(t *testing.T) {
 	}, res)
 	r.AssertExpectations(t) // the started service is cleaned up, no step ran
 	r.AssertNotCalled(t, "Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestAgentSendsToken(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.token = "agent-token-0123456789"
+	a, err := New(Config{
+		ServerURL: fs.url(), Name: "test-agent", Token: fs.token,
+		MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
+	}, &mockRunner{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = a.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+
+	fs.accept(t)
+}
+
+func TestAgentKeepsRetryingWithWrongToken(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.token = "the-right-token-0123"
+	a, err := New(Config{
+		ServerURL: fs.url(), Name: "test-agent", Token: "a-wrong-token-0123",
+		MinBackoff: 10 * time.Millisecond, MaxBackoff: 20 * time.Millisecond,
+	}, &mockRunner{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = a.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+
+	require.Eventually(t, func() bool { return fs.dials.Load() >= 3 }, testTimeout, 5*time.Millisecond,
+		"the agent retries (the token may be rotated on the server)")
+	select {
+	case <-fs.conns:
+		t.Fatal("connected with a wrong token")
+	default:
+	}
+}
+
+func TestAgentConnectsOverTLSWithPrivateCA(t *testing.T) {
+	var accepted atomic.Bool
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		accepted.Store(true)
+		_, _, _ = conn.Read(r.Context()) // the hello
+		_ = conn.Close(websocket.StatusNormalClosure, "bye")
+	}))
+	defer srv.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(srv.Certificate())
+	a, err := New(Config{
+		ServerURL: "wss" + strings.TrimPrefix(srv.URL, "https"), Name: "test-agent",
+		TLS: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, MinBackoff: time.Hour,
+	}, &mockRunner{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = a.Run(ctx) }()
+	require.Eventually(t, accepted.Load, testTimeout, 5*time.Millisecond, "TLS handshake with the private CA")
+	cancel()
+	<-done
 }

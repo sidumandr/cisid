@@ -40,7 +40,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 ## Faz 4 — Production
 
 - [ ] Agent ↔ server iletişimini gRPC'ye taşı (`api/proto`).
-- [ ] Agent kimlik doğrulama (token), TLS.
+- [x] Agent kimlik doğrulama (ortak token) ve TLS (`CISID_TLS_*`, agent'ta `wss://` ve özel CA).
 - [ ] Gözlemlenebilirlik: `slog` yapılandırılmış log, Prometheus metrikleri, OpenTelemetry trace.
 - [ ] Container izolasyonu ve kaynak limitleri (CPU, bellek, ağ).
 - [ ] Rate limiting, webhook replay koruması (`X-GitHub-Delivery`).

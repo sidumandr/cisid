@@ -100,6 +100,16 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"CISID_SECRET_KEY", "invalid secret key"},
 		},
 		{
+			name: "agent token too short",
+			vars: with(map[string]string{"CISID_AGENT_TOKEN": "short"}),
+			want: []string{"CISID_AGENT_TOKEN must be at least 16 characters"},
+		},
+		{
+			name: "TLS key without certificate",
+			vars: with(map[string]string{"CISID_TLS_KEY_FILE": "key.pem"}),
+			want: []string{"must be set together"},
+		},
+		{
 			name: "API token too short",
 			vars: with(map[string]string{"CISID_API_TOKEN": "short"}),
 			want: []string{"CISID_API_TOKEN must be at least 16 characters"},

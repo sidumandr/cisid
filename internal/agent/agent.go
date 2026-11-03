@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,6 +67,11 @@ type Config struct {
 	// FlushTimeout bounds how long shutdown waits to deliver pending
 	// messages, such as the result of a canceled job (default 10s).
 	FlushTimeout time.Duration
+	// Token is sent as "Authorization: Bearer <token>" when set.
+	Token string
+	// TLS configures wss:// connections, e.g. to trust a private CA; the
+	// system roots are used when nil.
+	TLS *tls.Config
 }
 
 // Agent is a worker that runs one job at a time.
@@ -184,9 +190,19 @@ func (a *Agent) connectLoop(ctx context.Context, stopping <-chan struct{}, jobs 
 func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan<- models.JobAssignment) (connected bool, err error) {
 	header := http.Header{}
 	header.Set(agentHeader, a.cfg.Name)
+	if a.cfg.Token != "" {
+		header.Set("Authorization", "Bearer "+a.cfg.Token)
+	}
+	opts := &websocket.DialOptions{HTTPHeader: header}
+	if a.cfg.TLS != nil {
+		opts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: a.cfg.TLS}}
+	}
 
-	conn, _, err := websocket.Dial(ctx, a.cfg.ServerURL, &websocket.DialOptions{HTTPHeader: header})
+	conn, resp, err := websocket.Dial(ctx, a.cfg.ServerURL, opts)
 	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			return false, fmt.Errorf("dial %s: server rejected the agent token: %w", a.cfg.ServerURL, err)
+		}
 		return false, fmt.Errorf("dial %s: %w", a.cfg.ServerURL, err)
 	}
 	defer conn.CloseNow()

@@ -78,11 +78,11 @@ func (r *fakeRunner) StartService(_ context.Context, svc runner.Service) (string
 type system struct {
 	planner pipeline.Planner
 	store   *db.Store
-	runner *fakeRunner
-	proxy  *tcpProxy // between the agent and the server
-	hub    atomic.Pointer[Hub]
-	stop   context.CancelFunc
-	done   chan struct{}
+	runner  *fakeRunner
+	proxy   *tcpProxy // between the agent and the server
+	hub     atomic.Pointer[Hub]
+	stop    context.CancelFunc
+	done    chan struct{}
 }
 
 func newSystem(t *testing.T, r *fakeRunner, planner ...pipeline.Planner) *system {

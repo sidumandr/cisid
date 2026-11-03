@@ -12,6 +12,8 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 |---|---|---|
 | `CISID_SERVER_URL` | `ws://localhost:8080/agent/ws` | Server'ın agent endpoint'i (`ws://` ya da `wss://`) |
 | `CISID_AGENT_NAME` | hostname | Server'a bildirilen ad (`X-Cisid-Agent` başlığı ve `agent_hello`) |
+| `CISID_AGENT_TOKEN` | — | Server'ın istediği agent token'ı. `Authorization: Bearer` başlığıyla gönderilir. |
+| `CISID_SERVER_CA_FILE` | — | `wss://` için güvenilecek PEM CA dosyası (ör. kendinden imzalı ya da şirket içi CA) |
 | `DOCKER_HOST` vb. | Docker varsayılanı | Docker daemon bağlantısı (`client.FromEnv`) |
 
 `SIGINT` / `SIGTERM` graceful shutdown başlatır (aşağıya bak).
@@ -98,10 +100,15 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 4. Outbox en fazla `FlushTimeout` (10 sn) boyunca boşaltılır.
 5. Bağlantı `1000 Normal Closure` ile kapatılır.
 
-## Bilinen sınırlamalar (Faz 2)
+## Kimlik doğrulama ve TLS
+
+- Server'da `CISID_AGENT_TOKEN` tanımlıysa agent'lar aynı token'ı göstermeden bağlanamaz (`401`). Agent token reddedilirse loglar ve backoff ile denemeye devam eder, böylece server'da token değiştirildiğinde agent'ı yeniden başlatmak yeterli olur.
+- Token ve secret'lar bağlantı üzerinden geçtiği için uzak server'lara `wss://` ile bağlanın. Agent, token'ı yerel olmayan bir adrese şifresiz `ws://` ile gönderiyorsa uyarır.
+- Şimdilik bütün agent'lar tek bir ortak token kullanır. Agent başına token ve token iptali ileride eklenebilir.
+
+## Bilinen sınırlamalar
 
 - Agent 5 dakikadan (lease) uzun süre bağlanamazsa job'u başka bir agent'a verilir. Geri döndüğünde ilk job'un sonucu atılır (bkz. [hub.md](hub.md#canlılık-ve-lease)).
-- Kimlik doğrulama yok (Faz 4).
 
 ## Testler
 

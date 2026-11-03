@@ -3,13 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -374,4 +382,127 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// selfSignedCert writes a certificate for 127.0.0.1 and its key to dir and
+// returns their paths and a pool trusting the certificate.
+func selfSignedCert(t *testing.T, dir string) (certFile, keyFile string, roots *x509.CertPool) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "cisid test"},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	require.NoError(t, err)
+
+	certFile, keyFile = filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+	require.NoError(t, os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
+	require.NoError(t, os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600))
+
+	cert, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	roots = x509.NewCertPool()
+	roots.AddCert(cert)
+	return certFile, keyFile, roots
+}
+
+// TestRunServesTLSToAuthenticatedAgents runs the server over HTTPS with an
+// agent token; an agent with the token and the CA connects over wss:// and
+// runs a job, one without the token is turned away.
+func TestRunServesTLSToAuthenticatedAgents(t *testing.T) {
+	dbURL := dbtest.NewURL(t)
+	certFile, keyFile, roots := selfSignedCert(t, t.TempDir())
+	const agentToken = "tls-agent-token-0123456789"
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "steps:\n  - {name: test, image: alpine:3.22, commands: [true]}\n")
+	}))
+	defer gh.Close()
+	ghURL := gh.URL
+
+	ln := listen(t)
+	addr := ln.Addr().String()
+	require.NoError(t, ln.Close())
+	env := map[string]string{
+		"CISID_HTTP_ADDR":             addr,
+		"CISID_DATABASE_URL":          dbURL,
+		"CISID_GITHUB_WEBHOOK_SECRET": "tls-secret",
+		"CISID_SHUTDOWN_TIMEOUT":      "5s",
+		"CISID_AGENT_TOKEN":           agentToken,
+		"CISID_TLS_CERT_FILE":         certFile,
+		"CISID_TLS_KEY_FILE":          keyFile,
+		"CISID_GITHUB_API_URL":        ghURL,
+	}
+	var logs syncBuffer
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, func(k string) string { return env[k] }, &logs) }()
+
+	tlsConfig := &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig, DisableKeepAlives: true}}
+	base := "https://" + addr
+	require.Eventually(t, func() bool {
+		resp, err := client.Get(base + "/readyz")
+		if err != nil {
+			return false
+		}
+		resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, testTimeout, 50*time.Millisecond, "server did not become ready over HTTPS")
+
+	startAgent := func(token string) (*agent.Agent, func()) {
+		a, err := agent.New(agent.Config{
+			ServerURL: "wss://" + addr + "/agent/ws", Name: "tls-agent", Token: token, TLS: tlsConfig,
+			MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond, FlushTimeout: 2 * time.Second,
+		}, stepRunner{}, discard)
+		require.NoError(t, err)
+		actx, stop := context.WithCancel(t.Context())
+		stopped := make(chan struct{})
+		go func() { defer close(stopped); _ = a.Run(actx) }()
+		return a, func() { stop(); <-stopped }
+	}
+
+	_, stopIntruder := startAgent("wrong-token-0123456789")
+	require.Eventually(t, func() bool { return strings.Contains(logs.String(), "rejected agent with missing or wrong token") },
+		testTimeout, 20*time.Millisecond)
+	stopIntruder()
+
+	pool, err := pgxpool.New(t.Context(), dbURL)
+	require.NoError(t, err)
+	defer pool.Close()
+	store := db.New(pool)
+	id, err := store.CreateJob(t.Context(), models.Job{
+		Repo: "sidumandr/cisid", CloneURL: "https://github.com/sidumandr/cisid.git", Branch: "main",
+		CommitSHA: "9999999999999999999999999999999999999999", Status: models.JobStatusPending,
+	})
+	require.NoError(t, err)
+
+	// The agent registering wakes the dispatcher, which finds the job.
+	_, stopAgent := startAgent(agentToken)
+	defer stopAgent()
+
+	var job models.Job
+	require.Eventually(t, func() bool {
+		job, err = store.GetJob(t.Context(), id)
+		return err == nil && job.Status.Finished()
+	}, 3*testTimeout, 50*time.Millisecond, "job did not finish")
+	assert.Equal(t, models.JobStatusSuccess, job.Status)
+	assert.Equal(t, "tls-agent", job.Agent)
+
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * testTimeout):
+		t.Fatalf("server did not shut down; log:\n%s", logs.String())
+	}
+	assert.NotContains(t, logs.String(), agentToken)
 }

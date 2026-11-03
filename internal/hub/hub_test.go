@@ -689,3 +689,29 @@ func TestHubRequeuesWhenMatrixCannotBeExpanded(t *testing.T) {
 	waitFor(t, requeued, "requeue")
 	a.expectNoMessage(t)
 }
+
+func TestHubRequiresAgentToken(t *testing.T) {
+	f := newFixture(t, nil, WithAgentToken("agent-token-0123456789"))
+
+	for _, token := range []string{"", "wrong"} {
+		header := http.Header{}
+		if token != "" {
+			header.Set("Authorization", "Bearer "+token)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+		_, resp, err := websocket.Dial(ctx, f.url, &websocket.DialOptions{HTTPHeader: header})
+		cancel()
+		require.Error(t, err, "token %q", token)
+		require.NotNil(t, resp)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	}
+	f.store.AssertNotCalled(t, "RequeueAgentJobs", mock.Anything, mock.Anything, mock.Anything)
+
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, f.url, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer agent-token-0123456789"}},
+	})
+	require.NoError(t, err)
+	_ = conn.CloseNow()
+}

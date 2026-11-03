@@ -2,10 +2,12 @@ package hub
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -32,6 +34,16 @@ var (
 // agent disconnects, a newer connection with the same name replaces it, or
 // the hub shuts down.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.agentToken != "" {
+		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(h.agentToken)) != 1 {
+			h.log.WarnContext(r.Context(), "rejected agent with missing or wrong token", "remote_addr", r.RemoteAddr)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="cisid-agents"`)
+			http.Error(w, "missing or wrong agent token", http.StatusUnauthorized)
+			return
+		}
+	}
+
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()

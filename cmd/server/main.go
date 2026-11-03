@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -105,7 +106,11 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		log.InfoContext(ctx, "commit statuses disabled: CISID_GITHUB_TOKEN is not set")
 	}
 
-	agents := hub.New(store, planner, hub.WithLogger(log), hub.WithJobChanged(jobChanged))
+	if cfg.AgentToken == "" {
+		log.WarnContext(ctx, "agents are not authenticated: set CISID_AGENT_TOKEN on the server and the agents")
+	}
+	agents := hub.New(store, planner, hub.WithLogger(log), hub.WithJobChanged(jobChanged),
+		hub.WithAgentToken(cfg.AgentToken))
 	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, func(id int64) {
 		agents.Wake()
 		jobChanged(id)
@@ -140,6 +145,15 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.HTTPAddr, err)
+	}
+	if cfg.TLSCertFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("load TLS certificate: %w", err)
+		}
+		srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+		ln = tls.NewListener(ln, srv.TLSConfig)
 	}
 
 	// If one stops with an error, the others are shut down too.
