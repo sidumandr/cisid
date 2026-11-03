@@ -10,6 +10,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
 - [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
+- [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
 
 ## Mimari
 
@@ -27,8 +28,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
         │  internal/db    storage   │
         └──────┬─────────────▲──────┘
                │             │
-       SQL     │             │  job dağıtımı / durum raporu
-               ▼             │  (HTTP, ileride gRPC: api/proto)
+       SQL     │             │  job_assigned ▼ / ▲ job_log, job_result
+               ▼             │  (WebSocket, ileride gRPC: api/proto)
       ┌────────────────┐     │
       │   PostgreSQL   │     │
       │ pipelines,     │     │
@@ -38,7 +39,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
         ┌────────────────────┴──────┐
         │     cmd/agent (worker)    │   ×N
         │                           │
-        │  internal/runner          │
+        │  internal/agent   ws, job │
+        │  internal/runner  docker  │
         └─────────────┬─────────────┘
                       │ Docker API
                       ▼
@@ -67,6 +69,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── server/      # API sunucusu (main)
 │   └── agent/       # Worker binary (main)
 ├── internal/
+│   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
 │   ├── api/         # HTTP handler'ları
 │   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
@@ -99,8 +102,20 @@ go vet ./...
 go test ./...
 ```
 
-Race detector cgo gerektirir. Windows'ta bir C derleyicisi (ör. MinGW-w64) kurulu olmalı ya da testler Linux/WSL üzerinde çalıştırılmalıdır:
+Race detector cgo gerektirir. Linux/macOS'ta doğrudan çalışır:
 
 ```bash
 go test -race ./...
+```
+
+C derleyicisi olmayan Windows'ta Docker ile çalıştırılabilir (PowerShell, proje kökünden):
+
+```bash
+docker run --rm -v "${PWD}:/src" -v cisid-gomod:/go/pkg/mod -w /src golang:1.27 go test -race ./...
+```
+
+Gerçek Docker'a karşı entegrasyon testleri (alpine image'ını çeker):
+
+```bash
+CISID_DOCKER_TESTS=1 go test ./internal/runner/ ./internal/agent/ -run Integration -v
 ```

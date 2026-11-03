@@ -12,21 +12,22 @@ Hedef: GitHub'a push → container'da komut çalışır → sonuç veritabanınd
 - [ ] **Server iskeleti** — `cmd/server`: config (env), pgx pool, migration'lar, HTTP router, graceful shutdown.
 - [x] **Docker runner** — `internal/runner/docker.go` (`github.com/moby/moby/client`): image pull (progress callback), container create (env, workdir, mount), start, stdout/stderr `io.Reader`, exit code, timeout, context cancellation. `testify/mock` ile mock Docker client testleri.
 - [ ] **Pipeline tanımı** — repodaki `.cisid.yml` dosyasını parse et (image + komut listesi).
-- [ ] **Agent (temel)** — `cmd/agent`: server'a WebSocket ile bağlan, `job_assigned` dinle, runner'ı çağır, sonucu raporla.
+- [x] **Agent (temel)** — `cmd/agent`: server'a WebSocket ile bağlan, `job_assigned` dinle, runner'ı çağır, sonucu raporla.
 
 ## Faz 2 — Streaming
 
 Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
-- [ ] Agent → server canlı log akışı (WebSocket, tek writer goroutine).
+- [ ] Agent → server canlı log akışı (WebSocket, tek writer goroutine). Agent tarafı hazır, server tarafı eksik.
 - [ ] Server → istemci log yayını (WebSocket), logların veritabanına yazılması.
-- [ ] Agent reconnect: exponential backoff + jitter.
+- [x] Agent reconnect: exponential backoff + jitter.
 - [ ] Job lease + heartbeat: cevap vermeyen agent'ın işi tekrar kuyruğa döner.
-- [ ] Mesaj protokolü tipleri `pkg/models` altında.
+- [ ] Mesajların onaylı (ack) teslimi.
+- [x] Mesaj protokolü tipleri `pkg/models` altında.
 
 ## Faz 3 — Features
 
-- [ ] Çok adımlı pipeline'lar, adımlar arası paylaşılan workspace volume.
+- [ ] Çok adımlı pipeline'lar. Agent tarafında sıralı adımlar ve paylaşılan workspace volume hazır.
 - [ ] Service container'ları (ör. test için PostgreSQL).
 - [ ] Secret yönetimi (şifreli saklama, env olarak enjekte, loglarda maskeleme).
 - [ ] Branch / event filtreleri, matrix build.
