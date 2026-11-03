@@ -15,12 +15,15 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
 
 const (
 	// LabelManaged marks containers created by cisid so orphans can be found.
 	LabelManaged = "io.cisid.managed"
+	// LabelService names the service a container runs.
+	LabelService = "io.cisid.service"
 
 	// DefaultStopGracePeriod is how long a container gets between SIGTERM and
 	// SIGKILL when a step is canceled or times out.
@@ -52,6 +55,8 @@ type DockerClient interface {
 	ContainerStop(ctx context.Context, id string, opts client.ContainerStopOptions) (client.ContainerStopResult, error)
 	ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
 	VolumeRemove(ctx context.Context, id string, opts client.VolumeRemoveOptions) (client.VolumeRemoveResult, error)
+	NetworkCreate(ctx context.Context, name string, opts client.NetworkCreateOptions) (client.NetworkCreateResult, error)
+	NetworkRemove(ctx context.Context, id string, opts client.NetworkRemoveOptions) (client.NetworkRemoveResult, error)
 }
 
 var _ DockerClient = (*client.Client)(nil)
@@ -91,6 +96,8 @@ type Step struct {
 	Env        map[string]string
 	WorkingDir string
 	Mounts     []Mount
+	// Network attaches the container to a network made by CreateNetwork.
+	Network string
 	// Timeout limits the container run time; zero means no limit.
 	Timeout time.Duration
 	// OnPullProgress, if set, is called for every image pull update.
@@ -190,7 +197,7 @@ func (r *DockerRunner) Start(ctx context.Context, step Step) (*Execution, error)
 		return nil, fmt.Errorf("%w: image is empty", ErrInvalidStep)
 	}
 
-	if err := r.pull(ctx, step); err != nil {
+	if err := r.pull(ctx, step.Image, step.OnPullProgress); err != nil {
 		return nil, err
 	}
 
@@ -298,26 +305,26 @@ func (r *DockerRunner) waitExit(ctx context.Context, id string) (int, error) {
 	}
 }
 
-func (r *DockerRunner) pull(ctx context.Context, step Step) error {
-	resp, err := r.cli.ImagePull(ctx, step.Image, client.ImagePullOptions{})
+func (r *DockerRunner) pull(ctx context.Context, image string, onProgress func(PullProgress)) error {
+	resp, err := r.cli.ImagePull(ctx, image, client.ImagePullOptions{})
 	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrImagePull, step.Image, err)
+		return fmt.Errorf("%w: %s: %w", ErrImagePull, image, err)
 	}
 	defer resp.Close()
 
 	for msg, err := range resp.JSONMessages(ctx) {
 		if err != nil {
-			return fmt.Errorf("%w: %s: %w", ErrImagePull, step.Image, err)
+			return fmt.Errorf("%w: %s: %w", ErrImagePull, image, err)
 		}
 		if msg.Error != nil {
-			return fmt.Errorf("%w: %s: %w", ErrImagePull, step.Image, msg.Error)
+			return fmt.Errorf("%w: %s: %w", ErrImagePull, image, msg.Error)
 		}
-		if step.OnPullProgress != nil {
+		if onProgress != nil {
 			p := PullProgress{Layer: msg.ID, Status: msg.Status}
 			if msg.Progress != nil {
 				p.Current, p.Total = msg.Progress.Current, msg.Progress.Total
 			}
-			step.OnPullProgress(p)
+			onProgress(p)
 		}
 	}
 	return nil
@@ -388,6 +395,96 @@ func createOptions(step Step) client.ContainerCreateOptions {
 			WorkingDir: step.WorkingDir,
 			Labels:     map[string]string{LabelManaged: "true"},
 		},
-		HostConfig: &container.HostConfig{Mounts: mounts},
+		HostConfig:       &container.HostConfig{Mounts: mounts, NetworkMode: container.NetworkMode(step.Network)},
+		NetworkingConfig: endpoint(step.Network),
 	}
+}
+
+// endpoint attaches a container to network netName under the given DNS
+// aliases.
+func endpoint(netName string, aliases ...string) *network.NetworkingConfig {
+	if netName == "" {
+		return nil
+	}
+	return &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{netName: {Aliases: aliases}},
+	}
+}
+
+// Service is a container that runs alongside a job's steps, such as a
+// database for tests. Steps on the same network reach it at host Name.
+type Service struct {
+	Name    string
+	Image   string
+	Env     map[string]string
+	Cmd     []string
+	Network string
+	// OnPullProgress, if set, is called for every image pull update.
+	OnPullProgress func(PullProgress)
+}
+
+// CreateNetwork creates a bridge network for one job's containers.
+func (r *DockerRunner) CreateNetwork(ctx context.Context, name string) error {
+	_, err := r.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
+		Driver: "bridge",
+		Labels: map[string]string{LabelManaged: "true"},
+	})
+	if err != nil {
+		return fmt.Errorf("create network %s: %w", name, err)
+	}
+	return nil
+}
+
+// RemoveNetwork removes a network made by CreateNetwork. Removing a network
+// that does not exist is not an error.
+func (r *DockerRunner) RemoveNetwork(ctx context.Context, name string) error {
+	_, err := r.cli.NetworkRemove(ctx, name, client.NetworkRemoveOptions{})
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("remove network %s: %w", name, err)
+	}
+	return nil
+}
+
+// StartService pulls the image and starts svc in the background, attached
+// to its network under its name. It returns the container ID for
+// StopService.
+func (r *DockerRunner) StartService(ctx context.Context, svc Service) (string, error) {
+	if svc.Name == "" || svc.Image == "" || svc.Network == "" {
+		return "", fmt.Errorf("%w: service needs a name, image and network", ErrInvalidStep)
+	}
+	if err := r.pull(ctx, svc.Image, svc.OnPullProgress); err != nil {
+		return "", err
+	}
+
+	var env []string
+	for _, k := range slices.Sorted(maps.Keys(svc.Env)) {
+		env = append(env, k+"="+svc.Env[k])
+	}
+	created, err := r.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image:  svc.Image,
+			Cmd:    svc.Cmd,
+			Env:    env,
+			Labels: map[string]string{LabelManaged: "true", LabelService: svc.Name},
+		},
+		HostConfig:       &container.HostConfig{NetworkMode: container.NetworkMode(svc.Network)},
+		NetworkingConfig: endpoint(svc.Network, svc.Name),
+	})
+	if err != nil {
+		return "", fmt.Errorf("create service %s: %w", svc.Name, err)
+	}
+	if _, err := r.cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		r.cleanup(ctx, created.ID, false)
+		return "", fmt.Errorf("start service %s: %w", svc.Name, err)
+	}
+	return created.ID, nil
+}
+
+// StopService force-removes a service container started by StartService.
+func (r *DockerRunner) StopService(ctx context.Context, id string) error {
+	_, err := r.cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("remove service container %s: %w", id, err)
+	}
+	return nil
 }

@@ -2,7 +2,10 @@ package runner
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,4 +57,34 @@ func TestDockerIntegrationTimeout(t *testing.T) {
 
 	assert.Equal(t, -1, code)
 	require.ErrorIs(t, err, ErrTimeout)
+}
+
+func TestDockerIntegrationService(t *testing.T) {
+	r := newDockerRunner(t)
+	ctx := t.Context()
+	net := "cisid-it-" + strings.ToLower(rand.Text()[:8])
+
+	require.NoError(t, r.CreateNetwork(ctx, net))
+	t.Cleanup(func() { assert.NoError(t, r.RemoveNetwork(context.Background(), net)) })
+
+	id, err := r.StartService(ctx, Service{
+		Name: "db", Image: "postgres:18-alpine", Network: net,
+		Env: map[string]string{"POSTGRES_PASSWORD": "test"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, r.StopService(context.Background(), id)) })
+
+	var stdout, stderr bytes.Buffer
+	code, err := r.Run(ctx, Step{
+		Image:      "postgres:18-alpine",
+		Entrypoint: []string{"/bin/sh", "-c"},
+		Cmd: []string{`for i in $(seq 60); do pg_isready -q -h db && break; sleep 0.5; done
+PGPASSWORD=test psql -h db -U postgres -tAc 'select 40 + 2'`},
+		Network: net,
+		Timeout: time.Minute,
+	}, &stdout, &stderr)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, code, "stderr: %s", stderr.String())
+	assert.Equal(t, "42\n", stdout.String(), "the step reaches the service by name")
 }

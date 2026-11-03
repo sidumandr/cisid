@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/moby/moby/api/types/network"
 	"io"
 	"iter"
 	"log/slog"
@@ -73,6 +74,16 @@ func (m *mockDocker) ContainerRemove(ctx context.Context, id string, opts client
 func (m *mockDocker) VolumeRemove(ctx context.Context, id string, opts client.VolumeRemoveOptions) (client.VolumeRemoveResult, error) {
 	args := m.Called(ctx, id, opts)
 	return args.Get(0).(client.VolumeRemoveResult), args.Error(1)
+}
+
+func (m *mockDocker) NetworkCreate(ctx context.Context, name string, opts client.NetworkCreateOptions) (client.NetworkCreateResult, error) {
+	args := m.Called(ctx, name, opts)
+	return args.Get(0).(client.NetworkCreateResult), args.Error(1)
+}
+
+func (m *mockDocker) NetworkRemove(ctx context.Context, id string, opts client.NetworkRemoveOptions) (client.NetworkRemoveResult, error) {
+	args := m.Called(ctx, id, opts)
+	return args.Get(0).(client.NetworkRemoveResult), args.Error(1)
 }
 
 // fakePull is an ImagePullResponse that replays msgs and then fails with err.
@@ -535,4 +546,61 @@ func TestRunWaitError(t *testing.T) {
 	require.ErrorIs(t, err, ErrContainerWait)
 	assert.True(t, strings.Contains(err.Error(), "container killed"))
 	m.AssertExpectations(t)
+}
+
+func TestNetworks(t *testing.T) {
+	m := &mockDocker{}
+	m.On("NetworkCreate", mock.Anything, "cisid-net", client.NetworkCreateOptions{
+		Driver: "bridge", Labels: map[string]string{LabelManaged: "true"},
+	}).Return(client.NetworkCreateResult{ID: "n1"}, nil).Once()
+	m.On("NetworkRemove", mock.Anything, "cisid-net", client.NetworkRemoveOptions{}).
+		Return(client.NetworkRemoveResult{}, nil).Once()
+	m.On("NetworkRemove", mock.Anything, "gone", client.NetworkRemoveOptions{}).
+		Return(client.NetworkRemoveResult{}, fmt.Errorf("x: %w", cerrdefs.ErrNotFound)).Once()
+	r := newTestRunner(m)
+
+	require.NoError(t, r.CreateNetwork(t.Context(), "cisid-net"))
+	require.NoError(t, r.RemoveNetwork(t.Context(), "cisid-net"))
+	require.NoError(t, r.RemoveNetwork(t.Context(), "gone"), "missing network is fine")
+	m.AssertExpectations(t)
+}
+
+func TestStartService(t *testing.T) {
+	m := &mockDocker{}
+	m.On("ImagePull", mock.Anything, "postgres:18-alpine", client.ImagePullOptions{}).Return(&fakePull{}, nil).Once()
+	m.On("ContainerCreate", mock.Anything, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image:  "postgres:18-alpine",
+			Env:    []string{"POSTGRES_PASSWORD=test"},
+			Labels: map[string]string{LabelManaged: "true", LabelService: "db"},
+		},
+		HostConfig: &container.HostConfig{NetworkMode: "cisid-net"},
+		NetworkingConfig: &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{"cisid-net": {Aliases: []string{"db"}}},
+		},
+	}).Return(client.ContainerCreateResult{ID: "svc1"}, nil).Once()
+	m.On("ContainerStart", mock.Anything, "svc1", client.ContainerStartOptions{}).Return(client.ContainerStartResult{}, nil).Once()
+	m.On("ContainerRemove", mock.Anything, "svc1", removeOpts).Return(client.ContainerRemoveResult{}, nil).Once()
+	r := newTestRunner(m)
+
+	id, err := r.StartService(t.Context(), Service{
+		Name: "db", Image: "postgres:18-alpine", Env: map[string]string{"POSTGRES_PASSWORD": "test"}, Network: "cisid-net",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "svc1", id)
+	require.NoError(t, r.StopService(t.Context(), id))
+	m.AssertExpectations(t)
+
+	_, err = r.StartService(t.Context(), Service{Name: "db", Image: "x"})
+	assert.ErrorIs(t, err, ErrInvalidStep, "a service needs a network")
+}
+
+func TestStepOnNetwork(t *testing.T) {
+	opts := createOptions(Step{Image: "alpine:3.22", Network: "cisid-net"})
+	assert.Equal(t, container.NetworkMode("cisid-net"), opts.HostConfig.NetworkMode)
+	assert.Equal(t, map[string]*network.EndpointSettings{"cisid-net": {}}, opts.NetworkingConfig.EndpointsConfig)
+
+	opts = createOptions(Step{Image: "alpine:3.22"})
+	assert.Empty(t, opts.HostConfig.NetworkMode)
+	assert.Nil(t, opts.NetworkingConfig)
 }
