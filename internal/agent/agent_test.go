@@ -66,8 +66,9 @@ type fakeServer struct {
 }
 
 type serverConn struct {
-	conn *websocket.Conn
-	msgs chan models.Message
+	conn  *websocket.Conn
+	msgs  chan models.Message
+	hello models.AgentHello
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -113,9 +114,9 @@ func (fs *fakeServer) accept(t *testing.T) *serverConn {
 	t.Helper()
 	select {
 	case sc := <-fs.conns:
-		var hello models.AgentHello
-		sc.expect(t, models.MsgAgentHello, &hello)
-		assert.Equal(t, models.AgentHello{Name: "test-agent", Capacity: 1}, hello)
+		sc.expect(t, models.MsgAgentHello, &sc.hello)
+		assert.Equal(t, "test-agent", sc.hello.Name)
+		assert.Equal(t, 1, sc.hello.Capacity)
 		return sc
 	case <-time.After(testTimeout):
 		t.Fatal("agent did not connect")
@@ -209,8 +210,14 @@ func startAgent(t *testing.T, fs *fakeServer, r StepRunner) (context.CancelFunc,
 		cancel()
 		_ = wait()
 	})
+	lastStarted = a
 	return cancel, wait
 }
+
+// lastStarted is the agent most recently started by startAgent, for tests
+// that need to observe its internals. Tests in this package do not run in
+// parallel.
+var lastStarted *Agent
 
 func intPtr(i int) *int { return &i }
 
@@ -425,6 +432,7 @@ func TestAgentDeliversResultAfterReconnect(t *testing.T) {
 
 	startAgent(t, fs, r)
 	first := fs.accept(t)
+	assert.Zero(t, first.hello.RunningJobID)
 	first.send(t, models.MsgJobAssigned, models.JobAssignment{
 		JobID: 11,
 		Steps: []models.StepSpec{{Name: "s", Image: "alpine:3.22", Commands: []string{"make"}}},
@@ -432,9 +440,51 @@ func TestAgentDeliversResultAfterReconnect(t *testing.T) {
 	require.NoError(t, first.conn.Close(websocket.StatusGoingAway, "server restarting"))
 
 	second := fs.accept(t)
+	assert.Equal(t, int64(11), second.hello.RunningJobID, "hello must report the job still running")
 	close(release)
 
 	_, res := second.collectJob(t, 11)
+	assert.Equal(t, models.JobStatusSuccess, res.Status)
+
+	// Once the result has been sent, the agent no longer claims the job.
+	require.NoError(t, second.conn.Close(websocket.StatusGoingAway, "server restarting"))
+	third := fs.accept(t)
+	assert.Zero(t, third.hello.RunningJobID)
+}
+
+func TestAgentHelloReportsUndeliveredResult(t *testing.T) {
+	fs := newFakeServer(t)
+	var serverDown atomic.Bool
+	fs.reject = func(int) bool { return serverDown.Load() }
+
+	r := &mockRunner{}
+	release := make(chan struct{})
+	r.On("Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) { <-release }).Return(0, nil).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
+
+	startAgent(t, fs, r)
+	a := lastStarted
+	first := fs.accept(t)
+	first.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID: 21,
+		Steps: []models.StepSpec{{Name: "s", Image: "alpine:3.22", Commands: []string{"true"}}},
+	})
+
+	// The server goes away; the job finishes while the agent is disconnected,
+	// so its result waits in the outbox.
+	serverDown.Store(true)
+	require.NoError(t, first.conn.Close(websocket.StatusGoingAway, "server restarting"))
+	// A redial means the old session, including its writer, has ended.
+	require.Eventually(t, func() bool { return fs.dials.Load() >= 2 }, testTimeout, 5*time.Millisecond)
+	close(release)
+	require.Eventually(t, func() bool { return a.out.pending.Load() > 0 && !a.busy.Load() },
+		testTimeout, 5*time.Millisecond, "result was not queued")
+
+	serverDown.Store(false)
+	second := fs.accept(t)
+	assert.Equal(t, int64(21), second.hello.RunningJobID, "an unreported job still counts as running")
+	_, res := second.collectJob(t, 21)
 	assert.Equal(t, models.JobStatusSuccess, res.Status)
 }
 

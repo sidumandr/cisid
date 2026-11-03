@@ -63,6 +63,9 @@ type Agent struct {
 	log    *slog.Logger
 	out    *outbox
 	busy   atomic.Bool
+	// runningJob is the job accepted last whose result has not yet been
+	// handed to the writer; 0 when there is none. Reported in the hello.
+	runningJob atomic.Int64
 }
 
 // New validates cfg and returns an Agent. A nil log uses slog.Default().
@@ -173,7 +176,11 @@ func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan
 	a.log.InfoContext(ctx, "connected to server", "server", a.cfg.ServerURL)
 
 	// Written before the writer goroutine starts, so there is still a single writer.
-	hello, err := models.NewMessage(models.MsgAgentHello, models.AgentHello{Name: a.cfg.Name, Capacity: 1})
+	hello, err := models.NewMessage(models.MsgAgentHello, models.AgentHello{
+		Name:         a.cfg.Name,
+		Capacity:     1,
+		RunningJobID: a.runningJob.Load(),
+	})
 	if err != nil {
 		return true, err
 	}
@@ -199,6 +206,14 @@ func (a *Agent) writeLoop(ctx context.Context, conn *websocket.Conn) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case msg := <-a.out.ch:
+			if msg.Type == models.MsgJobResult {
+				// From here on the result is on its way (or lost with the
+				// connection), so a later hello must not claim the job.
+				var res models.JobResult
+				if msg.Decode(&res) == nil {
+					a.runningJob.CompareAndSwap(res.JobID, 0)
+				}
+			}
 			err := writeMessage(ctx, conn, msg)
 			a.out.written()
 			if err != nil {
@@ -248,6 +263,9 @@ func (a *Agent) accept(ctx context.Context, stopping <-chan struct{}, jobs chan<
 		return
 	}
 	a.log.InfoContext(ctx, "job assigned", "job_id", job.JobID, "steps", len(job.Steps))
+	// Set here, not in the executor, so a hello sent right after this
+	// message was read already reports the job.
+	a.runningJob.Store(job.JobID)
 	jobs <- job
 }
 

@@ -44,10 +44,13 @@ func (m Message) Decode(v any) error {
 	return nil
 }
 
-// AgentHello identifies an agent to the server.
+// AgentHello identifies an agent to the server. RunningJobID is the job the
+// agent is still working on (or has not yet reported) after a reconnect;
+// the server requeues any other job it believes the agent holds.
 type AgentHello struct {
-	Name     string `json:"name"`
-	Capacity int    `json:"capacity"`
+	Name         string `json:"name"`
+	Capacity     int    `json:"capacity"`
+	RunningJobID int64  `json:"running_job_id,omitempty"`
 }
 
 // JobAssignment tells an agent which steps to run for a job.
