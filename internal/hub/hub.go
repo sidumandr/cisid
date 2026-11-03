@@ -34,6 +34,7 @@ type Store interface {
 	AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error
 	CancelRequestedJobs(ctx context.Context, agents []string) ([]models.Job, error)
 	SetJobSteps(ctx context.Context, id int64, names []string) error
+	ExpandMatrix(ctx context.Context, id int64, combo map[string]string, siblings []map[string]string) ([]int64, error)
 	RequeueJob(ctx context.Context, id int64, agent string) error
 	RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error)
 	FinishJob(ctx context.Context, agent string, res models.JobResult) error
@@ -44,7 +45,7 @@ var _ Store = (*db.Store)(nil)
 
 // Planner turns a job into what an agent runs. pipeline.Planner satisfies it.
 type Planner interface {
-	Plan(ctx context.Context, job models.Job) (models.JobAssignment, error)
+	Plan(ctx context.Context, job models.Job) (pipeline.Plan, error)
 }
 
 var _ Planner = pipeline.Planner{}
@@ -286,7 +287,7 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 			return false
 		}
 
-		asg, err := h.planner.Plan(ctx, job)
+		plan, err := h.planner.Plan(ctx, job)
 		if errors.Is(err, pipeline.ErrTemporary) {
 			// Retry on a later round; continuing now would claim the same job again.
 			h.log.WarnContext(ctx, "planning failed, job requeued", "job_id", job.ID, "error", err)
@@ -298,6 +299,21 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 			continue
 		}
 
+		if len(plan.Siblings) > 0 {
+			// The first job of a matrix: queue the other combinations.
+			ids, err := h.store.ExpandMatrix(ctx, job.ID, plan.Matrix, plan.Siblings)
+			if err != nil {
+				h.log.ErrorContext(ctx, "expand matrix, job requeued", "job_id", job.ID, "error", err)
+				h.requeue(ctx, job.ID, a.name)
+				return false
+			}
+			h.log.InfoContext(ctx, "matrix expanded", "job_id", job.ID, "jobs", ids)
+			for _, id := range ids {
+				h.jobChanged(id)
+			}
+		}
+
+		asg := plan.Assignment
 		asg.JobID = job.ID
 		names := make([]string, len(asg.Steps))
 		for i, s := range asg.Steps {

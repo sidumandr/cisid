@@ -594,3 +594,40 @@ func TestStoreSecrets(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, found)
 }
+
+func TestStoreExpandMatrix(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	id := createJobs(t, s, 1)[0]
+	_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	require.NoError(t, err)
+
+	ids, err := s.ExpandMatrix(ctx, id, map[string]string{"GO": "1.26"},
+		[]map[string]string{{"GO": "1.27"}, {"GO": "1.28"}})
+	require.NoError(t, err)
+	require.Len(t, ids, 2)
+
+	parent, err := s.GetJob(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"GO": "1.26"}, parent.Matrix)
+	assert.Nil(t, parent.ParentID)
+
+	sib, err := s.GetJob(ctx, ids[1])
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"GO": "1.28"}, sib.Matrix)
+	assert.Equal(t, &id, sib.ParentID)
+	assert.Equal(t, models.JobStatusPending, sib.Status)
+	assert.Equal(t, parent.CommitSHA, sib.CommitSHA)
+
+	again, err := s.ExpandMatrix(ctx, id, map[string]string{"GO": "1.26"}, []map[string]string{{"GO": "9"}})
+	require.NoError(t, err)
+	assert.Empty(t, again, "an expanded job is not expanded twice")
+
+	rerun, err := s.RerunJob(ctx, ids[1])
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"GO": "1.28"}, rerun.Matrix, "a rerun keeps its combination")
+
+	plain, err := s.GetJob(ctx, createJobs(t, s, 1)[0])
+	require.NoError(t, err)
+	assert.Nil(t, plain.Matrix)
+}

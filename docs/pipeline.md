@@ -28,6 +28,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../.cisid.y
 |---|---|---|
 | `steps` | evet | 1 ile 50 arası adım, yazıldıkları sırayla çalışır |
 | `services` | hayır | Adımlardan önce başlatılan en fazla 10 servis ([Servisler](#servisler)) |
+| `matrix` | hayır | Pipeline'ı her değer kombinasyonu için ayrı bir job olarak çalıştırır ([Matrix](#matrix)) |
 | `steps[].name` | evet | Harf, rakam, `.`, `_`, `-`. En fazla 63 karakter, benzersiz olmalı. `clone` adı ayrılmıştır. |
 | `steps[].image` | evet | Adımın çalışacağı Docker image'ı. `/bin/sh` içermeli. |
 | `steps[].commands` | evet | Shell komutları |
@@ -91,6 +92,34 @@ steps:
 - Servislerin çıktısı job loglarına eklenmez. Servisler secret alamaz.
 
 cisid'in kendi CI'ı da veritabanı testlerini bir postgres servisine karşı çalıştırır: [/.cisid.yml](../.cisid.yml).
+
+## Matrix
+
+```yaml
+matrix:
+  GO_VERSION: ["1.26", "1.27"]
+  POSTGRES: ["17", "18"]
+
+services:
+  - name: postgres
+    image: postgres:${POSTGRES}-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+
+steps:
+  - name: test
+    image: golang:${GO_VERSION}
+    commands:
+      - go test ./...
+```
+
+- Her kombinasyon (yukarıda 2 × 2 = 4) **ayrı bir job** olarak çalışır. Job'lar farklı agent'larda paralel koşabilir, her biri kendi workspace'ini ve servislerini alır.
+- Push ile oluşan job ilk kombinasyonu alır. Diğer kombinasyonlar, bu job planlanırken kardeş job olarak oluşturulur (`parent_id` ilk job'u gösterir). Kombinasyonlar eksen adına göre sıralanır, değerler yazıldıkları sırayla kullanılır.
+- Her eksen adımlara ve servislere ortam değişkeni olarak verilir (`$GO_VERSION`). `image` ve `environment` değerlerinde `${EKSEN}` yazılabilir. Bir image var olmayan bir eksene başvurursa dosya geçersiz sayılır.
+- `${...}` içeren bir değer akış (flow) biçiminde yazılıyorsa tırnak içine alınmalıdır: `{image: "golang:${GO_VERSION}"}`.
+- En fazla 8 eksen ve 16 kombinasyon olabilir. Eksen adları ortam değişkeni adı olmalıdır, ayrılmış adlar kullanılamaz ve bir adımın `environment` alanıyla çakışamaz.
+- Her kombinasyon GitHub'da kendi commit status'unu alır, örneğin `cisid (GO_VERSION=1.27, POSTGRES=18)` ([commit-status.md](commit-status.md)).
+- Bir matrix job'u yeniden çalıştırılırsa sadece kendi kombinasyonu tekrar koşar.
 
 ## Çalışma şekli
 

@@ -2,7 +2,7 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1 (MVP) ve Faz 2 (streaming) tamam. Faz 3'te sadece matrix build kaldı. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+> Durum: Faz 1, 2 ve 3 tamam, Faz 4 (production) geliştiriliyor. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
 
 ## Dokümanlar
 

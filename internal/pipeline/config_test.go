@@ -232,3 +232,48 @@ func TestParseConfigAllowsUnreservedCISIDVariables(t *testing.T) {
 	_, err := ParseConfig([]byte("steps:\n  - {name: a, image: x, commands: [true], environment: {CISID_TEST_DATABASE_URL: postgres://db}}\n"))
 	assert.NoError(t, err, "only the variables cisid sets are reserved")
 }
+
+func TestMatrixCombinations(t *testing.T) {
+	m := Matrix{"B": {"x", "y"}, "A": {"1"}}
+	assert.Equal(t, []map[string]string{{"A": "1", "B": "x"}, {"A": "1", "B": "y"}}, m.Combinations())
+	assert.Nil(t, Matrix(nil).Combinations())
+}
+
+func TestParseConfigMatrixErrors(t *testing.T) {
+	_, err := ParseConfig([]byte(`
+matrix:
+  GO: ["1.26", "1.26"]
+  CISID_STEP: [a]
+  EMPTY: []
+  1BAD: [x]
+steps:
+  - name: a
+    image: golang:${GO}-${NOPE}
+    commands: [true]
+    environment:
+      GO: shadowed
+`))
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	for _, want := range []string{
+		`axis "GO" lists a value twice`,
+		`axis "CISID_STEP" is reserved`,
+		`axis "EMPTY" has no values`,
+		`axis name "1BAD" is invalid`,
+		"image refers to ${NOPE}, which is not a matrix axis",
+		`environment "GO" is also a matrix axis`,
+	} {
+		assert.Contains(t, err.Error(), want)
+	}
+
+	var b strings.Builder
+	b.WriteString("matrix:\n  A: [1, 2, 3, 4, 5]\n  B: [1, 2, 3, 4]\nsteps:\n  - {name: a, image: x, commands: [true]}\n")
+	_, err = ParseConfig([]byte(b.String()))
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "20 combinations, at most 16")
+}
+
+func TestParseConfigMatrixScalarValue(t *testing.T) {
+	cfg, err := ParseConfig([]byte("matrix:\n  GO: 1.27\nsteps:\n  - {name: a, image: \"golang:${GO}\", commands: [true]}\n"))
+	require.NoError(t, err)
+	assert.Equal(t, Matrix{"GO": {"1.27"}}, cfg.Matrix)
+}

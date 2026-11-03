@@ -31,6 +31,8 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`. Gövde `{"status":"error"
   "agent": "worker-1",
   "started_at": "2026-11-03T10:45:01Z",
   "steps": ["clone", "test"],
+  "matrix": {"GO_VERSION": "1.27"},
+  "parent_id": 41,
   "exit_code": 1,
   "failed_step": 1,
   "error": "",
@@ -38,7 +40,7 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`. Gövde `{"status":"error"
 }
 ```
 
-`status`: `pending`, `running`, `success`, `failed`, `canceled`. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz.
+`status`: `pending`, `running`, `success`, `failed`, `canceled`. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)).
 
 ### Log parçası
 

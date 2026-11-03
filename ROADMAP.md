@@ -32,7 +32,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Service container'ları (ör. test için PostgreSQL), job başına ayrı Docker ağında.
 - [x] Secret yönetimi: şifreli saklama, env olarak enjekte, loglarda maskeleme ([docs/secrets.md](docs/secrets.md)).
 - [x] Branch filtreleri (`when.branch`).
-- [ ] Matrix build.
+- [x] Matrix build: her kombinasyon ayrı, paralel koşabilen bir job ([docs/pipeline.md](docs/pipeline.md#matrix)).
 - [x] GitHub commit status raporlama ([docs/commit-status.md](docs/commit-status.md)).
 - [x] Job iptal / yeniden çalıştırma API'si (token korumalı).
 - [x] Basit web arayüzü: job listesi ve canlı loglu job sayfası ([docs/ui.md](docs/ui.md)).

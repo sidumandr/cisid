@@ -300,8 +300,8 @@ func TestPlanSecretErrors(t *testing.T) {
 }
 
 // stepsOf returns the steps of a plan.
-func stepsOf(a models.JobAssignment, err error) ([]models.StepSpec, error) {
-	return a.Steps, err
+func stepsOf(p Plan, err error) ([]models.StepSpec, error) {
+	return p.Assignment.Steps, err
 }
 
 func TestPlanIncludesServices(t *testing.T) {
@@ -321,9 +321,64 @@ steps:
 	plan, err := Planner{Configs: configs}.Plan(t.Context(), testJob())
 
 	require.NoError(t, err)
-	assert.Len(t, plan.Steps, 2)
+	assert.Len(t, plan.Assignment.Steps, 2)
 	assert.Equal(t, []models.ServiceSpec{
 		{Name: "postgres", Image: "postgres:18-alpine", Env: map[string]string{"POSTGRES_PASSWORD": "test"}},
 		{Name: "cache", Image: "redis:8-alpine", Command: []string{"redis-server", "--save", ""}},
-	}, plan.Services)
+	}, plan.Assignment.Services)
+}
+
+const matrixConfig = `
+matrix:
+  GO: ["1.26", "1.27"]
+  DB: ["17", "18"]
+services:
+  - name: postgres
+    image: postgres:${DB}-alpine
+steps:
+  - name: test
+    image: golang:${GO}
+    commands: [go test ./...]
+    environment:
+      DATABASE_URL: postgres://postgres@postgres/db?v=${DB}
+`
+
+func TestPlanExpandsMatrix(t *testing.T) {
+	plan, err := Planner{Configs: &fakeConfigs{data: []byte(matrixConfig)}}.Plan(t.Context(), testJob())
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"DB": "17", "GO": "1.26"}, plan.Matrix, "the job takes the first combination")
+	assert.Equal(t, []map[string]string{
+		{"DB": "17", "GO": "1.27"},
+		{"DB": "18", "GO": "1.26"},
+		{"DB": "18", "GO": "1.27"},
+	}, plan.Siblings, "the others need jobs of their own")
+
+	test := plan.Assignment.Steps[1]
+	assert.Equal(t, "golang:1.26", test.Image)
+	assert.Equal(t, "1.26", test.Env["GO"])
+	assert.Equal(t, "postgres://postgres@postgres/db?v=17", test.Env["DATABASE_URL"])
+	assert.Equal(t, "postgres:17-alpine", plan.Assignment.Services[0].Image)
+	assert.Equal(t, "17", plan.Assignment.Services[0].Env["DB"])
+}
+
+func TestPlanUsesTheJobsCombination(t *testing.T) {
+	job := testJob()
+	job.Matrix = map[string]string{"DB": "18", "GO": "1.27"}
+
+	plan, err := Planner{Configs: &fakeConfigs{data: []byte(matrixConfig)}}.Plan(t.Context(), job)
+
+	require.NoError(t, err)
+	assert.Equal(t, job.Matrix, plan.Matrix)
+	assert.Empty(t, plan.Siblings, "a job with a combination is not expanded again")
+	assert.Equal(t, "golang:1.27", plan.Assignment.Steps[1].Image)
+	assert.Equal(t, "postgres:18-alpine", plan.Assignment.Services[0].Image)
+}
+
+func TestPlanWithoutMatrix(t *testing.T) {
+	plan, err := Planner{Configs: &fakeConfigs{data: []byte(secretsConfig)}, Secrets: &fakeSecrets{values: map[string]string{"NPM_TOKEN": "x"}}}.Plan(t.Context(), testJob())
+
+	require.NoError(t, err)
+	assert.Nil(t, plan.Matrix)
+	assert.Empty(t, plan.Siblings)
 }

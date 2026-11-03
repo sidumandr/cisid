@@ -200,3 +200,8 @@ func TestReporterGivesUpOnPermanentErrors(t *testing.T) {
 		return store.reported[1] == models.JobStatusSuccess
 	}, time.Second, 5*time.Millisecond, "a permanent failure is not retried forever")
 }
+
+func TestDescribeMatrixJobHasItsOwnContext(t *testing.T) {
+	st := Describe(models.Job{Status: models.JobStatusPending, Matrix: map[string]string{"GO": "1.27", "DB": "18"}})
+	assert.Equal(t, "cisid (DB=18, GO=1.27)", st.Context)
+}

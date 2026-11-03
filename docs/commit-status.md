@@ -10,6 +10,8 @@ cisid her job'un durumunu pushlanan commit'e GitHub **commit status** olarak yaz
 | `failed` | `failure` | Step "test" failed with exit code 1 · Step "clone" failed with exit code 128 · Failed: no .cisid.yml in repository |
 | `canceled` | `error` | Canceled |
 
+Matrix job'larının her biri kendi bağlamını alır, örneğin `cisid (GO_VERSION=1.27)`. Böylece kombinasyonların durumları birbirinin üzerine yazılmaz ve branch protection'da tek tek zorunlu tutulabilir.
+
 ## Kurulum
 
 | Değişken | Açıklama |

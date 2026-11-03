@@ -25,6 +25,10 @@ function badge(status) {
   return el("span", { class: "badge " + status }, status);
 }
 
+function matrixLabel(m) {
+  return Object.keys(m || {}).sort().map((k) => `${k}=${m[k]}`).join(", ");
+}
+
 function shortSHA(sha) {
   return (sha || "").slice(0, 8);
 }
@@ -81,7 +85,8 @@ function renderList() {
       body.replaceChildren(...jobs.map((j) => el("tr", {},
         el("td", {}, el("a", { href: "/jobs/" + j.id }, "#" + j.id)),
         el("td", {}, badge(j.status)),
-        el("td", { class: "wrap" }, j.repo),
+        el("td", { class: "wrap" }, j.repo,
+          j.matrix ? el("div", { class: "muted small" }, matrixLabel(j.matrix)) : null),
         el("td", { class: "wrap" }, j.branch),
         el("td", { class: "mono" }, shortSHA(j.commit_sha)),
         el("td", { class: "muted" }, j.agent || ""),
@@ -167,6 +172,7 @@ function renderJob(id) {
     actions.append(el("button", { onclick: (e) => act(e.target, `/api/jobs/${j.id}/rerun`, true) }, "Rerun"));
 
     const meta = el("div", { class: "meta" },
+      j.matrix ? el("span", {}, matrixLabel(j.matrix)) : null,
       el("span", { class: "mono" }, j.commit_sha),
       j.agent ? el("span", {}, "agent " + j.agent) : null,
       j.started_at ? el("span", {}, "duration " + duration(j)) : null,

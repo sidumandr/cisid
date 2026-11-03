@@ -1,6 +1,11 @@
 package models
 
-import "time"
+import (
+	"maps"
+	"slices"
+	"strings"
+	"time"
+)
 
 // JobStatus is the lifecycle state of a job.
 type JobStatus string
@@ -36,6 +41,11 @@ type Job struct {
 	// StepNames lists the planned steps; FailedStep and JobLog.Step index it.
 	StepNames []string `json:"steps,omitempty"`
 
+	// Matrix is the combination of matrix values this job runs; ParentID
+	// is the job whose planning created it, for all but the first.
+	Matrix   map[string]string `json:"matrix,omitempty"`
+	ParentID *int64            `json:"parent_id,omitempty"`
+
 	// Set once the job has finished.
 	ExitCode   *int       `json:"exit_code,omitempty"`
 	FailedStep *int       `json:"failed_step,omitempty"`
@@ -47,4 +57,14 @@ type Job struct {
 type SecretInfo struct {
 	Name      string    `json:"name"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// MatrixLabel renders a matrix combination as "A=1, B=2", axes in name
+// order; empty for no matrix.
+func MatrixLabel(m map[string]string) string {
+	parts := make([]string, 0, len(m))
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		parts = append(parts, k+"="+m[k])
+	}
+	return strings.Join(parts, ", ")
 }

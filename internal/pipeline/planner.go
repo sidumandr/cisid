@@ -59,46 +59,67 @@ type Planner struct {
 	Secrets SecretSource
 }
 
-// Plan returns what an agent runs for job: the clone step, then the steps
-// of the .cisid.yml at the pushed commit, with its services. JobID is left
-// for the caller to set.
-func (p Planner) Plan(ctx context.Context, job models.Job) (models.JobAssignment, error) {
-	steps, services, err := p.plan(ctx, job)
-	if err != nil {
-		return models.JobAssignment{}, err
-	}
-	return models.JobAssignment{Steps: steps, Services: services}, nil
+// Plan is the outcome of planning a job.
+type Plan struct {
+	// Assignment is what the agent runs; its JobID is left for the caller.
+	Assignment models.JobAssignment
+	// Matrix is the combination the job runs, nil without a matrix.
+	Matrix map[string]string
+	// Siblings are the other combinations of the matrix. They are set only
+	// when the job had no combination yet, and each needs a job of its own.
+	Siblings []map[string]string
 }
 
-func (p Planner) plan(ctx context.Context, job models.Job) ([]models.StepSpec, []models.ServiceSpec, error) {
+// Plan returns what an agent runs for job: the clone step, then the steps
+// of the .cisid.yml at the pushed commit, with its services. A job without
+// a matrix combination takes the first one of the pipeline's matrix and
+// gets the rest back as Siblings.
+func (p Planner) Plan(ctx context.Context, job models.Job) (Plan, error) {
 	switch {
 	case job.CloneURL == "":
-		return nil, nil, fmt.Errorf("%w %d: clone URL is empty", ErrInvalidJob, job.ID)
+		return Plan{}, fmt.Errorf("%w %d: clone URL is empty", ErrInvalidJob, job.ID)
 	case job.CommitSHA == "":
-		return nil, nil, fmt.Errorf("%w %d: commit SHA is empty", ErrInvalidJob, job.ID)
+		return Plan{}, fmt.Errorf("%w %d: commit SHA is empty", ErrInvalidJob, job.ID)
 	case job.Branch == "":
-		return nil, nil, fmt.Errorf("%w %d: branch is empty", ErrInvalidJob, job.ID)
+		return Plan{}, fmt.Errorf("%w %d: branch is empty", ErrInvalidJob, job.ID)
 	}
 
 	steps := []models.StepSpec{p.cloneStep(job)}
 	if p.Configs == nil {
-		return steps, nil, nil
+		return Plan{Assignment: models.JobAssignment{Steps: steps}}, nil
 	}
 
 	data, err := p.Configs.FileContent(ctx, job.Repo, job.CommitSHA, ConfigFile)
 	switch {
 	case errors.Is(err, github.ErrNotFound):
-		return nil, nil, fmt.Errorf("%w (%s@%s)", ErrNoConfig, job.Repo, job.CommitSHA)
+		return Plan{}, fmt.Errorf("%w (%s@%s)", ErrNoConfig, job.Repo, job.CommitSHA)
 	case errors.Is(err, github.ErrTemporary), err != nil && ctx.Err() != nil:
-		return nil, nil, fmt.Errorf("%w: %w", ErrTemporary, err)
+		return Plan{}, fmt.Errorf("%w: %w", ErrTemporary, err)
 	case err != nil:
-		return nil, nil, fmt.Errorf("read %s: %w", ConfigFile, err)
+		return Plan{}, fmt.Errorf("read %s: %w", ConfigFile, err)
 	}
 
 	cfg, err := ParseConfig(data)
 	if err != nil {
-		return nil, nil, err
+		return Plan{}, err
 	}
+
+	plan := Plan{Matrix: job.Matrix}
+	if combos := cfg.Matrix.Combinations(); len(combos) > 0 && job.Matrix == nil {
+		plan.Matrix, plan.Siblings = combos[0], combos[1:]
+	}
+	steps, services, err := p.steps(ctx, job, cfg, plan.Matrix, steps)
+	if err != nil {
+		return Plan{}, err
+	}
+	plan.Assignment = models.JobAssignment{Steps: steps, Services: services}
+	return plan, nil
+}
+
+// steps appends the steps of cfg that run for job, with combo applied, to
+// steps and returns them with the services.
+func (p Planner) steps(ctx context.Context, job models.Job, cfg Config, combo map[string]string,
+	steps []models.StepSpec) ([]models.StepSpec, []models.ServiceSpec, error) {
 	var run []Step
 	for _, s := range cfg.Steps {
 		if s.RunsOn(job.Branch) {
@@ -110,14 +131,28 @@ func (p Planner) plan(ctx context.Context, job models.Job) ([]models.StepSpec, [
 		return nil, nil, err
 	}
 	for _, s := range run {
-		steps = append(steps, userStep(job, s, values))
+		steps = append(steps, userStep(job, s, values, combo))
 	}
 
 	var services []models.ServiceSpec
 	for _, s := range cfg.Services {
-		services = append(services, models.ServiceSpec{Name: s.Name, Image: s.Image, Env: s.Environment, Command: s.Command})
+		env := expandAll(s.Environment, combo)
+		if len(combo) > 0 {
+			env = withMatrix(env, combo)
+		}
+		services = append(services, models.ServiceSpec{
+			Name: s.Name, Image: expand(s.Image, combo), Env: env, Command: s.Command,
+		})
 	}
 	return steps, services, nil
+}
+
+func withMatrix(env, combo map[string]string) map[string]string {
+	if env == nil {
+		env = map[string]string{}
+	}
+	maps.Copy(env, combo)
+	return env
 }
 
 // secretsFor fetches the secrets the steps ask for.
@@ -169,15 +204,16 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 	}
 }
 
-func userStep(job models.Job, s Step, secretValues map[string]string) models.StepSpec {
-	env := maps.Clone(s.Environment)
+func userStep(job models.Job, s Step, secretValues, combo map[string]string) models.StepSpec {
+	env := expandAll(s.Environment, combo)
 	if env == nil {
 		env = map[string]string{}
 	}
-	maps.Copy(env, jobEnv(job)) // ParseConfig rejects CISID_* keys anyway
+	maps.Copy(env, combo)
+	maps.Copy(env, jobEnv(job)) // ParseConfig rejects the reserved names anyway
 	spec := models.StepSpec{
 		Name:           s.Name,
-		Image:          s.Image,
+		Image:          expand(s.Image, combo),
 		Commands:       s.Commands,
 		Env:            env,
 		TimeoutSeconds: int(s.Timeout.Seconds()),

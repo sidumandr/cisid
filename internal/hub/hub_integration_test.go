@@ -76,7 +76,8 @@ func (r *fakeRunner) StartService(_ context.Context, svc runner.Service) (string
 
 // system is a database, a restartable hub behind one URL and an agent.
 type system struct {
-	store  *db.Store
+	planner pipeline.Planner
+	store   *db.Store
 	runner *fakeRunner
 	proxy  *tcpProxy // between the agent and the server
 	hub    atomic.Pointer[Hub]
@@ -84,13 +85,16 @@ type system struct {
 	done   chan struct{}
 }
 
-func newSystem(t *testing.T, r *fakeRunner) *system {
+func newSystem(t *testing.T, r *fakeRunner, planner ...pipeline.Planner) *system {
 	t.Helper()
 	pool := dbtest.New(t)
 	_, err := db.Migrate(t.Context(), pool)
 	require.NoError(t, err)
 
 	s := &system{store: db.New(pool), runner: r}
+	if len(planner) > 0 {
+		s.planner = planner[0]
+	}
 	s.startHub(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		s.hub.Load().ServeHTTP(w, req)
@@ -123,7 +127,7 @@ func newSystem(t *testing.T, r *fakeRunner) *system {
 
 func (s *system) startHub(t *testing.T) {
 	t.Helper()
-	h := New(s.store, pipeline.Planner{}, WithLogger(slog.New(slog.DiscardHandler)), WithPollInterval(time.Hour))
+	h := New(s.store, s.planner, WithLogger(slog.New(slog.DiscardHandler)), WithPollInterval(time.Hour))
 	ctx, cancel := context.WithCancel(t.Context())
 	s.stop, s.done = cancel, make(chan struct{})
 	done := s.done
@@ -368,4 +372,50 @@ func TestIntegrationCancelRunningJob(t *testing.T) {
 	assert.Equal(t, models.JobStatusCanceled, job.Status)
 	assert.Equal(t, db.CancelReason, job.Error)
 	assert.Equal(t, 0, *job.FailedStep)
+}
+
+// configs serves a fixed .cisid.yml.
+type configs string
+
+func (c configs) FileContent(context.Context, string, string, string) ([]byte, error) {
+	return []byte(c), nil
+}
+
+func TestIntegrationMatrixRunsEveryCombination(t *testing.T) {
+	r := &fakeRunner{}
+	s := newSystem(t, r, pipeline.Planner{Configs: configs(`
+matrix:
+  GO: ["1.25", "1.26", "1.27"]
+steps:
+  - name: test
+    image: golang:${GO}
+    commands: [go test ./...]
+`)})
+
+	first := s.queue(t, "8888888888888888888888888888888888888888")
+	s.waitFinished(t, first)
+
+	jobs, err := s.store.ListJobs(t.Context(), 10)
+	require.NoError(t, err)
+	require.Len(t, jobs, 3, "one job per combination")
+	versions := map[string]bool{}
+	for _, j := range jobs {
+		j = s.waitFinished(t, j.ID)
+		assert.Equal(t, models.JobStatusSuccess, j.Status)
+		versions[j.Matrix["GO"]] = true
+		if j.ID != first {
+			assert.Equal(t, &first, j.ParentID)
+		}
+	}
+	assert.Equal(t, map[string]bool{"1.25": true, "1.26": true, "1.27": true}, versions)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var images []string
+	for _, st := range r.steps {
+		if st.Env["CISID_STEP"] == "test" {
+			images = append(images, st.Image)
+		}
+	}
+	assert.ElementsMatch(t, []string{"golang:1.25", "golang:1.26", "golang:1.27"}, images)
 }

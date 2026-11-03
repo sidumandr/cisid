@@ -56,9 +56,17 @@ var (
 //	    image: postgres:18-alpine
 //	    environment:
 //	      POSTGRES_PASSWORD: test
+//
+//	matrix:
+//	  GO_VERSION: ["1.26", "1.27"]
 type Config struct {
 	Steps    []Step
 	Services []Service
+	// Matrix runs the pipeline once per combination of its values, each
+	// as a separate job; steps and services see each axis as an
+	// environment variable, and images and environment values may use
+	// ${AXIS}.
+	Matrix Matrix
 }
 
 // Service is a container started before the steps and stopped after them.
@@ -92,8 +100,9 @@ func (s Step) RunsOn(branch string) bool {
 }
 
 type rawConfig struct {
-	Steps    []rawStep    `yaml:"steps"`
-	Services []rawService `yaml:"services"`
+	Steps    []rawStep             `yaml:"steps"`
+	Services []rawService          `yaml:"services"`
+	Matrix   map[string]stringList `yaml:"matrix"`
 }
 
 type rawService struct {
@@ -142,6 +151,13 @@ func ParseConfig(data []byte) (Config, error) {
 		problems []error
 		seen     = map[string]bool{}
 	)
+	if len(raw.Matrix) > 0 {
+		cfg.Matrix = Matrix{}
+		for axis, values := range raw.Matrix {
+			cfg.Matrix[axis] = values
+		}
+		problems = append(problems, cfg.Matrix.validate()...)
+	}
 	for i, rs := range raw.Steps {
 		bad := func(format string, args ...any) {
 			problems = append(problems, fmt.Errorf("steps[%d]: "+format, append([]any{i}, args...)...))
@@ -165,6 +181,9 @@ func ParseConfig(data []byte) (Config, error) {
 		case strings.ContainsAny(rs.Image, " \t\r\n"):
 			bad("image %q contains whitespace", rs.Image)
 		}
+		for _, name := range cfg.Matrix.undefinedVars(rs.Image) {
+			bad("image refers to ${%s}, which is not a matrix axis", name)
+		}
 
 		if len(rs.Commands) == 0 {
 			bad("commands are required")
@@ -181,6 +200,9 @@ func ParseConfig(data []byte) (Config, error) {
 				bad("environment name %q is invalid", k)
 			case models.ReservedEnv(k):
 				bad("environment %q is reserved", k)
+			}
+			if _, axis := cfg.Matrix[k]; axis {
+				bad("environment %q is also a matrix axis", k)
 			}
 		}
 
@@ -234,7 +256,7 @@ func ParseConfig(data []byte) (Config, error) {
 		})
 	}
 
-	cfg.Services, problems = parseServices(raw.Services, problems)
+	cfg.Services, problems = parseServices(raw.Services, cfg.Matrix, problems)
 
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidConfig, errors.Join(problems...))
@@ -242,7 +264,7 @@ func ParseConfig(data []byte) (Config, error) {
 	return cfg, nil
 }
 
-func parseServices(raw []rawService, problems []error) ([]Service, []error) {
+func parseServices(raw []rawService, matrix Matrix, problems []error) ([]Service, []error) {
 	if len(raw) > maxServices {
 		return nil, append(problems, fmt.Errorf("at most %d services are allowed, got %d", maxServices, len(raw)))
 	}
@@ -270,6 +292,9 @@ func parseServices(raw []rawService, problems []error) ([]Service, []error) {
 		case strings.ContainsAny(rs.Image, " \t\r\n"):
 			bad("image %q contains whitespace", rs.Image)
 		}
+		for _, name := range matrix.undefinedVars(rs.Image) {
+			bad("image refers to ${%s}, which is not a matrix axis", name)
+		}
 		for k := range rs.Environment {
 			if !envNameRe.MatchString(k) {
 				bad("environment name %q is invalid", k)
@@ -279,3 +304,5 @@ func parseServices(raw []rawService, problems []error) ([]Service, []error) {
 	}
 	return services, problems
 }
+
+func reservedEnv(name string) bool { return models.ReservedEnv(name) }

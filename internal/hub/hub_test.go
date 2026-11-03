@@ -60,6 +60,12 @@ func (m *mockStore) SetJobSteps(ctx context.Context, id int64, names []string) e
 	return m.Called(ctx, id, names).Error(0)
 }
 
+func (m *mockStore) ExpandMatrix(ctx context.Context, id int64, combo map[string]string, siblings []map[string]string) ([]int64, error) {
+	args := m.Called(ctx, id, combo, siblings)
+	ids, _ := args.Get(0).([]int64)
+	return ids, args.Error(1)
+}
+
 func (m *mockStore) AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error {
 	return m.Called(ctx, agent, id, lease).Error(0)
 }
@@ -85,11 +91,14 @@ type mockPlanner struct {
 	mock.Mock
 }
 
-// Plan returns the steps given to Return as an assignment.
-func (m *mockPlanner) Plan(ctx context.Context, job models.Job) (models.JobAssignment, error) {
+// Plan returns the plan given to Return, or wraps the steps given to it.
+func (m *mockPlanner) Plan(ctx context.Context, job models.Job) (pipeline.Plan, error) {
 	args := m.Called(ctx, job)
+	if plan, ok := args.Get(0).(pipeline.Plan); ok {
+		return plan, args.Error(1)
+	}
 	steps, _ := args.Get(0).([]models.StepSpec)
-	return models.JobAssignment{Steps: steps}, args.Error(1)
+	return pipeline.Plan{Assignment: models.JobAssignment{Steps: steps}}, args.Error(1)
 }
 
 // signal returns a mock Run hook that reports each call on the channel.
@@ -634,5 +643,49 @@ func TestHubDeliversCancelRequestsOnce(t *testing.T) {
 
 	f.hub.Wake()
 	f.hub.Wake()
+	a.expectNoMessage(t)
+}
+
+func TestHubQueuesMatrixSiblings(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		changed []int64
+	)
+	combo := map[string]string{"GO": "1.26"}
+	siblings := []map[string]string{{"GO": "1.27"}}
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		p.On("Plan", mock.Anything, job(42)).Return(pipeline.Plan{
+			Assignment: models.JobAssignment{Steps: cloneSteps}, Matrix: combo, Siblings: siblings,
+		}, nil).Once()
+		s.On("ExpandMatrix", mock.Anything, int64(42), combo, siblings).Return([]int64{43}, nil).Once()
+	}, WithJobChanged(func(id int64) {
+		mu.Lock()
+		defer mu.Unlock()
+		changed = append(changed, id)
+	}))
+
+	a := f.connect(t, "agent-1", 0)
+	assert.Equal(t, models.JobAssignment{JobID: 42, Steps: cloneSteps}, a.expectAssignment(t))
+	f.store.AssertExpectations(t)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []int64{43, 42}, changed, "the new sibling is reported, then the assignment")
+}
+
+func TestHubRequeuesWhenMatrixCannotBeExpanded(t *testing.T) {
+	requeued := make(chan struct{}, 1)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		p.On("Plan", mock.Anything, job(42)).Return(pipeline.Plan{
+			Assignment: models.JobAssignment{Steps: cloneSteps},
+			Matrix:     map[string]string{"GO": "1"}, Siblings: []map[string]string{{"GO": "2"}},
+		}, nil).Once()
+		s.On("ExpandMatrix", mock.Anything, int64(42), mock.Anything, mock.Anything).Return(nil, errors.New("db down")).Once()
+		s.On("RequeueJob", mock.Anything, int64(42), "agent-1").Return(nil).Run(signal(requeued)).Once()
+	})
+
+	a := f.connect(t, "agent-1", 0)
+	waitFor(t, requeued, "requeue")
 	a.expectNoMessage(t)
 }

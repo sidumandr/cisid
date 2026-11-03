@@ -73,6 +73,7 @@ td.wrap { white-space: normal; }
 
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
 .muted { color: var(--muted); }
+.small { font-size: 12px; }
 .empty { padding: 32px; text-align: center; color: var(--muted); }
 
 .badge {

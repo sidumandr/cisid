@@ -48,7 +48,7 @@ const CancelReason = "canceled by request"
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at, step_names,
-	exit_code, failed_step, COALESCE(error, ''), finished_at`
+	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id`
 
 // leaseUntil is the SQL expression for a lease of $N seconds from now,
 // measured on the database clock so servers need not agree on the time.
@@ -214,9 +214,10 @@ func (s *Store) CancelRequestedJobs(ctx context.Context, agents []string) ([]mod
 
 // RerunJob queues a new job for the same commit as job id and returns it.
 func (s *Store) RerunJob(ctx context.Context, id int64) (models.Job, error) {
+	// A matrix job reruns its own combination only.
 	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status)
-		SELECT repo, clone_url, branch, commit_sha, 'pending' FROM jobs WHERE id = $1
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id)
+		SELECT repo, clone_url, branch, commit_sha, 'pending', matrix, parent_id FROM jobs WHERE id = $1
 		RETURNING id`
 
 	var newID int64
@@ -295,6 +296,43 @@ func (s *Store) SealedSecrets(ctx context.Context, repo string, names []string) 
 		return nil, fmt.Errorf("read secrets of %s: %w", repo, err)
 	}
 	return sealed, nil
+}
+
+// ExpandMatrix records the matrix combination of job id and queues a job
+// for each of the sibling combinations, in one transaction, returning the
+// new job IDs. A job whose combination is already recorded is left alone
+// and no jobs are created.
+func (s *Store) ExpandMatrix(ctx context.Context, id int64, combo map[string]string, siblings []map[string]string) ([]int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("expand matrix of job %d: %w", id, err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	tag, err := tx.Exec(ctx, "UPDATE jobs SET matrix = $2 WHERE id = $1 AND matrix IS NULL", id, combo)
+	if err != nil {
+		return nil, fmt.Errorf("expand matrix of job %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, nil
+	}
+
+	const q = `
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id)
+		SELECT repo, clone_url, branch, commit_sha, 'pending', $2, id FROM jobs WHERE id = $1
+		RETURNING id`
+	ids := make([]int64, 0, len(siblings))
+	for _, sib := range siblings {
+		var newID int64
+		if err := tx.QueryRow(ctx, q, id, sib).Scan(&newID); err != nil {
+			return nil, fmt.Errorf("queue matrix job for %d: %w", id, err)
+		}
+		ids = append(ids, newID)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("expand matrix of job %d: %w", id, err)
+	}
+	return ids, nil
 }
 
 // ListJobs returns the most recent jobs, newest first.
@@ -477,6 +515,7 @@ func (s *Store) JobLogsAfter(ctx context.Context, jobID, after int64, limit int)
 func scanJob(row pgx.Row) (models.Job, error) {
 	var j models.Job
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
-		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt)
+		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt,
+		&j.Matrix, &j.ParentID)
 	return j, err
 }
