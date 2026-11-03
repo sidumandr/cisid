@@ -239,7 +239,7 @@ func TestStoreFinishJob(t *testing.T) {
 		assert.ErrorIs(t, s.FinishJob(ctx, "agent-2", res), ErrJobConflict)
 	})
 
-	t.Run("late result for a requeued job is accepted", func(t *testing.T) {
+	t.Run("pending job cannot be finished", func(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
@@ -247,13 +247,12 @@ func TestStoreFinishJob(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, s.RequeueJob(ctx, ids[0], "agent-1"))
 
-		require.NoError(t, s.FinishJob(ctx, "agent-1",
-			models.JobResult{JobID: ids[0], Status: models.JobStatusSuccess}))
+		err = s.FinishJob(ctx, "agent-1", models.JobResult{JobID: ids[0], Status: models.JobStatusSuccess})
+		assert.ErrorIs(t, err, ErrJobConflict, "a requeued job belongs to nobody")
 
 		got, err := s.GetJob(ctx, ids[0])
 		require.NoError(t, err)
-		assert.Equal(t, models.JobStatusSuccess, got.Status)
-		assert.Equal(t, "agent-1", got.Agent)
+		assert.Equal(t, models.JobStatusPending, got.Status)
 	})
 
 	t.Run("non-terminal status is invalid", func(t *testing.T) {

@@ -132,8 +132,7 @@ func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) 
 	return int(tag.RowsAffected()), nil
 }
 
-// FinishJob records the result of a job. The job must be running on agent,
-// or pending again after a requeue whose late result is still welcome.
+// FinishJob records the result of a job, which must be running on agent.
 func (s *Store) FinishJob(ctx context.Context, agent string, res models.JobResult) error {
 	if !res.Status.Finished() {
 		return fmt.Errorf("%w: job %d has status %q", ErrInvalidJobResult, res.JobID, res.Status)
@@ -141,9 +140,9 @@ func (s *Store) FinishJob(ctx context.Context, agent string, res models.JobResul
 
 	const q = `
 		UPDATE jobs
-		SET status = $3, agent = $2, exit_code = $4, failed_step = $5, error = NULLIF($6, ''),
+		SET status = $3, exit_code = $4, failed_step = $5, error = NULLIF($6, ''),
 		    finished_at = now(), updated_at = now()
-		WHERE id = $1 AND ((status = 'running' AND agent = $2) OR status = 'pending')`
+		WHERE id = $1 AND status = 'running' AND agent = $2`
 
 	tag, err := s.pool.Exec(ctx, q, res.JobID, agent, res.Status, res.ExitCode, res.FailedStep, res.Error)
 	if err != nil {

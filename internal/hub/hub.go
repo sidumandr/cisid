@@ -1,0 +1,244 @@
+// Package hub is the server side of the agent protocol: it keeps the
+// WebSocket connections of agents, hands pending jobs to idle agents and
+// stores the logs and results they send back.
+package hub
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"log/slog"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/pipeline"
+	"github.com/sidumandr/cisid/pkg/models"
+)
+
+const (
+	defaultPollInterval = 5 * time.Second
+	defaultDrainTimeout = 5 * time.Second
+)
+
+// Store is the persistence the hub needs. *db.Store satisfies it.
+type Store interface {
+	ClaimJob(ctx context.Context, agent string) (models.Job, error)
+	RequeueJob(ctx context.Context, id int64, agent string) error
+	RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error)
+	FinishJob(ctx context.Context, agent string, res models.JobResult) error
+	AppendJobLog(ctx context.Context, l models.JobLog) error
+}
+
+var _ Store = (*db.Store)(nil)
+
+// Planner turns a job into steps. pipeline.Planner satisfies it.
+type Planner interface {
+	Plan(ctx context.Context, job models.Job) ([]models.StepSpec, error)
+}
+
+var _ Planner = pipeline.Planner{}
+
+// Option configures a Hub.
+type Option func(*Hub)
+
+// WithLogger sets the hub's logger.
+func WithLogger(log *slog.Logger) Option {
+	return func(h *Hub) { h.log = log }
+}
+
+// WithPollInterval sets how often the hub looks for pending jobs without
+// being woken, e.g. for jobs created by another server (default 5s).
+func WithPollInterval(d time.Duration) Option {
+	return func(h *Hub) { h.pollInterval = d }
+}
+
+// WithDrainTimeout sets how long shutdown waits for agents to close their
+// connections after server_closing before closing them itself (default 5s).
+func WithDrainTimeout(d time.Duration) Option {
+	return func(h *Hub) { h.drainTimeout = d }
+}
+
+// Hub dispatches jobs to connected agents. Serve agents with ServeHTTP and
+// run the dispatcher with Run.
+type Hub struct {
+	store        Store
+	planner      Planner
+	log          *slog.Logger
+	pollInterval time.Duration
+	drainTimeout time.Duration
+	wake         chan struct{}
+
+	mu      sync.Mutex
+	agents  map[string]*agentConn
+	closed  bool
+	closing chan struct{}
+	conns   sync.WaitGroup
+}
+
+// agentConn is one connected agent.
+type agentConn struct {
+	name string
+	// out feeds the connection's writer goroutine.
+	out chan models.Message
+	// kick is closed when a newer connection with the same name replaces this one.
+	kick chan struct{}
+	// drain is closed on shutdown; the writer then sends server_closing.
+	drain chan struct{}
+
+	// Guarded by Hub.mu.
+	jobID   int64 // job the agent is running, 0 when idle
+	blocked bool  // rejected work; no new jobs until it reports a result
+}
+
+// New returns a Hub.
+func New(store Store, planner Planner, opts ...Option) *Hub {
+	h := &Hub{
+		store:        store,
+		planner:      planner,
+		log:          slog.Default(),
+		pollInterval: defaultPollInterval,
+		drainTimeout: defaultDrainTimeout,
+		wake:         make(chan struct{}, 1),
+		agents:       map[string]*agentConn{},
+		closing:      make(chan struct{}),
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// Wake asks the dispatcher to look for pending jobs now. It never blocks.
+func (h *Hub) Wake() {
+	select {
+	case h.wake <- struct{}{}:
+	default:
+	}
+}
+
+// Run dispatches jobs until ctx is canceled. It then asks every agent to
+// close its connection (see models.MsgServerClosing), waits for them to end
+// and returns nil.
+func (h *Hub) Run(ctx context.Context) error {
+	defer h.shutdown()
+
+	tick := time.NewTicker(h.pollInterval)
+	defer tick.Stop()
+	for {
+		h.dispatch(ctx)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-h.wake:
+		case <-tick.C:
+		}
+	}
+}
+
+func (h *Hub) shutdown() {
+	h.mu.Lock()
+	if !h.closed {
+		h.closed = true
+		close(h.closing)
+	}
+	h.mu.Unlock()
+	h.conns.Wait()
+}
+
+// dispatch offers pending jobs to every idle agent.
+func (h *Hub) dispatch(ctx context.Context) {
+	for _, a := range h.idleAgents() {
+		if !h.dispatchTo(ctx, a) {
+			return
+		}
+	}
+}
+
+// dispatchTo claims a job for a and sends it. It returns false when there
+// are no more pending jobs (or the store failed), so dispatch can stop.
+func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
+	for {
+		job, err := h.store.ClaimJob(ctx, a.name)
+		if errors.Is(err, db.ErrNoPendingJob) {
+			return false
+		}
+		if err != nil {
+			if ctx.Err() == nil {
+				h.log.ErrorContext(ctx, "claim job", "agent", a.name, "error", err)
+			}
+			return false
+		}
+
+		steps, err := h.planner.Plan(ctx, job)
+		if err != nil {
+			h.failJob(ctx, a.name, job.ID, "plan job: "+err.Error())
+			continue
+		}
+
+		if h.assign(a, models.JobAssignment{JobID: job.ID, Steps: steps}) {
+			h.log.InfoContext(ctx, "job assigned", "job_id", job.ID, "agent", a.name, "steps", len(steps))
+			return true
+		}
+		// The agent went away or became busy since idleAgents.
+		if err := h.store.RequeueJob(ctx, job.ID, a.name); err != nil {
+			h.log.ErrorContext(ctx, "requeue unassigned job", "job_id", job.ID, "error", err)
+		}
+		return true
+	}
+}
+
+func (h *Hub) failJob(ctx context.Context, agent string, jobID int64, reason string) {
+	h.log.WarnContext(ctx, "failing job", "job_id", jobID, "reason", reason)
+	err := h.store.FinishJob(ctx, agent, models.JobResult{
+		JobID: jobID, Status: models.JobStatusFailed, ExitCode: -1, Error: reason,
+	})
+	if err != nil {
+		h.log.ErrorContext(ctx, "record job failure", "job_id", jobID, "error", err)
+	}
+}
+
+// assign queues the assignment on a's connection if a is still the
+// registered, idle connection for its name.
+func (h *Hub) assign(a *agentConn, asg models.JobAssignment) bool {
+	msg, err := models.NewMessage(models.MsgJobAssigned, asg)
+	if err != nil {
+		return false
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.agents[a.name] != a || a.jobID != 0 || a.blocked {
+		return false
+	}
+	select {
+	case a.out <- msg:
+		a.jobID = asg.JobID
+		return true
+	default:
+		return false
+	}
+}
+
+// idleAgents returns the agents that can take a job, sorted by name.
+func (h *Hub) idleAgents() []*agentConn {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var idle []*agentConn
+	for _, a := range h.agents {
+		if a.jobID == 0 && !a.blocked {
+			idle = append(idle, a)
+		}
+	}
+	slices.SortFunc(idle, func(x, y *agentConn) int { return cmp.Compare(x.name, y.name) })
+	return idle
+}
+
+// holds reports whether the agent called name is running jobID.
+func (h *Hub) holds(name string, jobID int64) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	a := h.agents[name]
+	return a != nil && jobID != 0 && a.jobID == jobID
+}
