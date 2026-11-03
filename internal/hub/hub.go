@@ -23,6 +23,7 @@ const (
 	defaultDrainTimeout = 5 * time.Second
 	defaultLease        = 5 * time.Minute
 	cancelPollInterval  = 2 * time.Second
+	roundTimeout        = 30 * time.Second
 )
 
 // Store is the persistence the hub needs. *db.Store satisfies it.
@@ -162,23 +163,33 @@ func (h *Hub) Run(ctx context.Context) error {
 	cancelTick := time.NewTicker(cancelPollInterval)
 	defer cancelTick.Stop()
 
-	h.dispatch(ctx)
+	h.round(ctx, h.dispatch)
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-h.wake:
-			h.deliverCancels(ctx)
-			h.dispatch(ctx)
+			h.round(ctx, h.deliverCancels, h.dispatch)
 		case <-tick.C:
-			h.dispatch(ctx)
+			h.round(ctx, h.dispatch)
 		case <-leaseTick.C:
-			h.maintainLeases(ctx)
-			h.dispatch(ctx)
+			h.round(ctx, h.maintainLeases, h.dispatch)
 		case <-cancelTick.C:
 			// Cancel requests may come through another server's API.
-			h.deliverCancels(ctx)
+			h.round(ctx, h.deliverCancels)
 		}
+	}
+}
+
+// round runs one round of background work to completion even if ctx is
+// canceled meanwhile; Run stops between rounds. Canceling a query midway
+// makes the driver close its connection in the background, which would
+// hold up closing the database pool on shutdown.
+func (h *Hub) round(ctx context.Context, work ...func(context.Context)) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), roundTimeout)
+	defer cancel()
+	for _, w := range work {
+		w(ctx)
 	}
 }
 

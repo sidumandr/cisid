@@ -23,6 +23,7 @@ const (
 	Context = "cisid"
 
 	defaultInterval = 5 * time.Second
+	roundTimeout    = 30 * time.Second
 	batchSize       = 50
 	maxDescription  = 140 // GitHub's limit
 )
@@ -99,7 +100,7 @@ func (r *Reporter) Run(ctx context.Context) error {
 	tick := time.NewTicker(r.interval)
 	defer tick.Stop()
 	for {
-		r.reportChanges(ctx)
+		r.round(ctx)
 		select {
 		case <-ctx.Done():
 			return nil
@@ -107,6 +108,15 @@ func (r *Reporter) Run(ctx context.Context) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// round reports changes without being interrupted by ctx: a query
+// canceled midway would hold up closing the database pool on shutdown.
+// Run stops between rounds.
+func (r *Reporter) round(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), roundTimeout)
+	defer cancel()
+	r.reportChanges(ctx)
 }
 
 func (r *Reporter) reportChanges(ctx context.Context) {

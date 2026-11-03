@@ -32,7 +32,10 @@ import (
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
-const dbConnectTimeout = 10 * time.Second
+const (
+	dbConnectTimeout = 10 * time.Second
+	poolCloseTimeout = 5 * time.Second
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -57,7 +60,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err != nil {
 		return fmt.Errorf("create database pool: %w", err)
 	}
-	defer pool.Close()
+	defer closePool(pool, log)
 
 	store := db.New(pool)
 	pingCtx, cancel := context.WithTimeout(ctx, dbConnectTimeout)
@@ -182,6 +185,21 @@ func jobURL(publicURL string) func(int64) string {
 		return nil
 	}
 	return func(id int64) string { return fmt.Sprintf("%s/api/jobs/%d", publicURL, id) }
+}
+
+// closePool closes the database pool, but gives up waiting after a few
+// seconds so a hung database connection cannot keep the server from exiting.
+func closePool(pool *pgxpool.Pool, log *slog.Logger) {
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		pool.Close()
+	}()
+	select {
+	case <-closed:
+	case <-time.After(poolCloseTimeout):
+		log.Warn("database connections are still closing; exiting anyway")
+	}
 }
 
 // serve runs srv on ln until ctx is canceled, then stops accepting

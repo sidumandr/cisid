@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"testing"
@@ -196,6 +197,9 @@ func (stepRunner) StartService(_ context.Context, svc runner.Service) (string, e
 // everything down. Skipped unless CISID_TEST_DATABASE_URL is set.
 func TestRunEndToEnd(t *testing.T) {
 	dbURL := dbtest.NewURL(t)
+	// Without keep-alives the client never leaves a connected but idle
+	// socket behind, which http.Server.Shutdown waits up to 5s for.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 	const secret = "e2e-secret"
 
 	ln := listen(t)
@@ -222,7 +226,7 @@ func TestRunEndToEnd(t *testing.T) {
 
 	base := "http://" + addr
 	require.Eventually(t, func() bool {
-		resp, err := http.Get(base + "/readyz")
+		resp, err := client.Get(base + "/readyz")
 		if err != nil {
 			return false
 		}
@@ -235,7 +239,7 @@ func TestRunEndToEnd(t *testing.T) {
 		base+"/api/repos/sidumandr/cisid/secrets/DEPLOY_TOKEN", strings.NewReader(`{"value":"dep_e2e_s3cret"}`))
 	require.NoError(t, err)
 	putReq.Header.Set("Authorization", "Bearer "+apiToken)
-	putResp, err := http.DefaultClient.Do(putReq)
+	putResp, err := client.Do(putReq)
 	require.NoError(t, err)
 	putResp.Body.Close()
 	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
@@ -262,7 +266,7 @@ func TestRunEndToEnd(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GitHub-Event", "push")
 	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusAccepted, resp.StatusCode)
@@ -311,7 +315,7 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.True(t, strings.HasPrefix(last.Description, "Passed in "), last.Description)
 
 	// The API serves the job and replays its logs as a finished stream.
-	listResp, err := http.Get(base + "/api/jobs")
+	listResp, err := client.Get(base + "/api/jobs")
 	require.NoError(t, err)
 	var listed []models.Job
 	require.NoError(t, json.NewDecoder(listResp.Body).Decode(&listed))
@@ -319,7 +323,7 @@ func TestRunEndToEnd(t *testing.T) {
 	require.Len(t, listed, 1)
 	assert.Equal(t, queued.JobID, listed[0].ID)
 
-	streamResp, err := http.Get(fmt.Sprintf("%s/api/jobs/%d/logs/stream", base, queued.JobID))
+	streamResp, err := client.Get(fmt.Sprintf("%s/api/jobs/%d/logs/stream", base, queued.JobID))
 	require.NoError(t, err)
 	stream, err := io.ReadAll(streamResp.Body)
 	streamResp.Body.Close()
@@ -332,8 +336,10 @@ func TestRunEndToEnd(t *testing.T) {
 	select {
 	case err := <-done:
 		require.NoError(t, err)
-	case <-time.After(testTimeout):
-		t.Fatal("server did not shut down")
+	case <-time.After(2 * testTimeout): // CISID_SHUTDOWN_TIMEOUT plus slack
+		var stacks strings.Builder
+		_ = pprof.Lookup("goroutine").WriteTo(&stacks, 1)
+		t.Fatalf("server did not shut down; log:\n%s\ngoroutines:\n%s", logs.String(), stacks.String())
 	}
 	stopAgent()
 	select {
