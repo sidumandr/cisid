@@ -17,12 +17,12 @@ GitHub ──webhook──► jobs (pending) ──Wake──► dispatcher
 
 1. Webhook bir job oluşturur (`pending`) ve hub'ı uyandırır (`Wake`). Hub ayrıca 5 saniyede bir kendiliğinden bakar. Böylece başka bir server örneğinin oluşturduğu job'lar da kaçmaz.
 2. Dispatcher her boştaki agent için `ClaimJob` çağırır. Bu sorgu en eski `pending` job'u `running` yapar ve agent'a atar. `FOR UPDATE SKIP LOCKED` sayesinde aynı job iki agent'a gitmez, birden fazla server aynı anda çalışsa bile.
-3. `Planner` job'un adımlarını üretir ve agent'a `job_assigned` gönderilir. Plan üretilemezse job `failed` olur ve sıradaki job'a geçilir.
+3. `Planner` job'un adımlarını üretir ve agent'a `job_assigned` gönderilir. `.cisid.yml` yoksa ya da geçersizse job `failed` olur ve sıradaki job'a geçilir. GitHub'a geçici olarak ulaşılamıyorsa job kuyruğa geri döner.
 4. Agent'tan gelen `job_log` mesajları `job_logs` tablosuna, `job_result` mesajı `jobs` tablosuna yazılır. Sonuç gelince agent tekrar boşa çıkar ve hub sıradaki job'a bakar.
 
-## Planner (geçici)
+## Planner
 
-`internal/pipeline` şimdilik her job için tek bir **clone** adımı üretir. Bu adım `alpine/git:2.52.0` image'ında pushlanan commit'i `/workspace` altına çeker. Repodaki `.cisid.yml` dosyasını okumak bir sonraki adım ([ROADMAP.md](../ROADMAP.md)).
+`internal/pipeline` job'un adımlarını üretir: önce **clone**, sonra pushlanan commit'teki `.cisid.yml` adımları ([pipeline.md](pipeline.md)). Plan geçici bir sebeple üretilemezse job başarısız sayılmaz. Job kuyruğa geri döner ve o dağıtım turu durur, aynı job hemen tekrar alınmaz.
 
 Webhook'tan gelen değerler (clone URL, branch, SHA) script'in içine yazılmaz. Ortam değişkeni olarak verilir ve script içinde sadece tırnak içinde kullanılır (`"$CISID_CLONE_URL"`). Bu yüzden shell injection'a açık değildir.
 

@@ -2,12 +2,13 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1 (MVP) geliştiriliyor. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+> Durum: Faz 1 (MVP) tamam, Faz 2 geliştiriliyor. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
 
 ## Dokümanlar
 
 - [ROADMAP.md](ROADMAP.md): fazlar ve ilerleme
 - [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
+- [docs/pipeline.md](docs/pipeline.md): `.cisid.yml` formatı ve adımların çalışma şekli
 - [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
 - [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
@@ -76,7 +77,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── api/         # HTTP router, handler'lar, middleware
 │   ├── config/      # Ortam değişkenlerinden server yapılandırması
 │   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
-│   ├── pipeline/    # Job → adımlar (şimdilik sadece clone)
+│   ├── github/      # GitHub API istemcisi (.cisid.yml okuma)
+│   ├── pipeline/    # .cisid.yml ayrıştırma, job → adımlar
 │   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)
@@ -109,7 +111,7 @@ CISID_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable'
 go run ./cmd/agent
 ```
 
-Agent `ws://localhost:8080/agent/ws` adresine bağlanır. Bir push geldiğinde job'u alır ve Docker'da çalıştırır. Şimdilik her job sadece repoyu clone'lar, `.cisid.yml` desteği sıradaki adım.
+Agent `ws://localhost:8080/agent/ws` adresine bağlanır. Bir push geldiğinde job'u alır, repoyu clone'lar ve [`.cisid.yml`](docs/pipeline.md) adımlarını Docker'da çalıştırır.
 
 Ayrıntılar: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
 

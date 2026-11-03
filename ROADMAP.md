@@ -12,7 +12,7 @@ Hedef: GitHub'a push → container'da komut çalışır → sonuç veritabanınd
 - [x] **Server iskeleti** — `cmd/server`: config (env), pgx pool, migration'lar, HTTP router, graceful shutdown.
 - [x] **Agent hub + job dağıtımı** — server'da `/agent/ws` endpoint'i, bekleyen job'ları agent'lara atama (`FOR UPDATE SKIP LOCKED`), `job_log` ve `job_result` mesajlarını kaydetme.
 - [x] **Docker runner** — `internal/runner/docker.go` (`github.com/moby/moby/client`): image pull (progress callback), container create (env, workdir, mount), start, stdout/stderr `io.Reader`, exit code, timeout, context cancellation. `testify/mock` ile mock Docker client testleri.
-- [ ] **Pipeline tanımı** — repodaki `.cisid.yml` dosyasını GitHub'dan oku ve parse et (image + komut listesi), clone adımından sonra çalıştır. Şimdilik `internal/pipeline` sadece clone adımı üretiyor.
+- [x] **Pipeline tanımı** — repodaki `.cisid.yml` dosyasını GitHub'dan oku ve parse et (image + komut listesi), clone adımından sonra çalıştır.
 - [x] **Agent (temel)** — `cmd/agent`: server'a WebSocket ile bağlan, `job_assigned` dinle, runner'ı çağır, sonucu raporla.
 
 ## Faz 2 — Streaming
@@ -28,7 +28,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
 ## Faz 3 — Features
 
-- [ ] Çok adımlı pipeline'lar. Agent tarafında sıralı adımlar ve paylaşılan workspace volume hazır.
+- [x] Çok adımlı pipeline'lar, adımlar arası paylaşılan workspace volume.
 - [ ] Service container'ları (ör. test için PostgreSQL).
 - [ ] Secret yönetimi (şifreli saklama, env olarak enjekte, loglarda maskeleme).
 - [ ] Branch / event filtreleri, matrix build.
@@ -43,4 +43,4 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] Container izolasyonu ve kaynak limitleri (CPU, bellek, ağ).
 - [ ] Rate limiting, webhook replay koruması (`X-GitHub-Delivery`).
 - [ ] Dağıtım: Docker image'ları, docker-compose, Helm chart.
-- [ ] cisid'in kendi CI'ını cisid üzerinde çalıştırmak.
+- [x] cisid'in kendi CI'ını cisid üzerinde çalıştırmak (`.cisid.yml`).

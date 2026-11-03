@@ -25,6 +25,8 @@ curl http://localhost:8080/readyz
 | `CISID_HTTP_ADDR` | `:8080` | Dinlenecek adres |
 | `CISID_SHUTDOWN_TIMEOUT` | `15s` | Kapanışta devam eden istekler için beklenecek süre |
 | `CISID_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `CISID_GITHUB_TOKEN` | — | `.cisid.yml` okumak için GitHub token'ı. Özel repolar ve rate limit için gerekir ([pipeline.md](pipeline.md)). |
+| `CISID_GITHUB_API_URL` | `https://api.github.com` | GitHub Enterprise Server için API adresi |
 
 Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapılandırma loglanırken secret ve veritabanı şifresi maskelenir (`slog.LogValuer`).
 
