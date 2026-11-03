@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sidumandr/cisid/internal/db/dbtest"
 )
 
 func TestLoadMigrations(t *testing.T) {
@@ -53,7 +55,7 @@ func TestEmbeddedMigrationsLoad(t *testing.T) {
 }
 
 func TestMigrateAppliesOnce(t *testing.T) {
-	pool := newTestDB(t)
+	pool := dbtest.New(t)
 	ctx := t.Context()
 	embedded, err := loadMigrations(migrationFiles, "migrations")
 	require.NoError(t, err)
@@ -83,7 +85,7 @@ func TestMigrateAppliesOnce(t *testing.T) {
 }
 
 func TestMigrateRollsBackFailedMigration(t *testing.T) {
-	pool := newTestDB(t)
+	pool := dbtest.New(t)
 	ctx := t.Context()
 	fsys := fstest.MapFS{
 		"m/001_first.sql":  {Data: []byte("CREATE TABLE first (id INT);")},
@@ -108,7 +110,7 @@ func TestMigrateRollsBackFailedMigration(t *testing.T) {
 }
 
 func TestMigrateConcurrentServers(t *testing.T) {
-	pool := newTestDB(t)
+	pool := dbtest.New(t)
 	ctx := t.Context()
 	embedded, err := loadMigrations(migrationFiles, "migrations")
 	require.NoError(t, err)

@@ -13,6 +13,11 @@ const (
 	JobStatusCanceled JobStatus = "canceled"
 )
 
+// Finished reports whether s is a terminal status.
+func (s JobStatus) Finished() bool {
+	return s == JobStatusSuccess || s == JobStatusFailed || s == JobStatusCanceled
+}
+
 // Job is a single pipeline run triggered by a push.
 type Job struct {
 	ID        int64     `json:"id"`
@@ -22,4 +27,14 @@ type Job struct {
 	CommitSHA string    `json:"commit_sha"`
 	Status    JobStatus `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
+
+	// Set once the job has been claimed by an agent.
+	Agent     string     `json:"agent,omitempty"`
+	StartedAt *time.Time `json:"started_at,omitempty"`
+
+	// Set once the job has finished.
+	ExitCode   *int       `json:"exit_code,omitempty"`
+	FailedStep *int       `json:"failed_step,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
