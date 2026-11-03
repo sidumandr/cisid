@@ -1,0 +1,81 @@
+{
+  "ref": "refs/heads/main",
+  "before": "9824c29a1f3b5d7e8c0a2b4d6f8e0a1c3e5b7d9f",
+  "after": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+  "repository": {
+    "id": 912345678,
+    "node_id": "R_kgDONl2abc",
+    "name": "cisid",
+    "full_name": "sidumandr/cisid",
+    "private": false,
+    "owner": {
+      "name": "sidumandr",
+      "login": "sidumandr",
+      "id": 12345678,
+      "type": "User"
+    },
+    "html_url": "https://github.com/sidumandr/cisid",
+    "clone_url": "https://github.com/sidumandr/cisid.git",
+    "ssh_url": "git@github.com:sidumandr/cisid.git",
+    "default_branch": "main",
+    "master_branch": "main"
+  },
+  "pusher": {
+    "name": "sidumandr",
+    "email": "dumansafailhan@gmail.com"
+  },
+  "sender": {
+    "login": "sidumandr",
+    "id": 12345678,
+    "type": "User"
+  },
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "base_ref": null,
+  "compare": "https://github.com/sidumandr/cisid/compare/9824c29a1f3b...6113728f27ae",
+  "commits": [
+    {
+      "id": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+      "tree_id": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "distinct": true,
+      "message": "Add webhook handler",
+      "timestamp": "2026-11-03T10:15:00+03:00",
+      "url": "https://github.com/sidumandr/cisid/commit/6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+      "author": {
+        "name": "sidumandr",
+        "email": "dumansafailhan@gmail.com",
+        "username": "sidumandr"
+      },
+      "committer": {
+        "name": "sidumandr",
+        "email": "dumansafailhan@gmail.com",
+        "username": "sidumandr"
+      },
+      "added": ["internal/api/webhook.go"],
+      "removed": [],
+      "modified": ["README.md"]
+    }
+  ],
+  "head_commit": {
+    "id": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+    "tree_id": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "distinct": true,
+    "message": "Add webhook handler",
+    "timestamp": "2026-11-03T10:15:00+03:00",
+    "url": "https://github.com/sidumandr/cisid/commit/6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+    "author": {
+      "name": "sidumandr",
+      "email": "dumansafailhan@gmail.com",
+      "username": "sidumandr"
+    },
+    "committer": {
+      "name": "sidumandr",
+      "email": "dumansafailhan@gmail.com",
+      "username": "sidumandr"
+    },
+    "added": ["internal/api/webhook.go"],
+    "removed": [],
+    "modified": ["README.md"]
+  }
+}

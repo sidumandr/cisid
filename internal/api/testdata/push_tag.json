@@ -1,0 +1,44 @@
+{
+  "ref": "refs/tags/v0.1.0",
+  "before": "0000000000000000000000000000000000000000",
+  "after": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+  "repository": {
+    "id": 912345678,
+    "name": "cisid",
+    "full_name": "sidumandr/cisid",
+    "private": false,
+    "owner": {
+      "login": "sidumandr",
+      "id": 12345678,
+      "type": "User"
+    },
+    "html_url": "https://github.com/sidumandr/cisid",
+    "clone_url": "https://github.com/sidumandr/cisid.git",
+    "default_branch": "main"
+  },
+  "pusher": {
+    "name": "sidumandr",
+    "email": "dumansafailhan@gmail.com"
+  },
+  "sender": {
+    "login": "sidumandr",
+    "id": 12345678,
+    "type": "User"
+  },
+  "created": true,
+  "deleted": false,
+  "forced": false,
+  "base_ref": "refs/heads/main",
+  "compare": "https://github.com/sidumandr/cisid/compare/v0.1.0",
+  "commits": [],
+  "head_commit": {
+    "id": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+    "message": "Add webhook handler",
+    "timestamp": "2026-11-03T10:15:00+03:00",
+    "author": {
+      "name": "sidumandr",
+      "email": "dumansafailhan@gmail.com",
+      "username": "sidumandr"
+    }
+  }
+}

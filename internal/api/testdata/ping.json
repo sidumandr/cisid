@@ -1,0 +1,30 @@
+{
+  "zen": "Keep it logically awesome.",
+  "hook_id": 523451234,
+  "hook": {
+    "type": "Repository",
+    "id": 523451234,
+    "name": "web",
+    "active": true,
+    "events": ["push"],
+    "config": {
+      "content_type": "json",
+      "insecure_ssl": "0",
+      "url": "https://ci.example.com/webhooks/github"
+    }
+  },
+  "repository": {
+    "id": 912345678,
+    "name": "cisid",
+    "full_name": "sidumandr/cisid",
+    "private": false,
+    "html_url": "https://github.com/sidumandr/cisid",
+    "clone_url": "https://github.com/sidumandr/cisid.git",
+    "default_branch": "main"
+  },
+  "sender": {
+    "login": "sidumandr",
+    "id": 12345678,
+    "type": "User"
+  }
+}
