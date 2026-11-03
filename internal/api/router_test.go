@@ -36,6 +36,7 @@ type routerFixture struct {
 	logs    *bytes.Buffer
 	webhook http.HandlerFunc
 	hooked  bool
+	agents  bool
 }
 
 func newRouterFixture(t *testing.T) *routerFixture {
@@ -46,9 +47,12 @@ func newRouterFixture(t *testing.T) *routerFixture {
 		w.WriteHeader(http.StatusAccepted)
 	}
 	log := slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	f.handler = NewRouter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.webhook(w, r)
-	}), f.db, log)
+	webhook := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { f.webhook(w, r) })
+	agents := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.agents = true
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	})
+	f.handler = NewRouter(webhook, agents, f.db, log)
 	return f
 }
 
@@ -107,6 +111,18 @@ func TestRouterRoutes(t *testing.T) {
 		rec := f.do(http.MethodPost, "/webhooks/github")
 		assert.Equal(t, http.StatusAccepted, rec.Code)
 		assert.True(t, f.hooked)
+	})
+
+	t.Run("agent websocket", func(t *testing.T) {
+		f := newRouterFixture(t)
+		assert.Equal(t, http.StatusSwitchingProtocols, f.do(http.MethodGet, "/agent/ws").Code)
+		assert.True(t, f.agents)
+	})
+
+	t.Run("agent websocket needs GET", func(t *testing.T) {
+		f := newRouterFixture(t)
+		assert.Equal(t, http.StatusMethodNotAllowed, f.do(http.MethodPost, "/agent/ws").Code)
+		assert.False(t, f.agents)
 	})
 
 	t.Run("unknown path", func(t *testing.T) {

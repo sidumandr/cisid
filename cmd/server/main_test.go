@@ -13,14 +13,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sidumandr/cisid/internal/agent"
 	"github.com/sidumandr/cisid/internal/config"
+	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/db/dbtest"
+	"github.com/sidumandr/cisid/internal/runner"
+	"github.com/sidumandr/cisid/pkg/models"
 )
 
 const testTimeout = 5 * time.Second
@@ -126,13 +132,21 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrInvalidConfig)
 }
 
-// TestRunEndToEnd starts the real server against PostgreSQL, delivers a
-// signed webhook and shuts down. Skipped unless CISID_TEST_DATABASE_URL is set.
+// stepRunner stands in for Docker in the end-to-end test.
+type stepRunner struct{}
+
+func (stepRunner) Run(_ context.Context, step runner.Step, stdout, _ io.Writer) (int, error) {
+	_, err := io.WriteString(stdout, "checked out "+step.Env["CISID_COMMIT_SHA"]+"\n")
+	return 0, err
+}
+
+func (stepRunner) RemoveVolume(context.Context, string) error { return nil }
+
+// TestRunEndToEnd starts the real server on a fresh database with a real
+// agent, delivers a signed webhook, waits for the job to finish and shuts
+// everything down. Skipped unless CISID_TEST_DATABASE_URL is set.
 func TestRunEndToEnd(t *testing.T) {
-	dbURL := os.Getenv("CISID_TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("CISID_TEST_DATABASE_URL not set; skipping end-to-end test")
-	}
+	dbURL := dbtest.NewURL(t)
 	const secret = "e2e-secret"
 
 	ln := listen(t)
@@ -145,7 +159,7 @@ func TestRunEndToEnd(t *testing.T) {
 		"CISID_GITHUB_WEBHOOK_SECRET": secret,
 		"CISID_SHUTDOWN_TIMEOUT":      "5s",
 	}
-	var logs bytes.Buffer
+	var logs syncBuffer
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- run(ctx, func(k string) string { return env[k] }, &logs) }()
@@ -159,6 +173,18 @@ func TestRunEndToEnd(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode == http.StatusOK
 	}, testTimeout, 50*time.Millisecond, "server did not become ready")
+
+	a, err := agent.New(agent.Config{
+		ServerURL:    "ws://" + addr + "/agent/ws",
+		Name:         "e2e-agent",
+		MinBackoff:   10 * time.Millisecond,
+		MaxBackoff:   50 * time.Millisecond,
+		FlushTimeout: 2 * time.Second,
+	}, stepRunner{}, discard)
+	require.NoError(t, err)
+	agentCtx, stopAgent := context.WithCancel(t.Context())
+	agentDone := make(chan error, 1)
+	go func() { agentDone <- a.Run(agentCtx) }()
 
 	body, err := os.ReadFile(filepath.Join("..", "..", "internal", "api", "testdata", "push.json"))
 	require.NoError(t, err)
@@ -180,20 +206,26 @@ func TestRunEndToEnd(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&queued))
 
-	conn, err := pgx.Connect(t.Context(), dbURL)
+	pool, err := pgxpool.New(t.Context(), dbURL)
 	require.NoError(t, err)
-	// Cleanups run last-in first-out: delete the row, then close the connection.
-	t.Cleanup(func() { _ = conn.Close(context.Background()) })
-	t.Cleanup(func() {
-		_, err := conn.Exec(context.Background(), "DELETE FROM jobs WHERE id = $1", queued.JobID)
-		assert.NoError(t, err)
-	})
-	var branch, status string
-	require.NoError(t, conn.QueryRow(t.Context(),
-		"SELECT branch, status FROM jobs WHERE id = $1", queued.JobID).Scan(&branch, &status))
-	assert.Equal(t, "main", branch)
-	assert.Equal(t, "pending", status)
+	t.Cleanup(pool.Close)
+	store := db.New(pool)
 
+	var job models.Job
+	require.Eventually(t, func() bool {
+		job, err = store.GetJob(t.Context(), queued.JobID)
+		return err == nil && job.Status.Finished()
+	}, testTimeout, 20*time.Millisecond, "job did not finish")
+	assert.Equal(t, models.JobStatusSuccess, job.Status)
+	assert.Equal(t, "e2e-agent", job.Agent)
+	assert.Equal(t, "main", job.Branch)
+
+	jobLogs, err := store.JobLogs(t.Context(), queued.JobID)
+	require.NoError(t, err)
+	require.Len(t, jobLogs, 1)
+	assert.Equal(t, "checked out 6113728f27ae82c7b1a177c8d03f9e96e0adf246\n", jobLogs[0].Data)
+
+	// Stop the server first: it asks the agent to close, then exits.
 	cancel()
 	select {
 	case err := <-done:
@@ -201,6 +233,35 @@ func TestRunEndToEnd(t *testing.T) {
 	case <-time.After(testTimeout):
 		t.Fatal("server did not shut down")
 	}
-	assert.NotContains(t, logs.String(), secret, "secrets must not be logged")
-	assert.Contains(t, logs.String(), "server stopped")
+	stopAgent()
+	select {
+	case err := <-agentDone:
+		require.NoError(t, err)
+	case <-time.After(testTimeout):
+		t.Fatal("agent did not stop")
+	}
+
+	out := logs.String()
+	assert.NotContains(t, out, secret, "secrets must not be logged")
+	assert.Contains(t, out, "job assigned")
+	assert.Contains(t, out, "job finished")
+	assert.Contains(t, out, "server stopped")
+}
+
+// syncBuffer is a bytes.Buffer safe for concurrent writes from the logger.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

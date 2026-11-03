@@ -26,11 +26,13 @@ type healthResponse struct {
 // NewRouter returns the server's HTTP handler:
 //
 //	POST /webhooks/github  GitHub webhook deliveries
+//	GET  /agent/ws         agent WebSocket connections
 //	GET  /healthz          liveness: the process is serving requests
 //	GET  /readyz           readiness: the database is reachable
-func NewRouter(webhook http.Handler, db Pinger, log *slog.Logger) http.Handler {
+func NewRouter(webhook, agents http.Handler, db Pinger, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/webhooks/github", webhook)
+	mux.Handle("GET /agent/ws", agents)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
 	})

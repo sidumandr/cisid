@@ -17,10 +17,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/api"
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/hub"
+	"github.com/sidumandr/cisid/internal/pipeline"
+	"github.com/sidumandr/cisid/pkg/models"
 )
 
 const dbConnectTimeout = 10 * time.Second
@@ -63,13 +67,14 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	log.InfoContext(ctx, "database ready", "migrations_applied", applied)
 
-	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), store, log)
+	agents := hub.New(store, pipeline.Planner{}, hub.WithLogger(log))
+	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, agents}, log)
 	if err != nil {
 		return fmt.Errorf("create webhook handler: %w", err)
 	}
 
 	srv := &http.Server{
-		Handler:           api.NewRouter(webhook, store, log),
+		Handler:           api.NewRouter(webhook, agents, store, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
@@ -79,11 +84,30 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		return fmt.Errorf("listen on %s: %w", cfg.HTTPAddr, err)
 	}
 
-	if err := serve(ctx, srv, ln, cfg.ShutdownTimeout, log); err != nil {
+	// If either stops with an error, the other is shut down too.
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return agents.Run(gctx) })
+	g.Go(func() error { return serve(gctx, srv, ln, cfg.ShutdownTimeout, log) })
+	if err := g.Wait(); err != nil {
 		return err
 	}
 	log.InfoContext(ctx, "server stopped")
 	return nil
+}
+
+// wakeOnCreate wakes the hub whenever the webhook queues a job, so it is
+// dispatched right away instead of on the next poll.
+type wakeOnCreate struct {
+	jobs api.JobCreator
+	hub  *hub.Hub
+}
+
+func (w wakeOnCreate) CreateJob(ctx context.Context, job models.Job) (int64, error) {
+	id, err := w.jobs.CreateJob(ctx, job)
+	if err == nil {
+		w.hub.Wake()
+	}
+	return id, err
 }
 
 // serve runs srv on ln until ctx is canceled, then stops accepting
