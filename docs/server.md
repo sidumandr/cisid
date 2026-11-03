@@ -33,6 +33,7 @@ Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapı
 | Yol | Açıklama |
 |---|---|
 | `POST /webhooks/github` | GitHub webhook'ları ([webhook.md](webhook.md)) |
+| `GET /agent/ws` | Agent WebSocket bağlantıları ([hub.md](hub.md)) |
 | `GET /healthz` | Liveness: süreç ayakta ise `200 {"status":"ok"}` |
 | `GET /readyz` | Readiness: veritabanı 2 sn içinde yanıt verirse `200`, vermezse `503 {"status":"unavailable","reason":"database unreachable"}` |
 
@@ -43,7 +44,7 @@ Bütün istekler iki middleware'den geçer:
 
 ## Migration'lar (`internal/db/migrate.go`)
 
-- SQL dosyaları `internal/db/migrations/` altındadır ve binary'ye gömülüdür (`embed`). Ad formatı: `<sürüm>_<ad>.sql`, örneğin `002_create_logs.sql`.
+- SQL dosyaları `internal/db/migrations/` altındadır ve binary'ye gömülüdür (`embed`). Ad formatı: `<sürüm>_<ad>.sql`, örneğin `002_job_execution.sql`.
 - Sunucu her açılışta henüz uygulanmamış migration'ları sürüm sırasıyla uygular. Uygulananlar `schema_migrations` tablosuna yazılır.
 - Her migration kendi transaction'ında çalışır. Hata olursa o migration tamamen geri alınır ve sunucu açılmaz.
 - Aynı veritabanını paylaşan birden fazla sunucu aynı anda açılırsa PostgreSQL advisory lock ile sıraya girerler. Her migration tam bir kez uygulanır.

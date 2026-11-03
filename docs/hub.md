@@ -1,0 +1,75 @@
+# Agent Hub
+
+`internal/hub` agent protokolünün server tarafıdır. Agent'ların WebSocket bağlantılarını tutar, bekleyen job'ları boştaki agent'lara dağıtır ve agent'lardan gelen log ve sonuçları veritabanına yazar. Server'da `GET /agent/ws` yolunda çalışır.
+
+## Akış
+
+```
+GitHub ──webhook──► jobs (pending) ──Wake──► dispatcher
+                                                 │ ClaimJob (FOR UPDATE SKIP LOCKED)
+                                                 │ Planner.Plan → adımlar
+                                                 ▼
+                                     job_assigned ──► agent
+                                                       │
+            job_logs ◄── AppendJobLog ◄── job_log ◄────┤
+            jobs     ◄── FinishJob    ◄── job_result ◄─┘
+```
+
+1. Webhook bir job oluşturur (`pending`) ve hub'ı uyandırır (`Wake`). Hub ayrıca 5 saniyede bir kendiliğinden bakar. Böylece başka bir server örneğinin oluşturduğu job'lar da kaçmaz.
+2. Dispatcher her boştaki agent için `ClaimJob` çağırır. Bu sorgu en eski `pending` job'u `running` yapar ve agent'a atar. `FOR UPDATE SKIP LOCKED` sayesinde aynı job iki agent'a gitmez, birden fazla server aynı anda çalışsa bile.
+3. `Planner` job'un adımlarını üretir ve agent'a `job_assigned` gönderilir. Plan üretilemezse job `failed` olur ve sıradaki job'a geçilir.
+4. Agent'tan gelen `job_log` mesajları `job_logs` tablosuna, `job_result` mesajı `jobs` tablosuna yazılır. Sonuç gelince agent tekrar boşa çıkar ve hub sıradaki job'a bakar.
+
+## Planner (geçici)
+
+`internal/pipeline` şimdilik her job için tek bir **clone** adımı üretir. Bu adım `alpine/git:2.52.0` image'ında pushlanan commit'i `/workspace` altına çeker. Repodaki `.cisid.yml` dosyasını okumak bir sonraki adım ([ROADMAP.md](../ROADMAP.md)).
+
+Webhook'tan gelen değerler (clone URL, branch, SHA) script'in içine yazılmaz. Ortam değişkeni olarak verilir ve script içinde sadece tırnak içinde kullanılır (`"$CISID_CLONE_URL"`). Bu yüzden shell injection'a açık değildir.
+
+## Sahiplik kuralları
+
+- Agent sadece **elindeki** job için log ve sonuç gönderebilir. Başka bir job'a ait mesajlar atılır ve uyarı loglanır.
+- `FinishJob` sadece job o agent'ta `running` durumundaysa başarılı olur. Tekrar kuyruğa alınmış ya da bitmiş bir job'a sonuç yazılamaz.
+- Aynı adla ikinci bir bağlantı gelirse eskisi kapatılır. Bu, kopup yeniden bağlanan agent'ın yarım açık kalan (half-open) eski bağlantısını temizler.
+
+## Yeniden bağlanma ve kayıp job'lar
+
+Agent her bağlantıda `agent_hello` içinde elindeki job'u bildirir (`running_job_id`). Job'un sonucu henüz gönderilmediyse de o job bildirilir. Hub bu bilgiyle iki şey yapar:
+
+- Veritabanında bu agent'a atanmış görünen **diğer** `running` job'ları tekrar kuyruğa alır (`RequeueAgentJobs`). Bu durum iki şekilde oluşur: atama mesajı agent'a hiç ulaşmamıştır, ya da agent yeniden başlamıştır.
+- Bildirilen job bitene kadar agent'a yeni iş vermez.
+
+Server yeniden başlarsa agent bağlantıyı tekrar kurar, çalışan job devam eder ve sonucu yeni server'a teslim edilir (`TestIntegrationJobSurvivesServerRestart`).
+
+Agent bir işi reddederse (`job_rejected`) job tekrar kuyruğa alınır. Agent bir sonuç bildirene ya da yeniden bağlanana kadar yeni iş almaz. Bu, "meşgul agent'a sürekli iş gönderip reddedilme" döngüsünü önler.
+
+## Graceful shutdown
+
+WebSocket kütüphanesinin `Close` metodu, kapanış el sıkışmasını beklerken karşıdan gelen veri mesajlarını **okuyup atar**. Hub bağlantıyı kendisi kapatsaydı, agent'ın o anda gönderdiği log ve sonuçlar kaybolurdu. Bu yüzden kapanış şöyle işler:
+
+1. Hub her agent'a `server_closing` gönderir.
+2. Agent o an yazdığı mesajı bitirir, outbox'tan yeni mesaj almayı bırakır ve bağlantıyı **kendisi** kapatır.
+3. Hub, agent'ın kapanış çerçevesine kadar gelen her mesajı işler. Gönderilmemiş mesajlar agent'ın outbox'ında kalır ve yeni server'a iletilir.
+4. Bunu yapmayan (eski) bir agent'ın bağlantısı 5 sn sonra zorla kapatılır (`WithDrainTimeout`).
+
+## Canlılık
+
+Hub her bağlantıya 30 sn'de bir WebSocket ping gönderir. Pong 10 sn içinde gelmezse bağlantı kapatılır ve ölü bağlantılar fark edilir. Bağlantısı kopan agent'ın job'u `running` kalır, çünkü agent geri dönüp sonucu teslim edebilir.
+
+## Bilinen sınırlamalar (Faz 2)
+
+- **Lease yok.** Agent bir daha hiç bağlanmazsa job sonsuza kadar `running` kalır. Bunun için süreli lease ve heartbeat gerekiyor.
+- **Ack yok.** Ağ aniden koparsa, gönderilmekte olan bir mesaj kaybolabilir. Graceful shutdown bu durumu kapsamaz, onaylı teslim (ack) gerekir.
+- Her log parçası ayrı bir `INSERT` ile yazılır. Yoğun log üreten job'larda toplu yazma (batch) gerekebilir.
+
+## Testler
+
+| Test | Kapsam |
+|---|---|
+| `hub_test.go` | Mock store ve planner, ham WebSocket istemcisi: job yaşam döngüsü, hello zorunluluğu, yeniden bağlanma, reddetme, sahiplik, plan hatası, çoklu agent, bağlantı değişimi, drain ile ve drain olmadan kapanış |
+| `hub_integration_test.go` | Gerçek PostgreSQL ve gerçek agent: başarılı ve başarısız job'lar, job sürerken server'ın yeniden başlaması |
+| `cmd/server` `TestRunEndToEnd` | Gerçek server, gerçek agent ve imzalı webhook, sonuç ve loglar veritabanında |
+
+```bash
+CISID_TEST_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' go test ./internal/hub/ ./cmd/server/
+```

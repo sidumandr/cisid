@@ -26,11 +26,12 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 
 | Tip | Yön | Payload |
 |---|---|---|
-| `agent_hello` | agent → server | `{"name":"worker-1","capacity":1}`, her bağlantıda ilk mesaj |
+| `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, her bağlantıda ilk mesaj. `running_job_id`: elindeki ya da sonucu henüz gönderilmemiş job (yoksa alan yazılmaz) |
 | `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"timeout_seconds":600}]}` |
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
 | `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |
+| `server_closing` | server → agent | `{}`. Server kapanıyor: agent göndermeyi bırakır ve bağlantıyı kendisi kapatır (bkz. [hub.md](hub.md#graceful-shutdown)) |
 
 `seq` her job içinde 1'den başlar ve her log parçasında bir artar. Server sıralamayı ve kayıp parçaları (boşlukları) bununla tespit edebilir.
 
@@ -80,8 +81,8 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 
 ## Bilinen sınırlamalar (Faz 2)
 
-- Mesajlar onaylı (ack) teslim edilmez. Yazılırken bağlantı koparsa o mesaj kaybolur.
-- Heartbeat ya da lease yok. Server, ölen bir agent'ın job'unu henüz tekrar kuyruğa almıyor.
+- Mesajlar onaylı (ack) teslim edilmez. Ağ aniden koparken yazılan mesaj kaybolabilir. Server'ın planlı kapanışında kayıp olmaz (`server_closing`).
+- Lease yok. Agent bir daha hiç bağlanmazsa job'u `running` kalır (bkz. [hub.md](hub.md#bilinen-sınırlamalar-faz-2)).
 - Kimlik doğrulama yok (Faz 4).
 
 ## Testler
@@ -98,6 +99,8 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 | `TestAgentDeliversResultAfterReconnect` | Kopukluk sırasında biten job'un sonucu yeni bağlantıdan gelir |
 | `TestAgentShutdownCancelsRunningJob` | Kapanışta `canceled` sonucu gönderilir, `Run` temiz döner |
 | `TestAgentIgnoresUnknownAndMalformedMessages` | Bozuk ya da bilinmeyen mesajlar agent'ı düşürmez |
+| `TestAgentHelloReportsUndeliveredResult` | Sonucu gönderilememiş job, yeniden bağlanınca hello'da bildirilir |
+| `TestAgentClosesConnectionWhenServerDrains` | `server_closing` gelince agent temiz kapatır ve yeniden bağlanır |
 | `TestBackoff*` | Büyüme, üst sınır, overflow, jitter aralığı |
 | `TestDockerIntegrationJob` | Gerçek Docker: adımlar workspace paylaşır, exit kodu raporlanır |
 

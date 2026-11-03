@@ -10,20 +10,20 @@ Hedef: GitHub'a push → container'da komut çalışır → sonuç veritabanınd
 
 - [x] **Webhook handler** — `internal/api/webhook.go`: HMAC-SHA256 doğrulama, push payload'ından repo/branch/SHA, `jobs` tablosuna `pending` kayıt, `202 Accepted`.
 - [x] **Server iskeleti** — `cmd/server`: config (env), pgx pool, migration'lar, HTTP router, graceful shutdown.
-- [ ] **Agent hub + job dağıtımı** — server'da `/agent/ws` endpoint'i, bekleyen job'ları agent'lara atama (`FOR UPDATE SKIP LOCKED`), `job_log` ve `job_result` mesajlarını kaydetme.
+- [x] **Agent hub + job dağıtımı** — server'da `/agent/ws` endpoint'i, bekleyen job'ları agent'lara atama (`FOR UPDATE SKIP LOCKED`), `job_log` ve `job_result` mesajlarını kaydetme.
 - [x] **Docker runner** — `internal/runner/docker.go` (`github.com/moby/moby/client`): image pull (progress callback), container create (env, workdir, mount), start, stdout/stderr `io.Reader`, exit code, timeout, context cancellation. `testify/mock` ile mock Docker client testleri.
-- [ ] **Pipeline tanımı** — repodaki `.cisid.yml` dosyasını parse et (image + komut listesi).
+- [ ] **Pipeline tanımı** — repodaki `.cisid.yml` dosyasını GitHub'dan oku ve parse et (image + komut listesi), clone adımından sonra çalıştır. Şimdilik `internal/pipeline` sadece clone adımı üretiyor.
 - [x] **Agent (temel)** — `cmd/agent`: server'a WebSocket ile bağlan, `job_assigned` dinle, runner'ı çağır, sonucu raporla.
 
 ## Faz 2 — Streaming
 
 Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
-- [ ] Agent → server canlı log akışı (WebSocket, tek writer goroutine). Agent tarafı hazır, server tarafı eksik.
-- [ ] Server → istemci log yayını (WebSocket), logların veritabanına yazılması.
+- [x] Agent → server canlı log akışı (WebSocket, tek writer goroutine), logların veritabanına yazılması.
+- [ ] Server → istemci log yayını (WebSocket) ve log okuma API'si.
 - [x] Agent reconnect: exponential backoff + jitter.
-- [ ] Job lease + heartbeat: cevap vermeyen agent'ın işi tekrar kuyruğa döner.
-- [ ] Mesajların onaylı (ack) teslimi.
+- [ ] Job lease + heartbeat: hiç geri dönmeyen agent'ın işi tekrar kuyruğa döner. Ping ile ölü bağlantı tespiti ve yeniden bağlanınca kayıp job'ları kuyruğa alma hazır.
+- [ ] Mesajların onaylı (ack) teslimi. Planlı server kapanışında kayıp `server_closing` ile önlendi, ani ağ kopmaları için ack gerekiyor.
 - [x] Mesaj protokolü tipleri `pkg/models` altında.
 
 ## Faz 3 — Features

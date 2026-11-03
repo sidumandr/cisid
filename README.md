@@ -12,6 +12,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
 - [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
 - [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
+- [docs/hub.md](docs/hub.md): Server tarafında job dağıtımı, sahiplik kuralları ve graceful shutdown
 
 ## Mimari
 
@@ -26,6 +27,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
         │     cmd/server (API)      │
         │                           │
         │  internal/api   handlers  │
+        │  internal/hub   dispatch  │
         │  internal/db    storage   │
         └──────┬─────────────▲──────┘
                │             │
@@ -57,7 +59,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
 **Akış**
 
-1. Bir webhook ya da kullanıcı isteği `server`'a ulaşır, pipeline ve job kayıtları PostgreSQL'e yazılır.
+1. GitHub push webhook'u `server`'a ulaşır, job PostgreSQL'e `pending` olarak yazılır.
 2. `agent` süreçleri bekleyen job'ları `server`'dan alır.
 3. `runner`, her adımı ayrı bir Docker container'ında çalıştırır.
 4. Loglar ve sonuçlar `server` üzerinden veritabanına geri yazılır.
@@ -73,9 +75,12 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
 │   ├── api/         # HTTP router, handler'lar, middleware
 │   ├── config/      # Ortam değişkenlerinden server yapılandırması
+│   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
+│   ├── pipeline/    # Job → adımlar (şimdilik sadece clone)
 │   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)
+│       ├── dbtest/      # Testler için geçici veritabanları
 │       └── migrations/  # SQL şema dosyaları
 ├── pkg/
 │   └── models/      # Paylaşılan tipler
@@ -100,7 +105,11 @@ docker compose up -d --wait postgres
 CISID_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' CISID_GITHUB_WEBHOOK_SECRET=dev-secret go run ./cmd/server
 ```
 
-Agent hub (`/agent/ws`) henüz server'da yok. Agent şimdilik bağlanamaz ve backoff ile tekrar dener (bkz. [ROADMAP.md](ROADMAP.md)).
+```bash
+go run ./cmd/agent
+```
+
+Agent `ws://localhost:8080/agent/ws` adresine bağlanır. Bir push geldiğinde job'u alır ve Docker'da çalıştırır. Şimdilik her job sadece repoyu clone'lar, `.cisid.yml` desteği sıradaki adım.
 
 Ayrıntılar: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
 
@@ -133,11 +142,11 @@ docker run --rm -v "${PWD}:/src" -v cisid-gomod:/go/pkg/mod -w /src golang:1.27 
 PostgreSQL gerektiren testler (`docker compose up -d postgres` sonrası):
 
 ```bash
-CISID_TEST_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' go test ./internal/db/ ./cmd/server/
+CISID_TEST_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' go test ./internal/db/ ./internal/hub/ ./cmd/server/
 ```
 
 Gerçek Docker'a karşı entegrasyon testleri (alpine image'ını çeker):
 
 ```bash
-CISID_DOCKER_TESTS=1 go test ./internal/runner/ ./internal/agent/ -run Integration -v
+CISID_DOCKER_TESTS=1 go test ./internal/runner/ ./internal/agent/ ./internal/pipeline/ -run Integration -v
 ```
