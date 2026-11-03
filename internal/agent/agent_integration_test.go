@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,11 @@ import (
 
 // TestDockerIntegrationJob runs a real two-step job through the agent. It is
 // skipped unless CISID_DOCKER_TESTS=1, since it pulls images.
+
+// dockerTimeout is how long a job on a real Docker daemon may take
+// between two messages: creating containers on a busy host is slow.
+const dockerTimeout = time.Minute
+
 func TestDockerIntegrationJob(t *testing.T) {
 	if os.Getenv("CISID_DOCKER_TESTS") != "1" {
 		t.Skip("CISID_DOCKER_TESTS not set; skipping Docker integration test")
@@ -26,6 +32,7 @@ func TestDockerIntegrationJob(t *testing.T) {
 	fs := newFakeServer(t)
 	startAgent(t, fs, runner.NewDockerRunner(cli))
 	sc := fs.accept(t)
+	sc.wait = dockerTimeout
 
 	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
 		JobID: 100,
@@ -59,6 +66,7 @@ func TestDockerIntegrationJobWithService(t *testing.T) {
 	fs := newFakeServer(t)
 	startAgent(t, fs, runner.NewDockerRunner(cli))
 	sc := fs.accept(t)
+	sc.wait = dockerTimeout
 
 	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
 		JobID: 101,

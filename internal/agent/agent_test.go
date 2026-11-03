@@ -101,6 +101,9 @@ type serverConn struct {
 	msgs   chan models.Message
 	hello  models.AgentHello
 	closed chan websocket.StatusCode
+	// wait bounds waiting for a message; testTimeout when zero. Tests
+	// against a real Docker daemon wait longer, a busy host is slow.
+	wait time.Duration
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -179,11 +182,15 @@ func (sc *serverConn) send(t *testing.T, typ models.MessageType, payload any) {
 
 func (sc *serverConn) next(t *testing.T) models.Message {
 	t.Helper()
+	wait := sc.wait
+	if wait == 0 {
+		wait = testTimeout
+	}
 	select {
 	case msg, ok := <-sc.msgs:
 		require.True(t, ok, "connection closed while waiting for a message")
 		return msg
-	case <-time.After(testTimeout):
+	case <-time.After(wait):
 		t.Fatal("timed out waiting for a message")
 		return models.Message{}
 	}

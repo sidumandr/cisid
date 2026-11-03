@@ -81,6 +81,7 @@ func TestDockerIntegrationCache(t *testing.T) {
 	fs := newFakeServer(t)
 	startAgent(t, fs, docker)
 	sc := fs.accept(t)
+	sc.wait = dockerTimeout
 
 	run := func(id int64, readOnly bool, commands ...string) (string, models.JobResult) {
 		sc.send(t, models.MsgJobAssigned, models.JobAssignment{
