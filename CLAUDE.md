@@ -1,6 +1,17 @@
 # cisid — Kod Kuralları
 
-Bu dosya, projede kod yazarken (insan ya da Claude Code) uyulması zorunlu kuralları içerir.
+Bu dosya, projede kod yazarken (insan ya da agent) uyulması zorunlu kuralları içerir.
+- Her kod değişikliğinden veya yeni dosya oluşturduktan sonra otomatik olarak `go fmt ./...` ve `go vet ./...` komutlarını çalıştır.
+- Eğer `go build` veya `go test` sırasında import hatası veya derleme hatası alırsan, durup bana sorma; hatayı kendin analiz et ve düzelt.
+
+
+## Git ve Commit Kuralları (Zorunlu)
+- Her mantıksal ve önemli adımda (örneğin; bir modülün kodu ve testleri tamamlandığında, yeni bir özellik eklendiğinde) **otomatik olarak Git commit'i oluştur**.
+- Commit atmadan ÖNCE mutlaka `go build ./...` ve `go test ./...` komutlarını çalıştır. **Asla derlenmeyen (compile error) veya testi başarısız (failing test) kodu commit etme.** Hata varsa önce onu düzelt.
+- **Conventional Commits** formatını kullanma. (Örn: `feat(api): add github webhook handler`, `test(runner): add docker mock tests`, `fix(agent): handle websocket reconnect`).
+- Commit mesajları kısa, net ve yapılan değişikliğin "ne" ve "neden" yapıldığını açıklamalıdır.
+- Eğer yeni bir dosya eklendiyse, önce `git add .` yap, sonra commit'le.
+- contributor 'sidumandr' olmalı.
 
 ## 1. Docker SDK
 
