@@ -1,0 +1,183 @@
+package agent
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"maps"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/sidumandr/cisid/internal/runner"
+	"github.com/sidumandr/cisid/pkg/models"
+)
+
+const (
+	workspacePath    = "/workspace"
+	workspaceTimeout = 30 * time.Second
+)
+
+// ErrInvalidJob is reported for an assignment that cannot be run.
+var ErrInvalidJob = errors.New("invalid job")
+
+// executeJobs runs assigned jobs one at a time until ctx is canceled.
+func (a *Agent) executeJobs(ctx context.Context, jobs <-chan models.JobAssignment) {
+	for {
+		select {
+		case <-ctx.Done():
+			// A job accepted just before shutdown still gets a result.
+			select {
+			case job := <-jobs:
+				a.report(ctx, models.JobResult{
+					JobID: job.JobID, Status: models.JobStatusCanceled, ExitCode: -1,
+					Error: ctx.Err().Error(),
+				})
+			default:
+			}
+			return
+		case job := <-jobs:
+			a.report(ctx, a.execute(ctx, job))
+			a.busy.Store(false)
+		}
+	}
+}
+
+// execute runs the steps of job in order on a shared workspace volume and
+// stops at the first failing step.
+func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.JobResult {
+	res := models.JobResult{JobID: job.JobID, Status: models.JobStatusSuccess}
+	if err := validateJob(job); err != nil {
+		res.Status, res.ExitCode, res.Error = models.JobStatusFailed, -1, err.Error()
+		return res
+	}
+
+	workspace := workspaceName(job.JobID)
+	defer a.removeWorkspace(ctx, workspace)
+
+	var seq atomic.Int64
+	for i, spec := range job.Steps {
+		stdout := &logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}
+		stderr := &logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}
+
+		code, err := a.runner.Run(ctx, toRunnerStep(job.JobID, spec, workspace), stdout, stderr)
+		if err == nil && code == 0 {
+			continue
+		}
+
+		res.FailedStep, res.ExitCode = &i, code
+		switch {
+		case ctx.Err() != nil:
+			res.Status = models.JobStatusCanceled
+			res.Error = ctx.Err().Error()
+			if err != nil {
+				res.Error = err.Error()
+			}
+		case err != nil:
+			res.Status, res.Error = models.JobStatusFailed, err.Error()
+		default:
+			res.Status = models.JobStatusFailed
+		}
+		a.log.InfoContext(ctx, "job step failed", "job_id", job.JobID, "step", spec.Name,
+			"exit_code", code, "error", err)
+		return res
+	}
+	return res
+}
+
+// report queues the job result. It still works after ctx is canceled, so a
+// canceled job's result reaches the server during shutdown.
+func (a *Agent) report(ctx context.Context, res models.JobResult) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.FlushTimeout)
+	defer cancel()
+
+	msg, err := models.NewMessage(models.MsgJobResult, res)
+	if err == nil {
+		err = a.out.put(ctx, msg)
+	}
+	if err != nil {
+		a.log.ErrorContext(ctx, "could not report job result", "job_id", res.JobID, "error", err)
+		return
+	}
+	a.log.InfoContext(ctx, "job finished", "job_id", res.JobID, "status", res.Status, "exit_code", res.ExitCode)
+}
+
+func (a *Agent) removeWorkspace(ctx context.Context, name string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceTimeout)
+	defer cancel()
+	if err := a.runner.RemoveVolume(ctx, name); err != nil {
+		a.log.WarnContext(ctx, "remove workspace", "volume", name, "error", err)
+	}
+}
+
+func validateJob(job models.JobAssignment) error {
+	if len(job.Steps) == 0 {
+		return fmt.Errorf("%w %d: no steps", ErrInvalidJob, job.JobID)
+	}
+	for i, s := range job.Steps {
+		switch {
+		case s.Image == "":
+			return fmt.Errorf("%w %d: step %d (%s) has no image", ErrInvalidJob, job.JobID, i, s.Name)
+		case len(s.Commands) == 0:
+			return fmt.Errorf("%w %d: step %d (%s) has no commands", ErrInvalidJob, job.JobID, i, s.Name)
+		}
+	}
+	return nil
+}
+
+// toRunnerStep runs the step's commands as one shell script that stops at
+// the first failing command and echoes each command before running it.
+func toRunnerStep(jobID int64, spec models.StepSpec, workspace string) runner.Step {
+	env := maps.Clone(spec.Env)
+	if env == nil {
+		env = map[string]string{}
+	}
+	// Built-in variables cannot be overridden by the step.
+	env["CI"] = "true"
+	env["CISID"] = "true"
+	env["CISID_JOB_ID"] = strconv.FormatInt(jobID, 10)
+	env["CISID_STEP"] = spec.Name
+
+	return runner.Step{
+		Image:      spec.Image,
+		Entrypoint: []string{"/bin/sh", "-c"},
+		Cmd:        []string{"set -ex\n" + strings.Join(spec.Commands, "\n")},
+		Env:        env,
+		WorkingDir: workspacePath,
+		Mounts:     []runner.Mount{{Type: runner.MountVolume, Source: workspace, Target: workspacePath}},
+		Timeout:    time.Duration(spec.TimeoutSeconds) * time.Second,
+	}
+}
+
+// workspaceName returns a unique volume name, so a retried job never sees a
+// stale workspace.
+func workspaceName(jobID int64) string {
+	return fmt.Sprintf("cisid-job-%d-%s", jobID, strings.ToLower(rand.Text()[:8]))
+}
+
+// logWriter turns step output into job_log messages. It never blocks: if
+// the outbox is full the chunk is dropped and the gap shows in Seq.
+type logWriter struct {
+	a      *Agent
+	jobID  int64
+	step   int
+	stream models.LogStream
+	seq    *atomic.Int64
+}
+
+func (w *logWriter) Write(p []byte) (int, error) {
+	msg, err := models.NewMessage(models.MsgJobLog, models.JobLog{
+		JobID:  w.jobID,
+		Step:   w.step,
+		Stream: w.stream,
+		Seq:    w.seq.Add(1),
+		Data:   string(p),
+	})
+	if err != nil {
+		return 0, err
+	}
+	w.a.out.tryPut(msg)
+	return len(p), nil
+}
