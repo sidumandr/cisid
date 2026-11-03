@@ -9,6 +9,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [ROADMAP.md](ROADMAP.md): fazlar ve ilerleme
 - [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
 - [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
+- [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
 
 ## Mimari
 
