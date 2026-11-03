@@ -16,6 +16,8 @@ CISID_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable'
 curl http://localhost:8080/readyz
 ```
 
+PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [deployment.md](deployment.md).
+
 ## Yapılandırma (`internal/config`)
 
 | Değişken | Varsayılan | Açıklama |

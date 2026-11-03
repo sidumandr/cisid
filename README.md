@@ -19,6 +19,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
 - [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
 - [docs/hub.md](docs/hub.md): Server tarafında job dağıtımı, sahiplik kuralları ve graceful shutdown
+- [docs/deployment.md](docs/deployment.md): Docker image'ları ve docker compose ile kurulum
 
 ## Mimari
 
@@ -80,6 +81,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 ├── internal/
 │   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
 │   ├── api/         # HTTP router, handler'lar, middleware
+│   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── config/      # Ortam değişkenlerinden server yapılandırması
 │   ├── events/      # PostgreSQL LISTEN/NOTIFY ile job değişikliği bildirimleri
 │   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
@@ -89,7 +91,6 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── secrets/     # AES-256-GCM ile şifreli secret'lar
 │   ├── status/      # GitHub commit status raporlama
 │   ├── web/         # Gömülü web arayüzü
-│   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)
 │       ├── dbtest/      # Testler için geçici veritabanları
@@ -124,6 +125,16 @@ go run ./cmd/agent
 Agent `ws://localhost:8080/agent/ws` adresine bağlanır. Bir push geldiğinde job'u alır, repoyu clone'lar ve [`.cisid.yml`](docs/pipeline.md) adımlarını Docker'da çalıştırır.
 
 Ayrıntılar: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
+
+## Docker ile çalıştırma
+
+PostgreSQL, server ve bir agent'tan oluşan stack'i kaynak koddan derleyip başlatır (`.env` içinde en az `CISID_GITHUB_WEBHOOK_SECRET` ve `CISID_AGENT_TOKEN` gerekir):
+
+```bash
+docker compose --profile stack up -d --build --wait
+```
+
+Ayrıntılar: [docs/deployment.md](docs/deployment.md).
 
 ## Derleme ve test
 

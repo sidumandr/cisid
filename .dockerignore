@@ -1,0 +1,9 @@
+.git
+.claude
+*.exe
+docs
+compose.yaml
+Dockerfile
+.dockerignore
+.env
+.env.*

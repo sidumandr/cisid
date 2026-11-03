@@ -21,6 +21,8 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 
 `SIGINT` / `SIGTERM` graceful shutdown başlatır (aşağıya bak).
 
+Agent'ı container olarak çalıştırmak için [deployment.md](deployment.md).
+
 ## Protokol
 
 Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.

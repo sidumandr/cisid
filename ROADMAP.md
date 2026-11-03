@@ -45,5 +45,6 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] OpenTelemetry trace.
 - [x] Container izolasyonu ve kaynak limitleri: bellek, CPU, süreç sayısı, `no-new-privileges`, job başına ağ, OOM tespiti.
 - [x] Rate limiting (IP başına token bucket) ve webhook replay koruması (imzalı gövdeye göre tekilleştirme ve 7 günden eski payload'ları reddetme).
-- [ ] Dağıtım: Docker image'ları, docker-compose, Helm chart.
+- [x] Dağıtım: Docker image'ları ve docker compose stack'i ([docs/deployment.md](docs/deployment.md)).
+- [ ] Helm chart.
 - [x] cisid'in kendi CI'ını cisid üzerinde çalıştırmak (`.cisid.yml`).
