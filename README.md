@@ -2,7 +2,13 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: proje iskeleti. Henüz çalışan bir özellik yok.
+> Durum: Faz 1 (MVP) geliştiriliyor. Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+
+## Dokümanlar
+
+- [ROADMAP.md](ROADMAP.md): fazlar ve ilerleme
+- [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
+- [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
 
 ## Mimari
 
@@ -61,16 +67,39 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   └── agent/       # Worker binary (main)
 ├── internal/
 │   ├── api/         # HTTP handler'ları
+│   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
-│   └── db/          # PostgreSQL erişimi
+│   └── db/          # PostgreSQL erişimi (pgx)
+│       └── migrations/  # SQL şema dosyaları
 ├── pkg/
 │   └── models/      # Paylaşılan tipler
-└── api/
-    └── proto/       # gRPC tanımları (ileride)
+├── api/
+│   └── proto/       # gRPC tanımları (ileride)
+└── docs/            # Modül dokümanları
 ```
 
-## Derleme
+## Gereksinimler
+
+- Go 1.25+
+- PostgreSQL 14+
+- Docker (runner ve agent için)
+
+## Derleme ve test
 
 ```bash
 go build ./...
+```
+
+```bash
+go vet ./...
+```
+
+```bash
+go test ./...
+```
+
+Race detector cgo gerektirir. Windows'ta bir C derleyicisi (ör. MinGW-w64) kurulu olmalı ya da testler Linux/WSL üzerinde çalıştırılmalıdır:
+
+```bash
+go test -race ./...
 ```
