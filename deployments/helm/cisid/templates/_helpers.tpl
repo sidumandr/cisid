@@ -137,6 +137,7 @@ gitlab-token: {{ .Values.secrets.gitlabToken | quote }}
 gitlab-webhook-secret: {{ .Values.secrets.gitlabWebhookSecret | quote }}
 bitbucket-token: {{ .Values.secrets.bitbucketToken | quote }}
 bitbucket-webhook-secret: {{ .Values.secrets.bitbucketWebhookSecret | quote }}
+admin-password: {{ .Values.secrets.adminPassword | quote }}
 {{- end }}
 
 {{/* The server's settings read from optional Secret keys: env name to key. */}}
@@ -154,6 +155,7 @@ CISID_GITLAB_TOKEN: gitlab-token
 CISID_GITLAB_WEBHOOK_SECRET: gitlab-webhook-secret
 CISID_BITBUCKET_TOKEN: bitbucket-token
 CISID_BITBUCKET_WEBHOOK_SECRET: bitbucket-webhook-secret
+CISID_ADMIN_PASSWORD: admin-password
 {{- end }}
 
 {{/* Stops rendering with a clear message when a required value is missing. */}}
@@ -164,6 +166,9 @@ CISID_BITBUCKET_WEBHOOK_SECRET: bitbucket-webhook-secret
 {{- end }}
 {{- if and .Values.secrets.apiToken (lt (len .Values.secrets.apiToken) 16) }}
 {{- fail "secrets.apiToken must be at least 16 characters" }}
+{{- end }}
+{{- if and .Values.secrets.adminPassword (lt (len .Values.secrets.adminPassword) 10) }}
+{{- fail "secrets.adminPassword must be at least 10 characters" }}
 {{- end }}
 {{- if and .Values.secrets.readToken (lt (len .Values.secrets.readToken) 16) }}
 {{- fail "secrets.readToken must be at least 16 characters" }}

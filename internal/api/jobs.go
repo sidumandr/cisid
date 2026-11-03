@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +9,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/sidumandr/cisid/internal/auth"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/pkg/models"
@@ -51,15 +50,11 @@ type JobEvents interface {
 // JobsAPIOption configures a JobsAPI.
 type JobsAPIOption func(*JobsAPI)
 
-// WithWriteToken enables the endpoints that change jobs for requests with
-// "Authorization: Bearer <token>". Without a token they answer 403.
-func WithWriteToken(token string) JobsAPIOption {
-	return func(j *JobsAPI) { j.token = token }
-}
-
-// WithReadAccess makes reading jobs and logs need what a allows.
-func WithReadAccess(a *ReadAccess) JobsAPIOption {
-	return func(j *JobsAPI) { j.read = a }
+// WithAccess makes reading jobs and logs need what a allows for viewers,
+// and changing them what it allows for maintainers. Without it anyone
+// reads and nothing changes.
+func WithAccess(a *Access) JobsAPIOption {
+	return func(j *JobsAPI) { j.access = a }
 }
 
 // WithJobChanged registers a callback run after a job is canceled or
@@ -74,15 +69,14 @@ func WithJobChanged(f func(jobID int64)) JobsAPIOption {
 //	GET  /api/jobs/{id}               one job
 //	GET  /api/jobs/{id}/logs          log chunks (?after=seq), up to 1000 per call
 //	GET  /api/jobs/{id}/logs/stream   live logs as server-sent events
-//	POST /api/jobs/{id}/cancel        cancel a job (needs the write token)
-//	POST /api/jobs/{id}/rerun         queue the job's commit again (needs the write token)
+//	POST /api/jobs/{id}/cancel        cancel a job (maintainer)
+//	POST /api/jobs/{id}/rerun         queue the job's commit again (maintainer)
 type JobsAPI struct {
 	store        JobStore
 	events       JobEvents
 	log          *slog.Logger
 	pollInterval time.Duration
-	token        string
-	read         *ReadAccess
+	access       *Access
 	changed      func(jobID int64)
 
 	closing   chan struct{}
@@ -105,6 +99,9 @@ func NewJobsAPI(store JobStore, events JobEvents, log *slog.Logger, opts ...Jobs
 	for _, opt := range opts {
 		opt(j)
 	}
+	if j.access == nil {
+		j.access = openAccess()
+	}
 	return j
 }
 
@@ -115,30 +112,12 @@ func (j *JobsAPI) Close() {
 }
 
 func (j *JobsAPI) register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/jobs", j.read.wrapFunc(j.list))
-	mux.HandleFunc("GET /api/jobs/{id}", j.read.wrapFunc(j.get))
-	mux.HandleFunc("GET /api/jobs/{id}/logs", j.read.wrapFunc(j.logs))
-	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.read.wrapFunc(j.stream))
-	mux.HandleFunc("POST /api/jobs/{id}/cancel", requireToken(j.token, j.cancel))
-	mux.HandleFunc("POST /api/jobs/{id}/rerun", requireToken(j.token, j.rerun))
-}
-
-// requireToken lets a request through only with "Authorization: Bearer
-// <token>". Without a configured token the endpoint is disabled.
-func requireToken(token string, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if token == "" {
-			writeError(w, http.StatusForbidden, "write API disabled: CISID_API_TOKEN is not set")
-			return
-		}
-		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="cisid"`)
-			writeError(w, http.StatusUnauthorized, "missing or wrong API token")
-			return
-		}
-		next(w, r)
-	}
+	mux.HandleFunc("GET /api/jobs", j.access.wrapFunc(j.list))
+	mux.HandleFunc("GET /api/jobs/{id}", j.access.wrapFunc(j.get))
+	mux.HandleFunc("GET /api/jobs/{id}/logs", j.access.wrapFunc(j.logs))
+	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.access.wrapFunc(j.stream))
+	mux.HandleFunc("POST /api/jobs/{id}/cancel", j.access.require(auth.RoleMaintainer, j.cancel))
+	mux.HandleFunc("POST /api/jobs/{id}/rerun", j.access.require(auth.RoleMaintainer, j.rerun))
 }
 
 // cancel cancels a pending job (200) or asks the agent of a running one to

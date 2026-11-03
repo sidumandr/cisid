@@ -39,7 +39,8 @@ Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yap�
 
 ## Eylemler ve token'lar
 
-- **Run build**, **Cancel**, **Rerun**, zamanlama ve secret işlemleri API token'ı ister. Token ilk kullanımda bir diyalogla sorulur ve yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur. Yanlışsa yeniden sorulur.
+- **Run build**, **Cancel**, **Rerun**, zamanlama, polling ve secret işlemleri `maintainer` ister ([accounts.md](accounts.md)). Giriş yapılmamışsa ilk kullanımda bir giriş diyaloğu açılır: kullanıcı adı ve şifre, ya da bir token. Server'ın API token'ı yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur; kişisel token ve şifre tarayıcıda bir oturum açar.
+- Kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını açar: rol, şifre değiştirme, kişisel token'lar, çıkış. Admin'ler **Kullanıcılar** sayfasında kullanıcı ekler, rollerini ve sağlayıcı hesaplarını değiştirir, devre dışı bırakır ve siler.
 - Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir.
 - `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.
 
@@ -47,5 +48,6 @@ Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yap�
 
 - Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script yoktur, fontlar dahil başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
 - API'den gelen her değer (log satırları dahil) sayfaya `textContent` ile eklenir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür.
-- `CISID_READ_TOKEN` tanımlıysa arayüz ilk okumada bir token sorar ve `POST /api/login` ile tarayıcıyı oturum açmış hâle getirir. Oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Tanımlı değilse sayfalar herkese açıktır.
+- Okuma giriş istiyorsa (`CISID_READ_ACCESS=signed-in`) arayüz ilk okumada giriş ister. Kullanıcı oturumu `CISID_SESSION_TTL` kadar, okuma token'ıyla açılan oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Değilse sayfalar herkese açıktır.
+- Cookie ile yapılan her değişiklik `X-Cisid-Request` başlığını taşır; başka bir sitenin formu bunu ekleyemez (CSRF koruması).
 - Secret değerleri arayüzde hiçbir zaman gösterilmez; yalnızca adları, hangi build'lere verildikleri ve ne zaman güncellendikleri listelenir.

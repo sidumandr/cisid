@@ -14,6 +14,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/secrets.md](docs/secrets.md): Şifreli repo secret'ları ve loglarda maskeleme
 - [docs/metrics.md](docs/metrics.md): Prometheus metrikleri
 - [docs/tracing.md](docs/tracing.md): OpenTelemetry trace'leri: webhook'tan adımlara tek trace
+- [docs/accounts.md](docs/accounts.md): Kullanıcı hesapları, roller, giriş ve kişisel token'lar
 - [docs/polling.md](docs/polling.md): Webhook'suz push build'leri: branch'leri yoklama
 - [docs/forges.md](docs/forges.md): GitHub, Gitea, Forgejo, GitLab ve Bitbucket kurulumu, repo adları ve özel repolar
 - [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının sağlayıcılarda commit status olarak gösterilmesi
@@ -87,7 +88,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   └── agent/       # Worker binary (main)
 ├── internal/
 │   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
-│   ├── api/         # HTTP router, handler'lar, middleware
+│   ├── api/         # HTTP router, handler'lar, middleware, erişim
+│   ├── auth/        # Roller, şifreler, oturum ve token sırları
 │   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── config/      # Ortam değişkenlerinden server yapılandırması
 │   ├── events/      # PostgreSQL LISTEN/NOTIFY ile job değişikliği bildirimleri

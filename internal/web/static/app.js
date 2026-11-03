@@ -1,8 +1,8 @@
 "use strict";
 
-// cisid web UI: jobs, a job's steps and logs, and repositories with their
-// schedules and secrets. Everything from the API is inserted as text, never
-// as HTML.
+// cisid web UI: jobs, a job's steps and logs, repositories with their
+// schedules and secrets, and accounts. Everything from the API is inserted
+// as text, never as HTML.
 
 const FINISHED = new Set(["success", "failed", "canceled"]);
 const TOKEN_KEY = "cisid.apiToken";
@@ -206,20 +206,46 @@ function finding(j) {
 
 let signInDeclined = false;
 
-// request calls the API. With token, it sends the API token, asking for it
-// when it is missing or wrong. A read the server refuses asks to sign in.
+// me is who is signed in, as GET /api/me says.
+let me = { public_read: true, accounts: false, providers: [] };
+
+const signedIn = () => me.via === "session";
+
+async function loadMe() {
+  try {
+    const resp = await fetch("/api/me", { headers: { Accept: "application/json" } });
+    if (resp.ok) me = await resp.json();
+  } catch {
+    // The page still works; requests ask to sign in when they need to.
+  }
+  const label = document.getElementById("account-label");
+  const nav = document.getElementById("nav-account");
+  label.textContent = me.user ? me.user.username : "Sign in";
+  nav.title = me.user ? `${me.user.username} (${me.role})` : "Sign in";
+  document.getElementById("nav-users").hidden = !(me.user && me.role === "admin");
+}
+
+// request calls the API. With token, the call changes something: it goes
+// with the session of a signed-in user, or with an API token, asking to
+// sign in when there is neither or it is refused. A read the server
+// refuses asks to sign in too.
 async function request(method, url, { body, token = false } = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const headers = { Accept: "application/json" };
-    if (token) {
-      const t = await apiToken(attempt > 0);
-      if (!t) return null;
-      headers.Authorization = "Bearer " + t;
+    // Changes a cookie signs in must say they come from this page.
+    const headers = { Accept: "application/json", "X-Cisid-Request": "1" };
+    if (token && !signedIn()) {
+      const t = await credential(attempt > 0);
+      if (t === null) return null;
+      if (t) headers.Authorization = "Bearer " + t;
     }
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const resp = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     if (resp.status === 401) {
-      if (token) continue;
+      if (token) {
+        sessionStorage.removeItem(TOKEN_KEY);
+        await loadMe();
+        continue;
+      }
       if (await signIn()) continue;
       throw new Error("Sign in to see this.");
     }
@@ -228,58 +254,99 @@ async function request(method, url, { body, token = false } = {}) {
     if (!resp.ok) throw new Error(data.reason || resp.statusText);
     return data;
   }
-  throw new Error(token ? "The API token was not accepted." : "The token was not accepted.");
+  throw new Error(token ? "The sign-in or token was not accepted." : "The token was not accepted.");
 }
 
 const getJSON = (url) => request("GET", url);
 
-async function apiToken(forget) {
-  if (forget) sessionStorage.removeItem(TOKEN_KEY);
+// credential returns the token a change goes with, "" when the user signed
+// in instead, or null when they declined.
+async function credential(retry) {
+  if (retry) sessionStorage.removeItem(TOKEN_KEY);
   const saved = sessionStorage.getItem(TOKEN_KEY);
   if (saved) return saved;
-  const values = await openDialog({
-    title: forget ? "That token did not work" : "API token",
-    text: "Cancelling, rerunning, running builds and managing secrets need the API token (CISID_API_TOKEN). It is kept in this tab only.",
-    fields: [{ name: "token", label: "Token", type: "password", autocomplete: "off" }],
-    submit: "Use token",
-  });
-  if (!values || !values.token) return null;
-  sessionStorage.setItem(TOKEN_KEY, values.token.trim());
-  return values.token.trim();
+  if (!(await signIn({ change: true, retry }))) return null;
+  if (signedIn()) return "";
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
-async function signIn() {
-  if (signInDeclined) return false;
+// signIn asks for a username and password, a forge, or a token. A token
+// for changes is kept in this tab only; a personal token signs the
+// browser in like a password.
+async function signIn({ change = false, retry = false } = {}) {
+  if (!change && signInDeclined) return false;
+  const fields = [];
+  if (me.accounts) {
+    fields.push({ name: "username", label: "Username", autocomplete: "username" },
+      { name: "password", label: "Password", type: "password", autocomplete: "current-password" });
+  }
+  fields.push({ name: "token", label: me.accounts ? "Or a token" : "Token", type: "password", autocomplete: "off",
+    hint: change ? "A personal token, or CISID_API_TOKEN, kept in this tab only." : "A personal token, CISID_READ_TOKEN or CISID_API_TOKEN." });
+  const next = encodeURIComponent(location.pathname);
+  const providers = (me.providers || []).map((p) =>
+    el("a", { class: "btn provider", href: `/auth/${p}/login?next=${next}`, "data-external": "1" }, "Sign in with " + forgeName(p)));
   const values = await openDialog({
-    title: "Sign in",
-    text: "This server asks for a token to show jobs and logs (CISID_READ_TOKEN or CISID_API_TOKEN).",
-    fields: [{ name: "token", label: "Token", type: "password", autocomplete: "current-password" }],
+    title: retry ? "That did not work" : "Sign in",
+    text: change ? "Running builds, cancelling, rerunning and managing schedules and secrets need a maintainer."
+      : "This server shows jobs and logs to signed-in users.",
+    extra: providers.length ? el("div", { class: "providers" }, providers) : null,
+    fields,
     submit: "Sign in",
     onSubmit: async (v) => {
-      const resp = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: v.token }),
-      });
-      if (!resp.ok) throw new Error("That token was not accepted.");
+      const token = (v.token || "").trim();
+      if (v.username && v.password) {
+        await login({ username: v.username.trim(), password: v.password });
+      } else if (token.startsWith("cisid_")) {
+        await login({ token });
+      } else if (token) {
+        if (change) sessionStorage.setItem(TOKEN_KEY, token);
+        else await login({ token });
+      } else {
+        throw new Error(me.accounts ? "Write your username and password, or a token." : "Write a token.");
+      }
+      await loadMe();
     },
   });
-  if (!values) signInDeclined = true;
+  if (!values && !change) signInDeclined = true;
   return Boolean(values);
 }
+
+async function login(body) {
+  const resp = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Cisid-Request": "1" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new Error(data.reason ? data.reason.charAt(0).toUpperCase() + data.reason.slice(1) + "." : "That was not accepted.");
+  }
+}
+
+async function logout() {
+  await fetch("/api/logout", { method: "POST", headers: { "X-Cisid-Request": "1" } });
+  sessionStorage.removeItem(TOKEN_KEY);
+  signInDeclined = false;
+  await loadMe();
+}
+
+const FORGE_NAMES = { github: "GitHub", gitea: "Gitea", forgejo: "Forgejo", gitlab: "GitLab", bitbucket: "Bitbucket" };
+const forgeName = (f) => FORGE_NAMES[f] || f;
 
 // --- dialogs ------------------------------------------------------------------
 
 // openDialog shows a form and resolves with its values, or null when it is
 // dismissed. onSubmit may throw to keep the dialog open with the message.
-function openDialog({ title, text, fields = [], submit, danger = false, onSubmit }) {
+function openDialog({ title, text, fields = [], submit, danger = false, onSubmit, extra = null }) {
   return new Promise((resolve) => {
     const error = el("p", { class: "form-error", role: "alert" });
     const inputs = fields.map((f) => {
       const id = "f-" + f.name;
-      const input = f.multiline
-        ? el("textarea", { id, name: f.name, rows: 4, autocomplete: "off", spellcheck: "false" })
-        : el("input", { id, name: f.name, type: f.type || "text", autocomplete: f.autocomplete || "off", spellcheck: "false", list: f.list });
+      const input = f.options
+        ? el("select", { id, name: f.name }, f.options.map((o) => el("option", { value: o }, o)))
+        : f.multiline
+          ? el("textarea", { id, name: f.name, rows: 4, autocomplete: "off", spellcheck: "false" })
+          : el("input", { id, name: f.name, type: f.type || "text", autocomplete: f.autocomplete || "off", spellcheck: "false", list: f.list });
       if (f.value) input.value = f.value;
       if (f.placeholder) input.placeholder = f.placeholder;
       return { f, input, node: el("div", { class: "field" }, el("label", { for: id }, f.label), input, f.hint ? el("span", { class: "hint" }, f.hint) : null) };
@@ -289,6 +356,7 @@ function openDialog({ title, text, fields = [], submit, danger = false, onSubmit
     const form = el("form", { novalidate: true },
       el("h2", { id: "dialog-title" }, title),
       text ? el("p", {}, text) : null,
+      extra,
       inputs.map((i) => i.node),
       error,
       el("div", { class: "dialog-actions" }, cancel, ok));
@@ -345,7 +413,7 @@ async function runBuild(repo, repos = []) {
       }
       const queued = await request("POST", `/api/repos/${repoURL(name)}/builds`,
         { body: { branch: v.branch.trim() }, token: true });
-      if (!queued) throw new Error("A build needs the API token.");
+      if (!queued) throw new Error("A build needs a maintainer: sign in or use a token.");
       v.job = queued;
     },
   });
@@ -868,7 +936,7 @@ function renderRepo(owner, name) {
         onSubmit: async (v) => {
           const saved = await request("PUT", `${base}/schedules/${encodeURIComponent(v.name.trim())}`,
             { body: { cron: v.cron.trim(), branch: v.branch.trim() }, token: true });
-          if (!saved) throw new Error("Saving a schedule needs the API token.");
+          if (!saved) throw new Error("Saving a schedule needs a maintainer.");
         },
       });
       if (done) load();
@@ -882,7 +950,7 @@ function renderRepo(owner, name) {
         danger: true,
         onSubmit: async () => {
           const done = await request("DELETE", `${base}/schedules/${encodeURIComponent(s.name)}`, { token: true });
-          if (!done) throw new Error("Deleting needs the API token.");
+          if (!done) throw new Error("Deleting needs a maintainer.");
         },
       });
       if (ok) load();
@@ -930,7 +998,7 @@ function renderRepo(owner, name) {
         submit: "Poll branch",
         onSubmit: async (v) => {
           const saved = await request("POST", `${base}/watches`, { body: { branch: v.branch.trim() }, token: true });
-          if (!saved) throw new Error("Polling a branch needs the API token.");
+          if (!saved) throw new Error("Polling a branch needs a maintainer.");
         },
       });
       if (done) load();
@@ -944,7 +1012,7 @@ function renderRepo(owner, name) {
         danger: true,
         onSubmit: async () => {
           const done = await request("DELETE", `${base}/watches/${w.branch.split("/").map(encodeURIComponent).join("/")}`, { token: true });
-          if (!done) throw new Error("Stopping needs the API token.");
+          if (!done) throw new Error("Stopping needs a maintainer.");
         },
       });
       if (ok) load();
@@ -996,7 +1064,7 @@ function renderRepo(owner, name) {
           const branches = v.branches.split(",").map((b) => b.trim()).filter(Boolean);
           const saved = await request("PUT", `${base}/secrets/${encodeURIComponent(v.name.trim())}`,
             { body: { value: v.value, branches }, token: true });
-          if (!saved) throw new Error("Saving a secret needs the API token.");
+          if (!saved) throw new Error("Saving a secret needs a maintainer.");
         },
       });
       if (done) load();
@@ -1010,7 +1078,7 @@ function renderRepo(owner, name) {
         danger: true,
         onSubmit: async () => {
           const done = await request("DELETE", `${base}/secrets/${encodeURIComponent(s.name)}`, { token: true });
-          if (!done) throw new Error("Deleting needs the API token.");
+          if (!done) throw new Error("Deleting needs a maintainer.");
         },
       });
       if (ok) load();
@@ -1020,8 +1088,8 @@ function renderRepo(owner, name) {
       try {
         const list = await request("GET", `${base}/secrets`, { token: true });
         if (!list) {
-          rows.replaceChildren(note("Secrets need the API token.",
-            el("button", { class: "text-action", type: "button", onclick: load }, "Enter token")));
+          rows.replaceChildren(note("Secrets are for maintainers.",
+            el("button", { class: "text-action", type: "button", onclick: load }, "Sign in")));
           return;
         }
         tabs.count("secrets", list.length);
@@ -1045,6 +1113,212 @@ function renderRepo(owner, name) {
 
   showTab();
   return () => clearInterval(timer);
+}
+
+// --- account ------------------------------------------------------------------
+
+// renderAccount shows who is signed in, their password and personal tokens.
+function renderAccount() {
+  setNav("account");
+  document.title = "Account · cisid";
+  const body = el("div");
+  const actions = [];
+  if (me.user) actions.push(el("button", { class: "btn", type: "button", onclick: async () => { await logout(); navigate("/"); } }, "Sign out"));
+  app.replaceChildren(
+    header({
+      crumbs: [el("span", {}, "Account")],
+      title: me.user ? me.user.username : "Sign in",
+      lede: me.user ? `Signed in as ${me.role}.` : (me.via === "token" || me.via === "read cookie" ? "Signed in with a server token, which has no account." : "Not signed in."),
+      actions,
+    }),
+    body);
+
+  if (!me.user) {
+    body.replaceChildren(note(me.accounts ? "Sign in with your username and password, a forge or a token." : "This server has no accounts; changes need the API token.",
+      el("button", { class: "btn primary small", type: "button", onclick: async () => { if (await signIn({ change: true })) route(); } }, "Sign in")));
+    return () => {};
+  }
+
+  const facts = el("dl", { class: "facts" },
+    fact("Username", me.user.username),
+    fact("Role", me.role),
+    fact("Forges", Object.entries(me.user.identities || {}).map(([f, l]) => `${forgeName(f)}: ${l}`).join(", ") || "None"),
+    fact("Password", me.user.has_password ? "Set" : "None, signs in through a forge"));
+  facts.style.setProperty("--n", 4);
+
+  const changePassword = el("button", { class: "btn small", type: "button", onclick: async () => {
+    await openDialog({
+      title: me.user.has_password ? "Change password" : "Set a password",
+      fields: [
+        ...(me.user.has_password ? [{ name: "current", label: "Current password", type: "password", autocomplete: "current-password" }] : []),
+        { name: "new", label: "New password", type: "password", autocomplete: "new-password", hint: "At least 10 characters." },
+      ],
+      submit: "Save password",
+      onSubmit: (v) => request("PUT", "/api/me/password", { body: { current: v.current || "", new: v.new }, token: true }),
+    });
+    await loadMe();
+    route();
+  } }, me.user.has_password ? "Change password" : "Set a password");
+
+  const newToken = el("button", { class: "btn small", type: "button" }, "New token");
+  const rows = el("div", { class: "table", role: "table", "aria-label": "Tokens" });
+  const head = () => el("div", { class: "tr th secret-grid", role: "row" },
+    el("span", { role: "columnheader" }, "Name"), el("span", { role: "columnheader" }, "Created"),
+    el("span", { role: "columnheader" }, "Last used"), el("span", { role: "columnheader" }, ""));
+
+  newToken.addEventListener("click", async () => {
+    const made = await openDialog({
+      title: "New token",
+      text: `The token acts as ${me.user.username}, with the ${me.role} role, for scripts and the API.`,
+      fields: [{ name: "name", label: "Name", placeholder: "deploy script" }],
+      submit: "Create token",
+      onSubmit: async (v) => { v.made = await request("POST", "/api/me/tokens", { body: { name: v.name.trim() }, token: true }); },
+    });
+    if (!made || !made.made) return;
+    await openDialog({
+      title: "Copy the token now",
+      text: "It is not shown again. Send it as \"Authorization: Bearer <token>\".",
+      fields: [{ name: "token", label: "Token", value: made.made.token }],
+      submit: "Done",
+    });
+    load();
+  });
+
+  async function remove(tk) {
+    const ok = await openDialog({
+      title: `Revoke ${tk.name}?`,
+      text: "Scripts that use it stop working at once.",
+      submit: "Revoke token",
+      danger: true,
+      onSubmit: () => request("DELETE", `/api/me/tokens/${tk.id}`, { token: true }),
+    });
+    if (ok) load();
+  }
+
+  async function load() {
+    try {
+      const list = await getJSON("/api/me/tokens");
+      rows.replaceChildren(...(list.length ? [head(), ...list.map((tk) => el("div", { class: "tr secret-grid", role: "row" },
+        el("div", { role: "cell", class: "line1" }, el("span", { class: "name" }, tk.name)),
+        el("div", { role: "cell", class: "num" }, ago(tk.created_at)),
+        el("div", { role: "cell", class: "num" }, tk.last_used_at ? ago(tk.last_used_at) : "never"),
+        el("div", { role: "cell", class: "right" }, el("button", { class: "text-action danger", type: "button", onclick: () => remove(tk) }, "Revoke"))))]
+        : [note("No tokens. A token lets a script use the API as you.")]));
+    } catch (err) {
+      rows.replaceChildren(errorNote(`Couldn't load tokens: ${err.message}`, load));
+    }
+  }
+
+  body.replaceChildren(facts,
+    el("div", { class: "toolbar" }, el("span", { class: "muted small" }, "Personal API tokens"), el("span", { class: "toolbar-actions" }, changePassword, newToken)),
+    rows);
+  load();
+  return () => {};
+}
+
+function fact(name, value) {
+  return el("div", { class: "fact" }, el("dt", {}, name), el("dd", {}, value));
+}
+
+const ROLES = ["viewer", "maintainer", "admin"];
+
+// identities reads "gitea=ahmet, github=ahmet-y" into a map.
+function parseIdentities(text) {
+  const out = {};
+  for (const part of text.split(",")) {
+    const [forge, login] = part.split("=").map((s) => (s || "").trim());
+    if (!forge && !login) continue;
+    if (!forge || !login) throw new Error("Write forge logins as forge=login, separated by commas.");
+    out[forge.toLowerCase()] = login;
+  }
+  return out;
+}
+
+const showIdentities = (ids) => Object.entries(ids || {}).map(([f, l]) => `${f}=${l}`).join(", ");
+
+// renderUsers lists the users for admins and lets them add and change them.
+function renderUsers() {
+  setNav("users");
+  document.title = "Users · cisid";
+  const add = el("button", { class: "btn primary", type: "button" }, "Add user");
+  const lede = el("p", { class: "lede" }, "Loading users");
+  const rows = el("div", { class: "table", role: "table", "aria-label": "Users" });
+  app.replaceChildren(header({ crumbs: [el("span", {}, "Users")], title: "Users", lede, actions: [add] }), rows);
+  const head = () => el("div", { class: "tr th user-grid", role: "row" },
+    el("span", { role: "columnheader" }, "User"), el("span", { role: "columnheader" }, "Role"),
+    el("span", { role: "columnheader" }, "Signs in with"), el("span", { role: "columnheader" }, ""));
+
+  const identityHint = "Their logins on the forges, as gitea=ahmet, github=ahmet-y. They can then sign in through those forges.";
+  add.addEventListener("click", async () => {
+    const done = await openDialog({
+      title: "Add user",
+      fields: [
+        { name: "username", label: "Username", hint: "Lowercase letters, digits, dots, dashes and underscores." },
+        { name: "role", label: "Role", options: ROLES },
+        { name: "password", label: "Password", type: "password", autocomplete: "new-password", hint: "Optional: without one, they sign in through a forge." },
+        { name: "identities", label: "Forge logins", hint: identityHint },
+      ],
+      submit: "Add user",
+      onSubmit: async (v) => {
+        const body = { username: v.username.trim(), role: v.role, identities: parseIdentities(v.identities) };
+        if (v.password) body.password = v.password;
+        await request("POST", "/api/users", { body, token: true });
+      },
+    });
+    if (done) load();
+  });
+
+  async function edit(u) {
+    const role = { name: "role", label: "Role", options: [u.role, ...ROLES.filter((r) => r !== u.role)] };
+    const state = { name: "state", label: "Status", options: u.disabled ? ["disabled", "active"] : ["active", "disabled"] };
+    const done = await openDialog({
+      title: `Change ${u.username}`,
+      fields: [role, state,
+        { name: "password", label: "New password", type: "password", autocomplete: "new-password", hint: "Empty keeps the password." },
+        { name: "identities", label: "Forge logins", value: showIdentities(u.identities), hint: identityHint }],
+      submit: "Save",
+      onSubmit: async (v) => {
+        const body = { role: v.role, disabled: v.state === "disabled", identities: parseIdentities(v.identities) };
+        if (v.password) body.password = v.password;
+        await request("PATCH", `/api/users/${encodeURIComponent(u.username)}`, { body, token: true });
+      },
+    });
+    if (done) load();
+  }
+
+  async function remove(u) {
+    const ok = await openDialog({
+      title: `Delete ${u.username}?`,
+      text: "Their sessions and tokens stop working. Builds they started stay.",
+      submit: "Delete user",
+      danger: true,
+      onSubmit: () => request("DELETE", `/api/users/${encodeURIComponent(u.username)}`, { token: true }),
+    });
+    if (ok) load();
+  }
+
+  async function load() {
+    try {
+      const list = await request("GET", "/api/users", { token: true });
+      if (!list) {
+        rows.replaceChildren(note("Only admins see users."));
+        return;
+      }
+      lede.textContent = `${list.length} ${list.length === 1 ? "user" : "users"}, ${list.filter((u) => u.role === "admin").length} of them admins.`;
+      rows.replaceChildren(head(), ...list.map((u) => el("div", { class: "tr user-grid", role: "row" },
+        el("div", { role: "cell", class: "line1" }, el("span", { class: "name" }, u.username),
+          u.disabled ? el("span", { class: "pill", "data-status": "canceled" }, "disabled") : null),
+        el("div", { role: "cell" }, u.role),
+        el("div", { role: "cell", class: "muted" }, [u.has_password ? "password" : null, ...Object.keys(u.identities || {}).map(forgeName)].filter(Boolean).join(", ") || "nothing yet"),
+        el("div", { role: "cell", class: "right" },
+          el("button", { class: "text-action", type: "button", onclick: () => edit(u) }, "Change"), " ",
+          el("button", { class: "text-action danger", type: "button", onclick: () => remove(u) }, "Delete")))));
+    } catch (err) {
+      rows.replaceChildren(errorNote(`Couldn't load users: ${err.message}`, load));
+    }
+  }
+  load();
+  return () => {};
 }
 
 // --- theme --------------------------------------------------------------------
@@ -1093,6 +1367,8 @@ function route() {
   if ((m = path.match(/^\/jobs\/(\d+)$/))) stopPage = renderJob(Number(m[1]));
   else if (path === "/repos") stopPage = renderRepos();
   else if ((m = path.match(/^\/repos\/([^/]+)\/([^/]+)$/))) stopPage = renderRepo(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+  else if (path === "/account") stopPage = renderAccount();
+  else if (path === "/users") stopPage = renderUsers();
   else stopPage = renderJobs();
 }
 
@@ -1104,10 +1380,10 @@ function navigate(path) {
 
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a");
-  if (a && a.origin === location.origin && !a.target && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+  if (a && a.origin === location.origin && !a.target && !a.dataset.external && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
     e.preventDefault();
     navigate(a.pathname);
   }
 });
 window.addEventListener("popstate", route);
-route();
+loadMe().then(route);

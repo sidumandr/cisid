@@ -368,7 +368,7 @@ func TestWriteEndpointsNeedToken(t *testing.T) {
 
 	t.Run("missing or wrong token", func(t *testing.T) {
 		store := &mockJobReader{}
-		_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken))
+		_, h := newJobsAPI(t, store, &fakeEvents{}, WithAccess(tokenAccess("")))
 		for _, token := range []string{"", "wrong", writeToken + "x"} {
 			for _, path := range []string{"/api/jobs/1/cancel", "/api/jobs/1/rerun"} {
 				rec := post(t, h, path, token)
@@ -390,7 +390,7 @@ func TestCancelJob(t *testing.T) {
 	store.On("CancelJob", mock.Anything, int64(3)).Return(models.Job{}, fmt.Errorf("x: %w", db.ErrJobConflict)).Once()
 	store.On("CancelJob", mock.Anything, int64(4)).Return(models.Job{}, fmt.Errorf("x: %w", db.ErrJobNotFound)).Once()
 	var changed []int64
-	_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken),
+	_, h := newJobsAPI(t, store, &fakeEvents{}, WithAccess(tokenAccess("")),
 		WithJobChanged(func(id int64) { changed = append(changed, id) }))
 
 	assert.Equal(t, http.StatusOK, post(t, h, "/api/jobs/1/cancel", writeToken).Code, "pending job canceled at once")
@@ -408,7 +408,7 @@ func TestRerunJob(t *testing.T) {
 	store.On("RerunJob", mock.Anything, int64(5), mock.Anything).Return(again, nil).Once()
 	store.On("RerunJob", mock.Anything, int64(6), mock.Anything).Return(models.Job{}, db.ErrJobNotFound).Once()
 	var changed []int64
-	_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken),
+	_, h := newJobsAPI(t, store, &fakeEvents{}, WithAccess(tokenAccess("")),
 		WithJobChanged(func(id int64) { changed = append(changed, id) }))
 
 	rec := post(t, h, "/api/jobs/5/rerun", writeToken)

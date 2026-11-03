@@ -48,9 +48,9 @@ type Handlers struct {
 	RateLimit *RateLimiter
 	// Metrics serves GET /metrics; omitted when nil.
 	Metrics http.Handler
-	// Read guards jobs, logs and metrics and serves /api/login; nil lets
-	// anyone read.
-	Read *ReadAccess
+	// Access guards metrics and serves sign-in, /api/me and the users API;
+	// nil lets anyone read and has no accounts. Give the APIs the same one.
+	Access *Access
 	// Triggers serves manual builds and schedules; omitted when nil.
 	Triggers *TriggersAPI
 	// TracerProvider traces webhook and API requests; nil traces nothing.
@@ -87,9 +87,11 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	if h.Secrets != nil {
 		h.Secrets.register(limited)
 	}
-	if h.Read != nil {
-		h.Read.register(limited)
+	access := h.Access
+	if access == nil {
+		access = openAccess()
 	}
+	access.register(limited)
 	if h.Triggers != nil {
 		h.Triggers.register(limited)
 	}
@@ -103,13 +105,15 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	mux.Handle("/api/", limitedHandler)
 	mux.Handle("GET /agent/ws", h.Agents)
 	if h.Metrics != nil {
-		mux.Handle("GET /metrics", h.Read.Wrap(h.Metrics))
+		mux.Handle("GET /metrics", access.Wrap(h.Metrics))
 	}
 	if h.UI != nil {
 		mux.Handle("GET /{$}", h.UI)
 		mux.Handle("GET /jobs/{id}", h.UI)
 		mux.Handle("GET /repos", h.UI)
 		mux.Handle("GET /repos/{owner}/{repo}", h.UI)
+		mux.Handle("GET /account", h.UI)
+		mux.Handle("GET /users", h.UI)
 		mux.Handle("GET /ui/", h.UI)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

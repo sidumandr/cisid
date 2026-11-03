@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sidumandr/cisid/internal/auth"
 	"github.com/sidumandr/cisid/internal/secrets"
 )
 
@@ -40,6 +41,10 @@ type Config struct {
 	LogRetention    time.Duration // CISID_LOG_RETENTION, how long finished jobs keep their logs, default 90 days, 0 forever
 	BuildForks      bool          // CISID_BUILD_FORKS, build pull requests from forks (without secrets)
 	PollInterval    time.Duration // CISID_POLL_INTERVAL, how often watched branches are polled, default 1m, at least 10s, 0 turns polling off
+	PublicRead      bool          // CISID_READ_ACCESS: "public" (default without a read token) lets anyone read, "signed-in" needs a sign-in or token
+	SessionTTL      time.Duration // CISID_SESSION_TTL, how long a sign-in lasts, default 7d
+	AdminUser       string        // CISID_ADMIN_USER, default "admin": the account CISID_ADMIN_PASSWORD creates
+	AdminPassword   string        // CISID_ADMIN_PASSWORD, optional: creates AdminUser as an admin if it does not exist
 
 	// The other forges. Gitea and Forgejo are on when their URL is set;
 	// GitLab (GitLab.com by default) and Bitbucket Cloud always are, as
@@ -102,6 +107,9 @@ const (
 	defaultPollInterval = time.Minute
 	minPollInterval     = 10 * time.Second
 )
+
+// defaultSessionTTL is how long a sign-in lasts.
+const defaultSessionTTL = 7 * 24 * time.Hour
 
 // defaultLogRetention matches GitHub Actions' default.
 const defaultLogRetention = 90 * 24 * time.Hour
@@ -237,6 +245,44 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	cfg.PublicRead = cfg.ReadToken == ""
+	switch v := getenv("CISID_READ_ACCESS"); v {
+	case "":
+	case "public":
+		if cfg.ReadToken != "" {
+			problems = append(problems, fmt.Errorf("CISID_READ_ACCESS=public and CISID_READ_TOKEN contradict each other"))
+		}
+		cfg.PublicRead = true
+	case "signed-in":
+		cfg.PublicRead = false
+	default:
+		problems = append(problems, fmt.Errorf("CISID_READ_ACCESS must be public or signed-in"))
+	}
+
+	cfg.SessionTTL = defaultSessionTTL
+	if v := getenv("CISID_SESSION_TTL"); v != "" {
+		d, err := parseRetention(v)
+		switch {
+		case err != nil:
+			problems = append(problems, fmt.Errorf("CISID_SESSION_TTL: %w", err))
+		case d < time.Minute:
+			problems = append(problems, fmt.Errorf("CISID_SESSION_TTL must be at least 1m"))
+		default:
+			cfg.SessionTTL = d
+		}
+	}
+
+	cfg.AdminUser = getenv("CISID_ADMIN_USER")
+	if cfg.AdminUser == "" {
+		cfg.AdminUser = "admin"
+	} else if !auth.ValidUsername(cfg.AdminUser) {
+		problems = append(problems, fmt.Errorf("CISID_ADMIN_USER may only contain a-z, 0-9, '.', '_' and '-'"))
+	}
+	cfg.AdminPassword = getenv("CISID_ADMIN_PASSWORD")
+	if cfg.AdminPassword != "" && len(cfg.AdminPassword) < auth.MinPasswordLen {
+		problems = append(problems, fmt.Errorf("CISID_ADMIN_PASSWORD must be at least %d characters", auth.MinPasswordLen))
+	}
+
 	cfg.LogRetention = defaultLogRetention
 	if v := getenv("CISID_LOG_RETENTION"); v != "" {
 		d, err := parseRetention(v)
@@ -309,5 +355,9 @@ func (c Config) LogValue() slog.Value {
 		slog.Duration("log_retention", c.LogRetention),
 		slog.Bool("build_forks", c.BuildForks),
 		slog.Duration("poll_interval", c.PollInterval),
+		slog.Bool("public_read", c.PublicRead),
+		slog.Duration("session_ttl", c.SessionTTL),
+		slog.String("admin_user", c.AdminUser),
+		slog.Bool("admin_password_set", c.AdminPassword != ""),
 	)
 }

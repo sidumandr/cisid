@@ -116,14 +116,17 @@ func (r stubResolver) BranchHead(_ context.Context, _, branch string) (string, e
 	return headSHA, nil
 }
 
-func triggersRouter(store TriggerStore, resolver stubResolver, read *ReadAccess, changed func(int64), opts ...TriggersOption) http.Handler {
-	a := NewTriggersAPI(store, resolver, writeToken, read, changed, slog.New(slog.DiscardHandler), opts...)
+func triggersRouter(store TriggerStore, resolver stubResolver, access *Access, changed func(int64), opts ...TriggersOption) http.Handler {
+	if access == nil {
+		access = tokenAccess("")
+	}
+	a := NewTriggersAPI(store, resolver, access, changed, slog.New(slog.DiscardHandler), opts...)
 	a.now = func() time.Time { return time.Date(2026, 11, 3, 10, 30, 0, 0, time.UTC) }
 	return NewRouter(Handlers{
 		Webhook:  http.NotFoundHandler(),
 		Agents:   http.NotFoundHandler(),
 		Triggers: a,
-		Read:     read,
+		Access:   access,
 		DB:       &mockPinger{},
 	}, slog.New(slog.DiscardHandler))
 }
@@ -233,7 +236,7 @@ func TestWatchesAPI(t *testing.T) {
 
 func TestSchedulesAPI(t *testing.T) {
 	store := &memTriggers{}
-	h := triggersRouter(store, stubResolver{}, NewReadAccess(readToken, writeToken), nil)
+	h := triggersRouter(store, stubResolver{}, tokenAccess(readToken), nil)
 	const base = "/api/repos/sidumandr/cisid/schedules"
 
 	rec := call(h, http.MethodPut, base+"/nightly", writeToken, `{"cron":"0 3 * * *","branch":"main"}`)
@@ -259,7 +262,7 @@ func TestSchedulesAPI(t *testing.T) {
 	} {
 		assert.Equal(t, http.StatusBadRequest, call(h, http.MethodPut, tc.target, writeToken, tc.body).Code, name)
 	}
-	assert.Equal(t, http.StatusUnauthorized, call(h, http.MethodPut, base+"/x", readToken, `{"cron":"@daily"}`).Code,
+	assert.Equal(t, http.StatusForbidden, call(h, http.MethodPut, base+"/x", readToken, `{"cron":"@daily"}`).Code,
 		"the read token cannot change schedules")
 
 	assert.Equal(t, http.StatusNoContent, call(h, http.MethodDelete, base+"/nightly", writeToken, "").Code)

@@ -24,6 +24,8 @@ const contentSecurityPolicy = "default-src 'self'; img-src 'self' data:; " +
 //	GET /jobs/{id}              job page
 //	GET /repos                  repositories
 //	GET /repos/{owner}/{repo}   a repository's builds, schedules and secrets
+//	GET /account                the signed-in user's password and tokens
+//	GET /users                  users, for admins
 //	GET /ui/...                 scripts, styles and fonts
 func Handler() http.Handler {
 	files, err := fs.Sub(static, "static")
@@ -46,6 +48,8 @@ func Handler() http.Handler {
 	mux.HandleFunc("GET /jobs/{id}", page)
 	mux.HandleFunc("GET /repos", page)
 	mux.HandleFunc("GET /repos/{owner}/{repo}", page)
+	mux.HandleFunc("GET /account", page)
+	mux.HandleFunc("GET /users", page)
 	mux.Handle("GET /ui/", http.StripPrefix("/ui/", http.FileServerFS(files)))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

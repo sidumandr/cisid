@@ -17,7 +17,7 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 
 func TestPagesServeTheApp(t *testing.T) {
 	h := Handler()
-	for _, path := range []string{"/", "/jobs/42", "/repos", "/repos/sidumandr/cisid"} {
+	for _, path := range []string{"/", "/jobs/42", "/repos", "/repos/sidumandr/cisid", "/repos/gitlab%3Agroup%2Fsub/project", "/account", "/users"} {
 		rec := get(h, path)
 		assert.Equal(t, http.StatusOK, rec.Code, path)
 		assert.Equal(t, "text/html; charset=utf-8", rec.Header().Get("Content-Type"))

@@ -38,6 +38,9 @@ secrets:
   gitlabWebhookSecret: ""
   bitbucketToken: ""
   bitbucketWebhookSecret: ""
+  # Creates server.adminUser as an admin on the first start, 10+
+  # characters. Change the password in the UI afterwards.
+  adminPassword: ""
 
 # The database to use when postgresql.enabled is false.
 database:
@@ -77,6 +80,13 @@ server:
   # How often watched branches are polled for new commits, e.g. 1m; 0
   # turns polling off. For servers the forges' webhooks cannot reach.
   pollInterval: 1m
+  # public: anyone reads jobs and logs; signed-in: reading needs a sign-in
+  # or a token. Empty: signed-in with a read token, public without.
+  readAccess: ""
+  # How long a sign-in lasts, e.g. 7d or 12h.
+  sessionTTL: 7d
+  # The account secrets.adminPassword creates.
+  adminUser: admin
   # How long shutdown waits for in-flight requests.
   shutdownTimeout: 15s
   # Keeps serving this long after the pod is told to stop, while the

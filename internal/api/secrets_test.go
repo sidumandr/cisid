@@ -71,7 +71,7 @@ func secretsRouter(vault SecretVault, token string) http.Handler {
 	return NewRouter(Handlers{
 		Webhook: http.NotFoundHandler(),
 		Agents:  http.NotFoundHandler(),
-		Secrets: NewSecretsAPI(vault, token, slog.New(slog.DiscardHandler)),
+		Secrets: NewSecretsAPI(vault, NewAccess(AccessConfig{APIToken: token, PublicRead: true}), slog.New(slog.DiscardHandler)),
 		DB:      &mockPinger{},
 	}, slog.New(slog.DiscardHandler))
 }

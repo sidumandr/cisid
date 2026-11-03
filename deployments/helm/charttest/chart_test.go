@@ -358,6 +358,25 @@ func TestForgeSettingsReachTheServer(t *testing.T) {
 	assert.NotContains(t, data, "forgejo-webhook-secret", "empty values stay out of the Secret")
 }
 
+func TestAccountSettingsReachTheServer(t *testing.T) {
+	vals := with(required(), "secrets.adminPassword", "a-long-admin-password")
+	vals = with(vals, "server.readAccess", "signed-in")
+	vals = with(vals, "server.sessionTTL", "12h")
+	m := render(t, vals)
+
+	c := container(t, m.server(t).Spec.Template.Spec, "server")
+	assert.Equal(t, "signed-in", env(c, "CISID_READ_ACCESS").Value)
+	assert.Equal(t, "12h", env(c, "CISID_SESSION_TTL").Value)
+	assert.Equal(t, "admin", env(c, "CISID_ADMIN_USER").Value)
+	assert.Equal(t, "admin-password", env(c, "CISID_ADMIN_PASSWORD").ValueFrom.SecretKeyRef.Key)
+	assert.Equal(t, "a-long-admin-password", string(m.secrets["ci-cisid"].Data["admin-password"]))
+
+	assert.Nil(t, env(container(t, render(t, required()).server(t).Spec.Template.Spec, "server"), "CISID_READ_ACCESS"),
+		"the server picks the default")
+	_, err := renderFiles(with(required(), "secrets.adminPassword", "short"))
+	assert.ErrorContains(t, err, "secrets.adminPassword must be at least 10")
+}
+
 func TestNoWebhookSecretIsFine(t *testing.T) {
 	m := render(t, with(required(), "secrets.webhookSecret", ""))
 	assert.NotContains(t, m.secrets["ci-cisid"].Data, "webhook-secret", "a server that polls needs no webhook")

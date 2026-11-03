@@ -7,7 +7,7 @@ Deploy token'ı gibi gizli değerler repo başına saklanır ve sadece onları i
 | Değişken | Açıklama |
 |---|---|
 | `CISID_SECRET_KEY` | 32 byte'lık AES-256 anahtarı, base64. Bununla üretilir: `openssl rand -base64 32`. Tanımlı değilse secret'lar kapalıdır. |
-| `CISID_API_TOKEN` | Secret API'si için gereklidir ([api.md](api.md#iptal-ve-yeniden-çalıştırma)). |
+| `CISID_API_TOKEN` ya da bir maintainer | Secret API'si `maintainer` rolü ister ([accounts.md](accounts.md)). |
 
 > Anahtar kaybolursa saklanan secret'lar çözülemez ve yeniden girilmeleri gerekir. Anahtarı veritabanından ayrı bir yerde saklayın.
 

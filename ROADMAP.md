@@ -66,5 +66,6 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] İlk sürüm: v0.1.0, image'lar ve Helm chart ghcr.io'da ([docs/release.md](docs/release.md)).
 - [x] Birden fazla git sağlayıcısı: GitHub, Gitea, Forgejo, GitLab ve Bitbucket Cloud; webhook'lar, commit status, özel repoları clone'lama ([docs/forges.md](docs/forges.md)).
 - [x] Webhook'suz push build'leri: branch'leri yoklama; birden fazla server kopyası aynı commit'i iki kez derlemez ([docs/polling.md](docs/polling.md)).
-- [ ] Kullanıcı hesapları ve roller; sağlayıcılarla (OAuth) giriş.
+- [x] Kullanıcı hesapları ve roller (viewer, maintainer, admin), şifreyle giriş, kişisel API token'ları, CSRF koruması ([docs/accounts.md](docs/accounts.md)).
+- [ ] Sağlayıcılarla (OAuth) giriş.
 - [ ] Dokümanlar İngilizce ve Türkçe.

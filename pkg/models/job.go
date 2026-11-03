@@ -109,6 +109,27 @@ type Watch struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// User is an account. Its password hash never leaves the store.
+type User struct {
+	ID       int64  `json:"-"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
+	Disabled bool   `json:"disabled,omitempty"`
+	// HasPassword is false for users who only sign in through a forge.
+	HasPassword bool `json:"has_password"`
+	// Identities are the user's forge logins, by forge name.
+	Identities map[string]string `json:"identities,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+}
+
+// APIToken describes a personal API token without the token.
+type APIToken struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
 // SecretInfo describes a repository secret without its value.
 type SecretInfo struct {
 	Name      string    `json:"name"`

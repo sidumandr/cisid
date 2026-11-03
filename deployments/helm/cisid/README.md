@@ -73,10 +73,14 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo'nun token'ı ve webhook secret'ı (`server.forgejoURL` ile) |
 | `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab'ın token'ı ve webhook secret'ı |
 | `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud'un token'ı ve webhook secret'ı |
+| `secrets.adminPassword` | — | İlk açılışta `server.adminUser`'ı admin olarak oluşturur, en az 10 karakter ([hesaplar](../../../docs/accounts.md)) |
 | `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
 | `server.replicaCount` | `1` | Server kopyası |
 | `server.giteaURL`, `server.forgejoURL` | — | Gitea ve Forgejo sunucularının adresi; verilince açılırlar |
 | `server.gitlabURL` | GitLab.com | Kendi GitLab kurulumunuzun adresi |
+| `server.readAccess` | — | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister. Boşsa read token varken `signed-in`, yokken `public`. |
+| `server.sessionTTL` | `7d` | Bir girişin süresi |
+| `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
 | `server.pollInterval` | `1m` | İzlenen branch'lerin yoklanma aralığı; `0` polling'i kapatır ([polling](../../../docs/polling.md)) |
 | `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
@@ -104,7 +108,7 @@ Secret'ları bir secrets operator'ı ya da GitOps aracıyla yönetiyorsanız `se
 | `agent-token` | Zorunlu |
 | `postgres-password` | Dahili PostgreSQL ile zorunlu |
 | `database-url` | Harici veritabanıyla zorunlu (`postgres://...`) |
-| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret` | İsteğe bağlı |
+| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password` | İsteğe bağlı |
 
 Agent token'ını değiştirmek için anahtara önce `yeni,eski` yazın: server ikisini de kabul eder, agent'lar ilkini gönderir. Bütün agent'lar yeniden başladıktan sonra yalnızca `yeni`yi bırakın.
 

@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sidumandr/cisid/internal/auth"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/telemetry"
@@ -38,18 +39,17 @@ var scheduleNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // TriggersAPI starts builds without a push:
 //
-//	POST   /api/repos/{owner}/{repo}/builds            build a branch's head now (needs the write token)
+//	POST   /api/repos/{owner}/{repo}/builds            build a branch's head now (maintainer)
 //	GET    /api/repos/{owner}/{repo}/schedules         list the repository's schedules
-//	PUT    /api/repos/{owner}/{repo}/schedules/{name}  create or change a schedule (needs the write token)
-//	DELETE /api/repos/{owner}/{repo}/schedules/{name}  remove a schedule (needs the write token)
+//	PUT    /api/repos/{owner}/{repo}/schedules/{name}  create or change a schedule (maintainer)
+//	DELETE /api/repos/{owner}/{repo}/schedules/{name}  remove a schedule (maintainer)
 //	GET    /api/repos/{owner}/{repo}/watches           list the branches polled for new commits
-//	POST   /api/repos/{owner}/{repo}/watches           poll a branch (needs the write token)
-//	DELETE /api/repos/{owner}/{repo}/watches/{branch}  stop polling a branch (needs the write token)
+//	POST   /api/repos/{owner}/{repo}/watches           poll a branch (maintainer)
+//	DELETE /api/repos/{owner}/{repo}/watches/{branch}  stop polling a branch (maintainer)
 type TriggersAPI struct {
 	store     TriggerStore
 	resolver  trigger.Resolver
-	token     string
-	read      *ReadAccess
+	access    *Access
 	changed   func(jobID int64)
 	log       *slog.Logger
 	now       func() time.Time
@@ -65,10 +65,9 @@ func WithPolling(every time.Duration) TriggersOption {
 	return func(a *TriggersAPI) { a.pollEvery = every }
 }
 
-// NewTriggersAPI returns a TriggersAPI. token is the write token; read
-// guards listing schedules and watches; changed runs with each job it
-// queues.
-func NewTriggersAPI(store TriggerStore, resolver trigger.Resolver, token string, read *ReadAccess,
+// NewTriggersAPI returns a TriggersAPI. access says who reads schedules
+// and watches and who changes them; changed runs with each job it queues.
+func NewTriggersAPI(store TriggerStore, resolver trigger.Resolver, access *Access,
 	changed func(jobID int64), log *slog.Logger, opts ...TriggersOption) *TriggersAPI {
 	if changed == nil {
 		changed = func(int64) {}
@@ -76,7 +75,10 @@ func NewTriggersAPI(store TriggerStore, resolver trigger.Resolver, token string,
 	if log == nil {
 		log = slog.Default()
 	}
-	a := &TriggersAPI{store: store, resolver: resolver, token: token, read: read, changed: changed, log: log, now: time.Now}
+	if access == nil {
+		access = openAccess()
+	}
+	a := &TriggersAPI{store: store, resolver: resolver, access: access, changed: changed, log: log, now: time.Now}
 	for _, opt := range opts {
 		opt(a)
 	}
@@ -84,13 +86,14 @@ func NewTriggersAPI(store TriggerStore, resolver trigger.Resolver, token string,
 }
 
 func (a *TriggersAPI) register(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/repos/{owner}/{repo}/builds", requireToken(a.token, a.build))
-	mux.HandleFunc("GET /api/repos/{owner}/{repo}/schedules", a.read.wrapFunc(a.listSchedules))
-	mux.HandleFunc("PUT /api/repos/{owner}/{repo}/schedules/{name}", requireToken(a.token, a.putSchedule))
-	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/schedules/{name}", requireToken(a.token, a.deleteSchedule))
-	mux.HandleFunc("GET /api/repos/{owner}/{repo}/watches", a.read.wrapFunc(a.listWatches))
-	mux.HandleFunc("POST /api/repos/{owner}/{repo}/watches", requireToken(a.token, a.watch))
-	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/watches/{branch...}", requireToken(a.token, a.unwatch))
+	maintainer := func(h http.HandlerFunc) http.HandlerFunc { return a.access.require(auth.RoleMaintainer, h) }
+	mux.HandleFunc("POST /api/repos/{owner}/{repo}/builds", maintainer(a.build))
+	mux.HandleFunc("GET /api/repos/{owner}/{repo}/schedules", a.access.wrapFunc(a.listSchedules))
+	mux.HandleFunc("PUT /api/repos/{owner}/{repo}/schedules/{name}", maintainer(a.putSchedule))
+	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/schedules/{name}", maintainer(a.deleteSchedule))
+	mux.HandleFunc("GET /api/repos/{owner}/{repo}/watches", a.access.wrapFunc(a.listWatches))
+	mux.HandleFunc("POST /api/repos/{owner}/{repo}/watches", maintainer(a.watch))
+	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/watches/{branch...}", maintainer(a.unwatch))
 }
 
 // validBranch accepts the branch names git hosts do, roughly.

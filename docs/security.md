@@ -9,8 +9,8 @@ Bu belge cisid'in güvenlik önlemlerini tek yerde toplar. Ayrıntılar ilgili b
 | GitHub, Gitea, Forgejo, Bitbucket (webhook) | Secret'ı bilen gönderici | Gövdenin HMAC-SHA256 imzası |
 | GitLab (webhook) | Secret'ı bilen gönderici | `X-Gitlab-Token` başlığı, sabit zamanlı karşılaştırma. GitLab imzalamaz: adres HTTPS olmalı. |
 | Agent | Agent token'ını bilen süreç | `Authorization: Bearer`, isteğe bağlı TLS |
-| API istemcisi (yazma) | API token'ını bilen | `Authorization: Bearer` |
-| API istemcisi (okuma), web arayüzü | `CISID_READ_TOKEN` varsa token sahipleri, yoksa herkes | `Authorization: Bearer` ya da oturum cookie'si |
+| API istemcisi (yazma) | API token'ını bilen ya da maintainer/admin rolündeki kullanıcı | `Authorization: Bearer` (server ya da kişisel token), ya da oturum cookie'si ve `X-Cisid-Request` |
+| API istemcisi (okuma), web arayüzü | `CISID_READ_ACCESS=signed-in` ise giriş yapanlar ve token sahipleri, `public` ise herkes | `Authorization: Bearer` ya da cookie |
 | Repodaki kod (`.cisid.yml` adımları) | Push yetkisi olan herkes | Container sınırları, ama agent makinesine erişebilir |
 
 Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve agent makinesinde kod çalıştırabilir. cisid bunu engellemez, etkisini sınırlar.
@@ -32,7 +32,9 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 ## API ve web arayüzü
 
-- Değişiklik yapan uç noktalar (iptal, yeniden çalıştırma, secret'lar) `CISID_API_TOKEN` ister. Token tanımlı değilse bu uç noktalar kapalıdır (`403`).
+- Değişiklik yapan uç noktalar (build, iptal, yeniden çalıştırma, zamanlama, polling, secret'lar) `maintainer`, kullanıcı yönetimi `admin` ister ([accounts.md](accounts.md)). Ne `CISID_API_TOKEN` ne kullanıcı varsa bu uç noktalar kapalıdır (`403`).
+- Şifreler PBKDF2-HMAC-SHA256 ile (600.000 tur, tuzlu) saklanır; oturumlar ve kişisel token'lar yalnızca SHA-256 özetleriyle. Bilinmeyen kullanıcıyla yanlış şifre aynı yanıtı aynı sürede alır.
+- Oturum cookie'si HttpOnly ve `SameSite=Lax`'tır; cookie ile gelen değişiklikler ayrıca `X-Cisid-Request` başlığını ister (CSRF).
 - Okuma uç noktaları (`/api/jobs`, loglar, canlı akış) ve `/metrics`, `CISID_READ_TOKEN` tanımlıysa okuma ya da API token'ı ister; tanımlı değilse herkese açıktır. Job listesi repo adlarını, commit'leri ve logları gösterir. Tarayıcı `POST /api/login` ile HttpOnly, `SameSite=Strict` bir cookie alır; cookie token'ın özetini taşır ve yalnızca okumaya izin verir ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` her zaman açıktır.
 - `/webhooks/` ve `/api/` IP başına token bucket ile sınırlıdır (`CISID_RATE_LIMIT`, varsayılan 10 istek/sn). Reverse proxy arkasında `CISID_TRUST_PROXY=true` ile istemci adresi `X-Forwarded-For`'dan alınır. Proxy yoksa bu ayarı açmayın, başlık sahte olabilir.
 - Web arayüzü `Content-Security-Policy: default-src 'self'` ile sunulur, inline script yoktur. API'den gelen her değer `textContent` ile eklenir. API token'ı tarayıcıda yalnızca `sessionStorage`'da tutulur ([ui.md](ui.md#güvenlik)).
@@ -70,13 +72,14 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 - [ ] `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` ve `CISID_API_TOKEN` için uzun, rastgele değerler.
 - [ ] Server TLS ile ya da TLS sonlandıran bir reverse proxy arkasında. Agent'lar `wss://` ile bağlanıyor.
-- [ ] `CISID_READ_TOKEN` tanımlı ya da server erişim kontrolü olan bir reverse proxy arkasında.
+- [ ] `CISID_READ_ACCESS=signed-in` (ya da `CISID_READ_TOKEN` tanımlı), veya server erişim kontrolü olan bir reverse proxy arkasında.
+- [ ] İlk admin oluşturulduysa `CISID_ADMIN_PASSWORD` ortamdan kaldırıldı ve şifre arayüzden değiştirildi.
 - [ ] `CISID_SECRET_KEY` veritabanı yedeklerinden ayrı saklanıyor.
 - [ ] Agent'lar ayrı makinelerde, `CISID_STEP_MEMORY` ve `CISID_STEP_CPUS` tanımlı.
 - [ ] Hassas secret'lar `branches` ile korumalı branch'lere sınırlı.
 
 ## Bilinen eksikler
 
-- Okuma erişimi tek bir paylaşılan token'la korunur; kullanıcı hesabı ve repoya göre yetki yoktur.
-- Kullanıcı ya da rol kavramı yok: API token'ı olan her şeyi yapabilir.
+- Roller server geneli içindir; repoya göre yetki yoktur. Bir maintainer bütün repoların build'lerini ve secret'larını yönetir.
+- Giriş denemeleri için hesaba özel kilitleme yoktur; IP başına rate limit (`CISID_RATE_LIMIT`) uygulanır.
 - Agent başına kimlik yok; token değişikliği server'ın yeniden başlatılmasını gerektirir (rotasyon listesi kesintiyi önler).

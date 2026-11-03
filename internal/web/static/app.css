@@ -254,7 +254,7 @@ h2 { margin: 0; font-size: var(--fs-section); line-height: 22px; font-weight: 60
 .text-action:hover { color: var(--text); }
 .text-action.danger:hover { color: var(--negative); }
 
-input[type="text"], input[type="password"], input[type="search"], textarea {
+input[type="text"], input[type="password"], input[type="search"], textarea, select {
   width: 100%;
   height: 38px;
   padding: 0 12px;
@@ -265,6 +265,12 @@ input[type="text"], input[type="password"], input[type="search"], textarea {
 }
 textarea { height: auto; min-height: 88px; padding: 10px 12px; font-family: var(--mono); font-size: var(--fs-mono); resize: vertical; }
 input::placeholder, textarea::placeholder { color: var(--faint); }
+select { font: inherit; }
+
+/* ---------- sign-in through a forge ---------- */
+.providers { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.btn.provider { flex: 1 1 auto; justify-content: center; text-decoration: none; }
+.toolbar-actions { display: flex; gap: 8px; }
 
 /* ---------- tabs: the selected one carries the orange line ---------- */
 .tabs { display: flex; gap: 28px; margin-bottom: 16px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
@@ -314,6 +320,7 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
 
 .jobs-grid { grid-template-columns: minmax(0, 3.4fr) minmax(0, 2.6fr) minmax(88px, 0.9fr) minmax(0, 1fr) minmax(96px, 1fr); }
 .repos-grid { grid-template-columns: minmax(0, 3.4fr) minmax(0, 2.6fr) minmax(88px, 0.9fr) minmax(72px, 0.7fr) minmax(96px, 1fr); }
+.user-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.8fr) 140px; }
 .sched-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 64px; }
 .watch-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr) 64px; }
 .secret-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) minmax(0, 1fr) 64px; }
@@ -560,11 +567,12 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   }
   .col-time .line2 { margin-top: 0; }
   .wide-only { display: none; }
-  .sched-grid, .watch-grid, .secret-grid { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .sched-grid, .watch-grid, .secret-grid, .user-grid { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .sched-grid > :not(:first-child):not(:last-child),
   .watch-grid > :not(:first-child):not(:last-child),
+  .user-grid > :not(:first-child):not(:last-child),
   .secret-grid > :not(:first-child):not(:last-child) { grid-column: 1; text-align: left; justify-self: start; }
-  .sched-grid > :last-child, .watch-grid > :last-child, .secret-grid > :last-child { grid-column: 2; grid-row: 1; }
+  .sched-grid > :last-child, .watch-grid > :last-child, .secret-grid > :last-child, .user-grid > :last-child { grid-column: 2; grid-row: 1; }
 
   .facts { grid-template-columns: minmax(0, 1fr); }
   .fact { display: flex; justify-content: space-between; gap: 16px; border-left: 0; padding: 10px 14px; }

@@ -16,18 +16,24 @@ import (
 
 const readToken = "read-token-0123456789"
 
-func readRouter(t *testing.T, read *ReadAccess) http.Handler {
+// tokenAccess is the access of a server with the API token and, unless
+// empty, a read token, and no accounts.
+func tokenAccess(read string) *Access {
+	return NewAccess(AccessConfig{APIToken: writeToken, ReadToken: read, PublicRead: read == ""})
+}
+
+func readRouter(t *testing.T, read *Access) http.Handler {
 	t.Helper()
 	store := &mockJobReader{}
 	store.On("ListJobs", mock.Anything, mock.Anything).Return([]models.Job{}, nil)
 	store.On("CancelJob", mock.Anything, mock.Anything).Return(models.Job{ID: 1, Status: models.JobStatusCanceled}, nil)
-	jobs := NewJobsAPI(store, &fakeEvents{}, slog.New(slog.DiscardHandler), WithWriteToken(writeToken), WithReadAccess(read))
+	jobs := NewJobsAPI(store, &fakeEvents{}, slog.New(slog.DiscardHandler), WithAccess(read))
 	t.Cleanup(jobs.Close)
 	return NewRouter(Handlers{
 		Webhook: http.NotFoundHandler(),
 		Agents:  http.NotFoundHandler(),
 		Jobs:    jobs,
-		Read:    read,
+		Access:  read,
 		Metrics: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("metrics")) }),
 		DB:      &mockPinger{},
 	}, slog.New(slog.DiscardHandler))
@@ -48,13 +54,13 @@ func getAs(h http.Handler, target, token string) *httptest.ResponseRecorder {
 }
 
 func TestReadAccessOpenByDefault(t *testing.T) {
-	h := readRouter(t, NewReadAccess("", writeToken))
+	h := readRouter(t, tokenAccess(""))
 	assert.Equal(t, http.StatusOK, getAs(h, "/api/jobs", "").Code)
 	assert.Equal(t, http.StatusOK, getAs(h, "/metrics", "").Code)
 }
 
 func TestReadAccessNeedsAToken(t *testing.T) {
-	h := readRouter(t, NewReadAccess(readToken, writeToken))
+	h := readRouter(t, tokenAccess(readToken))
 
 	for _, target := range []string{"/api/jobs", "/metrics"} {
 		assert.Equal(t, http.StatusUnauthorized, getAs(h, target, "").Code, target)
@@ -66,7 +72,7 @@ func TestReadAccessNeedsAToken(t *testing.T) {
 }
 
 func TestReadAccessSignsInTheBrowser(t *testing.T) {
-	h := readRouter(t, NewReadAccess(readToken, writeToken))
+	h := readRouter(t, tokenAccess(readToken))
 	login := func(token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"token":"`+token+`"}`))
 		req.Header.Set("X-Forwarded-Proto", "https")
@@ -93,7 +99,7 @@ func TestReadAccessSignsInTheBrowser(t *testing.T) {
 		return send(h, req)
 	}
 	assert.Equal(t, http.StatusOK, withCookie(http.MethodGet, "/api/jobs").Code)
-	assert.Equal(t, http.StatusUnauthorized, withCookie(http.MethodPost, "/api/jobs/1/cancel").Code,
+	assert.Equal(t, http.StatusForbidden, withCookie(http.MethodPost, "/api/jobs/1/cancel").Code,
 		"the cookie only reads, even when signed in with the API token")
 
 	forged := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
@@ -102,6 +108,8 @@ func TestReadAccessSignsInTheBrowser(t *testing.T) {
 
 	rec = send(h, httptest.NewRequest(http.MethodPost, "/api/logout", nil))
 	assert.Equal(t, http.StatusNoContent, rec.Code)
-	require.Len(t, rec.Result().Cookies(), 1)
-	assert.Negative(t, rec.Result().Cookies()[0].MaxAge, "logout drops the cookie")
+	require.Len(t, rec.Result().Cookies(), 2)
+	for _, c := range rec.Result().Cookies() {
+		assert.Negative(t, c.MaxAge, "logout drops the cookies")
+	}
 }

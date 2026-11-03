@@ -156,11 +156,23 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	metrics.RegisterAgents(agents.Connected)
 	metrics.RegisterJobCounts(store.CountJobsByStatus, log)
 
+	if cfg.AdminPassword != "" {
+		created, err := api.BootstrapAdmin(ctx, store, cfg.AdminUser, cfg.AdminPassword)
+		if err != nil {
+			return fmt.Errorf("create admin %s: %w", cfg.AdminUser, err)
+		}
+		if created {
+			log.InfoContext(ctx, "admin created", "username", cfg.AdminUser)
+		}
+	}
+
 	broker := events.New(log)
-	read := api.NewReadAccess(cfg.ReadToken, cfg.APIToken)
+	access := api.NewAccess(api.AccessConfig{
+		APIToken: cfg.APIToken, ReadToken: cfg.ReadToken, PublicRead: cfg.PublicRead,
+		Accounts: store, SessionTTL: cfg.SessionTTL, Log: log,
+	})
 	jobsAPI := api.NewJobsAPI(store, broker, log,
-		api.WithWriteToken(cfg.APIToken),
-		api.WithReadAccess(read),
+		api.WithAccess(access),
 		api.WithJobChanged(func(id int64) {
 			agents.Wake() // dispatches reruns and delivers cancels here at once
 			jobChanged(id)
@@ -169,7 +181,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		agents.Wake()
 		jobChanged(id)
 	}
-	triggersAPI := api.NewTriggersAPI(store, forges, cfg.APIToken, read, queued, log, api.WithPolling(cfg.PollInterval))
+	triggersAPI := api.NewTriggersAPI(store, forges, access, queued, log, api.WithPolling(cfg.PollInterval))
 	scheduler := trigger.NewScheduler(store, forges, trigger.WithLogger(log), trigger.WithQueued(queued))
 	var poller *trigger.Poller
 	if cfg.PollInterval > 0 {
@@ -183,11 +195,11 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Webhooks:  webhooks,
 			Agents:    agents,
 			Jobs:      jobsAPI,
-			Secrets:   api.NewSecretsAPI(vault, cfg.APIToken, log),
+			Secrets:   api.NewSecretsAPI(vault, access, log),
 			UI:        web.Handler(),
 			RateLimit: rateLimiter(cfg),
 			Metrics:   metrics.Handler(),
-			Read:      read,
+			Access:    access,
 			Triggers:  triggersAPI,
 			DB:        store,
 			// Webhook and API requests start the traces jobs continue.
@@ -323,7 +335,8 @@ func rateLimiter(cfg config.Config) *api.RateLimiter {
 
 // housekeep runs hourly. It prunes old webhook deliveries, which outlive
 // the 7-day replay window a little so a replay inside it is always caught,
-// and deletes the logs of jobs that finished logRetention ago (0 keeps them).
+// forgets expired sessions, and deletes the logs of jobs that finished
+// logRetention ago (0 keeps them).
 func housekeep(ctx context.Context, store *db.Store, logRetention time.Duration, log *slog.Logger) error {
 	tick := time.NewTicker(time.Hour)
 	defer tick.Stop()
@@ -333,6 +346,11 @@ func housekeep(ctx context.Context, store *db.Store, logRetention time.Duration,
 			log.WarnContext(pctx, "prune webhook deliveries", "error", err)
 		} else if n > 0 {
 			log.InfoContext(pctx, "pruned webhook deliveries", "count", n)
+		}
+		if n, err := store.PruneSessions(pctx); err != nil {
+			log.WarnContext(pctx, "prune sessions", "error", err)
+		} else if n > 0 {
+			log.InfoContext(pctx, "pruned expired sessions", "count", n)
 		}
 		if logRetention > 0 {
 			expireLogs(pctx, store, logRetention, log)

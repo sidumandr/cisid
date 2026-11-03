@@ -46,7 +46,37 @@ func TestLoadDefaults(t *testing.T) {
 		GitLab:          Forge{URL: "https://gitlab.com"},
 		Bitbucket:       Forge{URL: "https://api.bitbucket.org/2.0"},
 		PollInterval:    time.Minute,
+		PublicRead:      true,
+		SessionTTL:      7 * 24 * time.Hour,
+		AdminUser:       "admin",
 	}, cfg)
+}
+
+func TestLoadAccounts(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{"CISID_READ_TOKEN": "read-token-0123456789"})))
+	require.NoError(t, err)
+	assert.False(t, cfg.PublicRead, "a read token means reading needs it")
+
+	cfg, err = Load(env(with(map[string]string{
+		"CISID_READ_ACCESS": "signed-in", "CISID_SESSION_TTL": "12h",
+		"CISID_ADMIN_USER": "ops", "CISID_ADMIN_PASSWORD": "a-long-password",
+	})))
+	require.NoError(t, err)
+	assert.False(t, cfg.PublicRead)
+	assert.Equal(t, 12*time.Hour, cfg.SessionTTL)
+	assert.Equal(t, "ops", cfg.AdminUser)
+	assert.Equal(t, "a-long-password", cfg.AdminPassword)
+
+	for name, vars := range map[string]map[string]string{
+		"unknown read access":    {"CISID_READ_ACCESS": "everyone"},
+		"public with a token":    {"CISID_READ_ACCESS": "public", "CISID_READ_TOKEN": "read-token-0123456789"},
+		"short admin password":   {"CISID_ADMIN_PASSWORD": "short"},
+		"bad admin name":         {"CISID_ADMIN_USER": "Root User"},
+		"session under a minute": {"CISID_SESSION_TTL": "30s"},
+	} {
+		_, err := Load(env(with(vars)))
+		assert.ErrorIs(t, err, ErrInvalidConfig, name)
+	}
 }
 
 func TestLoadPollInterval(t *testing.T) {
@@ -235,7 +265,8 @@ func TestLoadErrors(t *testing.T) {
 }
 
 func TestConfigLogValueRedactsSecrets(t *testing.T) {
-	cfg, err := Load(env(with(map[string]string{"CISID_GITHUB_TOKEN": "ghp_secret", "CISID_API_TOKEN": "api-secret-0123456789"})))
+	cfg, err := Load(env(with(map[string]string{"CISID_GITHUB_TOKEN": "ghp_secret", "CISID_API_TOKEN": "api-secret-0123456789",
+		"CISID_ADMIN_PASSWORD": "admin-password-secret", "CISID_GITLAB_TOKEN": "glpat-secret"})))
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -246,6 +277,8 @@ func TestConfigLogValueRedactsSecrets(t *testing.T) {
 	assert.NotContains(t, out, "hook-secret")
 	assert.NotContains(t, out, "ghp_secret")
 	assert.NotContains(t, out, "api-secret")
+	assert.NotContains(t, out, "admin-password-secret")
+	assert.NotContains(t, out, "glpat-secret")
 	assert.Contains(t, out, "config.api_token_set=true")
 	assert.Contains(t, out, "config.secret_key_set=false")
 	assert.Contains(t, out, "config.github_token_set=true")

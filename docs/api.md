@@ -2,7 +2,7 @@
 
 Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jobs.go`). Job'lar okunabilir, iptal edilebilir ve yeniden çalıştırılabilir. Bütün yanıtlar JSON'dur, canlı log akışı ise [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) ile gelir.
 
-> Okuma uç noktaları `CISID_READ_TOKEN` tanımlıysa token ister ([Okuma erişimi](#okuma-erişimi)), tanımlı değilse herkese açıktır. Değişiklik yapan uç noktalar her zaman API token'ı ister (aşağıya bak).
+> Okuma uç noktaları herkese açık ya da giriş isteyen olabilir ([Okuma erişimi](#okuma-erişimi)). Değişiklik yapan uç noktalar `maintainer` rolü ister: API token'ı, bir kullanıcının kişisel token'ı ya da oturumu ([accounts.md](accounts.md)).
 
 ## Endpoint'ler
 
@@ -12,8 +12,8 @@ Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jo
 | `GET /api/jobs/{id}` | Tek job |
 | `GET /api/jobs/{id}/logs?after=0` | `seq` > `after` olan log parçaları, istek başına en fazla 1000 |
 | `GET /api/jobs/{id}/logs/stream` | Canlı log akışı (SSE) |
-| `POST /api/jobs/{id}/cancel` | Job'u iptal et (token gerekir) |
-| `POST /api/jobs/{id}/rerun` | Aynı commit için yeni job oluştur (token gerekir) |
+| `POST /api/jobs/{id}/cancel` | Job'u iptal et (maintainer) |
+| `POST /api/jobs/{id}/rerun` | Aynı commit için yeni job oluştur (maintainer) |
 
 Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate limit aşıldıysa `429` (`Retry-After: 1`, bkz. `CISID_RATE_LIMIT`). Gövde `{"status":"error","reason":"..."}` biçimindedir.
 
@@ -57,12 +57,13 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
 
 ## Okuma erişimi
 
-`CISID_READ_TOKEN` tanımlıysa job, log ve canlı akış uç noktaları ile `/metrics` şunlardan birini ister:
+Okuma `CISID_READ_ACCESS=signed-in` ise (`CISID_READ_TOKEN` tanımlıyken varsayılan budur) job, log ve canlı akış uç noktaları ile `/metrics` şunlardan birini ister:
 
-- `Authorization: Bearer <token>` başlığı. Okuma token'ı ya da API token'ı olabilir.
-- `POST /api/login` ile alınan cookie. Gövde `{"token":"..."}` olur; token doğruysa `204` döner ve server HttpOnly, `SameSite=Strict` bir cookie koyar. Web arayüzü bunu kullanır, çünkü tarayıcının canlı log akışı (EventSource) başlık gönderemez. Cookie token'ın kendisini değil özetini taşır ve yalnızca okumaya izin verir; API token'ıyla girilse bile değişiklik yapamaz. `POST /api/logout` cookie'yi siler.
+- `Authorization: Bearer <token>` başlığı: okuma token'ı, API token'ı ya da bir kullanıcının kişisel token'ı.
+- Bir kullanıcının oturum cookie'si ([accounts.md](accounts.md#giriş-ve-oturumlar)).
+- `POST /api/login` gövdesi `{"token":"..."}` ile alınan okuma cookie'si. Token doğruysa `204` döner ve server HttpOnly, `SameSite=Strict` bir cookie koyar. Web arayüzü cookie'leri kullanır, çünkü tarayıcının canlı log akışı (EventSource) başlık gönderemez. Bu cookie token'ın kendisini değil özetini taşır ve yalnızca okumaya izin verir; API token'ıyla girilse bile değişiklik yapamaz. `POST /api/logout` cookie'leri siler.
 
-Token yoksa ya da yanlışsa `401` döner. Health check'ler (`/healthz`, `/readyz`) ve webhook her zaman açıktır.
+Kimlik yoksa ya da yanlışsa `401` döner. Health check'ler (`/healthz`, `/readyz`) ve webhook her zaman açıktır.
 
 ```bash
 curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
@@ -97,7 +98,7 @@ curl -X PUT -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"cron":"CRON_TZ=Eur
 
 ## İptal ve yeniden çalıştırma
 
-Bu uç noktalar `CISID_API_TOKEN` tanımlıysa açıktır. Token en az 16 karakter olmalıdır ve `Authorization` başlığıyla gönderilir. Token tanımlı değilse `403`, eksik ya da yanlışsa `401` döner.
+Bu uç noktalar `maintainer` rolü ister: `CISID_API_TOKEN`, bir maintainer'ın kişisel token'ı (`Authorization: Bearer`) ya da oturumu. Ne API token'ı ne de kullanıcı varsa `403`, kimlik eksik ya da yanlışsa `401`, rol yetmiyorsa `403` döner.
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080/api/jobs/42/cancel

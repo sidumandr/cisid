@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/sidumandr/cisid/internal/auth"
 	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/pkg/models"
@@ -21,31 +22,35 @@ type SecretVault interface {
 
 var _ SecretVault = (*secrets.Vault)(nil)
 
-// SecretsAPI manages repository secrets. Every endpoint needs the API
-// token; values can be written but never read back:
+// SecretsAPI manages repository secrets. Every endpoint needs the
+// maintainer role; values can be written but never read back:
 //
 //	GET    /api/repos/{owner}/{repo}/secrets          names and update times
 //	PUT    /api/repos/{owner}/{repo}/secrets/{name}   {"value": "..."}
 //	DELETE /api/repos/{owner}/{repo}/secrets/{name}
 type SecretsAPI struct {
-	vault SecretVault
-	token string
-	log   *slog.Logger
+	vault  SecretVault
+	access *Access
+	log    *slog.Logger
 }
 
-// NewSecretsAPI returns a SecretsAPI. A nil vault (no CISID_SECRET_KEY)
-// disables the endpoints; a nil log uses slog.Default().
-func NewSecretsAPI(vault SecretVault, token string, log *slog.Logger) *SecretsAPI {
+// NewSecretsAPI returns a SecretsAPI; access says who is a maintainer. A
+// nil vault (no CISID_SECRET_KEY) disables the endpoints; a nil log uses
+// slog.Default().
+func NewSecretsAPI(vault SecretVault, access *Access, log *slog.Logger) *SecretsAPI {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &SecretsAPI{vault: vault, token: token, log: log}
+	if access == nil {
+		access = openAccess()
+	}
+	return &SecretsAPI{vault: vault, access: access, log: log}
 }
 
 func (s *SecretsAPI) register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/repos/{owner}/{repo}/secrets", requireToken(s.token, s.enabled(s.list)))
-	mux.HandleFunc("PUT /api/repos/{owner}/{repo}/secrets/{name}", requireToken(s.token, s.enabled(s.put)))
-	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/secrets/{name}", requireToken(s.token, s.enabled(s.delete)))
+	mux.HandleFunc("GET /api/repos/{owner}/{repo}/secrets", s.access.require(auth.RoleMaintainer, s.enabled(s.list)))
+	mux.HandleFunc("PUT /api/repos/{owner}/{repo}/secrets/{name}", s.access.require(auth.RoleMaintainer, s.enabled(s.put)))
+	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/secrets/{name}", s.access.require(auth.RoleMaintainer, s.enabled(s.delete)))
 }
 
 func (s *SecretsAPI) enabled(next http.HandlerFunc) http.HandlerFunc {
