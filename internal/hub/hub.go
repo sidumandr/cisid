@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sidumandr/cisid/internal/db"
@@ -98,6 +99,10 @@ type agentConn struct {
 	kick chan struct{}
 	// drain is closed on shutdown; the writer then sends server_closing.
 	drain chan struct{}
+	// processed is the ID of the last agent message handled; ackReady
+	// tells the writer to acknowledge it.
+	processed atomic.Int64
+	ackReady  chan struct{}
 
 	// Guarded by Hub.mu.
 	jobID   int64 // job the agent is running, 0 when idle

@@ -67,8 +67,8 @@ type Agent struct {
 	log    *slog.Logger
 	out    *outbox
 	busy   atomic.Bool
-	// runningJob is the job accepted last whose result has not yet been
-	// handed to the writer; 0 when there is none. Reported in the hello.
+	// runningJob is the job accepted last whose result the server has not
+	// yet acknowledged; 0 when there is none. Reported in the hello.
 	runningJob atomic.Int64
 }
 
@@ -208,10 +208,16 @@ func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan
 	return true, err
 }
 
-// writeLoop is the only goroutine that writes to conn after the hello.
-// When draining is closed it stops taking messages from the outbox and
-// closes the connection, so the server processes everything sent so far.
+// writeLoop is the only goroutine that writes to conn after the hello. It
+// first resends what an earlier connection left unacknowledged. When
+// draining is closed it stops taking messages from the outbox and closes
+// the connection, so the server processes everything sent so far.
 func (a *Agent) writeLoop(ctx context.Context, conn *websocket.Conn, draining <-chan struct{}) error {
+	for _, msg := range a.out.unacked() {
+		if err := writeMessage(ctx, conn, msg); err != nil {
+			return err
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -221,17 +227,9 @@ func (a *Agent) writeLoop(ctx context.Context, conn *websocket.Conn, draining <-
 			_ = conn.Close(websocket.StatusNormalClosure, "server closing")
 			return errServerClosing
 		case msg := <-a.out.ch:
-			if msg.Type == models.MsgJobResult {
-				// From here on the result is on its way (or lost with the
-				// connection), so a later hello must not claim the job.
-				var res models.JobResult
-				if msg.Decode(&res) == nil {
-					a.runningJob.CompareAndSwap(res.JobID, 0)
-				}
-			}
-			err := writeMessage(ctx, conn, msg)
-			a.out.written()
-			if err != nil {
+			// A failed write leaves the message unacknowledged, so it is
+			// sent again on the next connection.
+			if err := writeMessage(ctx, conn, a.out.take(msg)); err != nil {
 				return err
 			}
 		}
@@ -263,8 +261,29 @@ func (a *Agent) readLoop(ctx context.Context, conn *websocket.Conn, stopping <-c
 		case models.MsgServerClosing:
 			// Keep reading: the close handshake needs a reader.
 			drain()
+		case models.MsgAck:
+			var ack models.Ack
+			if err := msg.Decode(&ack); err != nil {
+				a.log.WarnContext(ctx, "ignoring malformed ack", "error", err)
+				continue
+			}
+			a.acked(ack.ID)
 		default:
 			a.log.DebugContext(ctx, "ignoring unknown message", "type", msg.Type)
+		}
+	}
+}
+
+// acked forgets acknowledged messages. Once a job's result is acknowledged
+// the agent no longer reports the job as running.
+func (a *Agent) acked(id int64) {
+	for _, msg := range a.out.ack(id) {
+		if msg.Type != models.MsgJobResult {
+			continue
+		}
+		var res models.JobResult
+		if msg.Decode(&res) == nil {
+			a.runningJob.CompareAndSwap(res.JobID, 0)
 		}
 	}
 }

@@ -521,3 +521,58 @@ func TestHubShutdownClosesAgentConnections(t *testing.T) {
 		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	}
 }
+
+func (ta *testAgent) sendID(t *testing.T, id int64, typ models.MessageType, payload any) {
+	t.Helper()
+	msg, err := models.NewMessage(typ, payload)
+	require.NoError(t, err)
+	msg.ID = id
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
+	defer cancel()
+	require.NoError(t, ta.conn.Write(ctx, websocket.MessageText, data))
+}
+
+// expectAck waits until the server has acknowledged up to id.
+func (ta *testAgent) expectAck(t *testing.T, id int64) {
+	t.Helper()
+	deadline := time.After(testTimeout)
+	for {
+		select {
+		case msg, ok := <-ta.msgs:
+			require.True(t, ok, "connection closed while waiting for ack %d", id)
+			require.Equal(t, models.MsgAck, msg.Type)
+			var ack models.Ack
+			require.NoError(t, msg.Decode(&ack))
+			if ack.ID >= id {
+				assert.Equal(t, id, ack.ID)
+				return
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for ack %d", id)
+		}
+	}
+}
+
+func TestHubAcknowledgesMessages(t *testing.T) {
+	finished := make(chan struct{}, 1)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		s.On("AppendJobLog", mock.Anything, mock.Anything).Return(nil).Once()
+		s.On("FinishJob", mock.Anything, "agent-1", mock.Anything).Return(nil).Run(signal(finished)).Once()
+	})
+	a := f.connect(t, "agent-1", 0)
+	a.expectAssignment(t)
+
+	a.sendID(t, 5, models.MsgJobLog, models.JobLog{JobID: 42, Seq: 1, Stream: models.StreamStdout, Data: "x\n"})
+	a.sendID(t, 6, models.MsgJobResult, models.JobResult{JobID: 42, Status: models.JobStatusSuccess})
+	a.expectAck(t, 6)
+	waitFor(t, finished, "result")
+
+	// A resent result is dropped, but acknowledged so the agent stops resending.
+	a.sendID(t, 6, models.MsgJobResult, models.JobResult{JobID: 42, Status: models.JobStatusSuccess})
+	a.sendID(t, 7, models.MsgJobResult, models.JobResult{JobID: 42, Status: models.JobStatusSuccess})
+	a.expectAck(t, 7)
+	f.store.AssertNumberOfCalls(t, "FinishJob", 1)
+}

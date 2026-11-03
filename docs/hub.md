@@ -43,13 +43,17 @@ Server yeniden başlarsa agent bağlantıyı tekrar kurar, çalışan job devam 
 
 Agent bir işi reddederse (`job_rejected`) job tekrar kuyruğa alınır. Agent bir sonuç bildirene ya da yeniden bağlanana kadar yeni iş almaz. Bu, "meşgul agent'a sürekli iş gönderip reddedilme" döngüsünü önler.
 
+## Onaylı teslim
+
+Hub agent'tan gelen her numaralı mesajı işledikten sonra (yazdıktan ya da bilerek attıktan sonra) onaylar. Writer goroutine'i yoğunlukta onayları birleştirir ve en son işlenen `id` için tek bir `ack` gönderir. Agent onaylanmamış mesajları yeni bağlantıda tekrar gönderir. Ayrıntılar [agent.md](agent.md#onaylı-teslim) dosyasında.
+
 ## Graceful shutdown
 
 WebSocket kütüphanesinin `Close` metodu, kapanış el sıkışmasını beklerken karşıdan gelen veri mesajlarını **okuyup atar**. Hub bağlantıyı kendisi kapatsaydı, agent'ın o anda gönderdiği log ve sonuçlar kaybolurdu. Bu yüzden kapanış şöyle işler:
 
 1. Hub her agent'a `server_closing` gönderir.
 2. Agent o an yazdığı mesajı bitirir, outbox'tan yeni mesaj almayı bırakır ve bağlantıyı **kendisi** kapatır.
-3. Hub, agent'ın kapanış çerçevesine kadar gelen her mesajı işler. Gönderilmemiş mesajlar agent'ın outbox'ında kalır ve yeni server'a iletilir.
+3. Hub, agent'ın kapanış çerçevesine kadar gelen her mesajı işler ve onaylar. Gönderilmemiş ya da onaylanmamış mesajlar agent'ın outbox'ında kalır ve yeni server'a iletilir.
 4. Bunu yapmayan (eski) bir agent'ın bağlantısı 5 sn sonra zorla kapatılır (`WithDrainTimeout`).
 
 ## Canlılık ve lease
@@ -68,7 +72,6 @@ Bütün zamanlar veritabanının saatine göre hesaplanır (`now()`). Server'lar
 
 ## Bilinen sınırlamalar (Faz 2)
 
-- **Ack yok.** Ağ aniden koparsa, gönderilmekte olan bir mesaj kaybolabilir. Graceful shutdown bu durumu kapsamaz, onaylı teslim (ack) gerekir.
 - Her log parçası ayrı bir `INSERT` ile yazılır. Yoğun log üreten job'larda toplu yazma (batch) gerekebilir.
 
 ## Testler

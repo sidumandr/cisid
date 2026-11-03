@@ -23,12 +23,26 @@ const (
 	// stops sending and closes the connection itself, so every message it
 	// sent before is processed; the rest waits for the next connection.
 	MsgServerClosing MessageType = "server_closing"
+	// MsgAck acknowledges, cumulatively, every agent message up to an ID.
+	MsgAck MessageType = "ack"
 )
 
 // Message is the envelope for every WebSocket message.
+//
+// ID numbers the job_log, job_result and job_rejected messages of an agent
+// process, increasing in the order they are sent. The agent keeps each one
+// until the server acknowledges it and sends unacknowledged ones again after
+// reconnecting, so the server must handle duplicates.
 type Message struct {
+	ID      int64           `json:"id,omitempty"`
 	Type    MessageType     `json:"type"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// Ack is the payload of MsgAck: the agent may forget every message with an
+// ID up to and including ID.
+type Ack struct {
+	ID int64 `json:"id"`
 }
 
 // NewMessage encodes payload into a Message of type t.

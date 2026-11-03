@@ -21,8 +21,10 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 
 ```json
-{"type": "<mesaj tipi>", "payload": { ... }}
+{"id": 17, "type": "<mesaj tipi>", "payload": { ... }}
 ```
+
+`id` sadece agent'ın gönderdiği `job_log`, `job_result` ve `job_rejected` mesajlarında bulunur (bkz. [Onaylı teslim](#onaylı-teslim)).
 
 | Tip | Yön | Payload |
 |---|---|---|
@@ -31,6 +33,7 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
 | `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |
+| `ack` | server → agent | `{"id":17}`. 17 ve öncesindeki bütün mesajlar işlendi |
 | `server_closing` | server → agent | `{}`. Server kapanıyor: agent göndermeyi bırakır ve bağlantıyı kendisi kapatır (bkz. [hub.md](hub.md#graceful-shutdown)) |
 
 `seq` her job içinde 1'den başlar ve her log parçasında bir artar. Server sıralamayı ve kayıp parçaları (boşlukları) bununla tespit edebilir.
@@ -57,8 +60,21 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 - Bağlantı koparsa ya da kurulamazsa agent **exponential backoff + jitter** ile tekrar dener. Bekleme süresi 1 sn'den başlar, her denemede ikiye katlanır ve en fazla 1 dk olur. Gerçek bekleme `[d/2, d]` aralığında rastgele seçilir.
 - Başarılı bir bağlantıdan sonra backoff sıfırlanır.
 - Job'lar bağlantıya değil agent'ın yaşam süresine bağlıdır. Bağlantı koparsa çalışan job devam eder.
-- Giden mesajlar bağlantılar arasında yaşayan bir **outbox** kuyruğunda (4096 mesaj) bekler. Kopukluk sırasında üretilen loglar ve sonuçlar yeniden bağlanınca gönderilir.
-- Kuyruk dolarsa yeni **log** parçaları atılır, job yavaşlamaz ve atılan parçalar `seq` boşluğu olarak görünür. **Sonuç** mesajları atılmaz, kuyrukta yer açılmasını bekler.
+- Giden mesajlar bağlantılar arasında yaşayan bir **outbox**'ta bekler. Outbox en fazla 4096 bekleyen ya da onaylanmamış mesaj tutar. Kopukluk sırasında üretilen loglar ve sonuçlar yeniden bağlanınca gönderilir.
+- Outbox dolarsa yeni **log** parçaları atılır, job yavaşlamaz ve atılan parçalar `seq` boşluğu olarak görünür. **Sonuç** mesajları atılmaz, yer açılmasını bekler.
+
+## Onaylı teslim
+
+- Agent her mesaja, gönderdiği anda artan bir `id` verir. Bu yüzden `id` sırası gönderim sırasıyla aynıdır.
+- Mesaj, server `ack` ile onaylayana kadar outbox'ta tutulur. `ack` kümülatiftir: `{"id":17}` 17 ve öncesindeki bütün mesajları onaylar.
+- Bağlantı nasıl koparsa kopsun (ağ hatası, server çökmesi) onaylanmamış mesajlar yeni bağlantıda önce ve aynı `id` ile tekrar gönderilir.
+- Server tekrarlara karşı güvenlidir:
+  - Log parçaları `(job_id, seq)` anahtarıyla bir kez yazılır.
+  - İkinci kez gelen sonuç ya da ret yok sayılır ve yine onaylanır.
+- Sonucu henüz onaylanmamış job hello'da `running_job_id` olarak bildirilmeye devam eder.
+- Kapanışta `FlushTimeout` boyunca bütün mesajların **onaylanması** beklenir.
+
+`TestIntegrationLogsSurviveNetworkFailures`, 300 satırlık log akışı sırasında TCP bağlantısını üç kez keser ve her parçanın sırayla tam bir kez yazıldığını doğrular.
 
 ## Eşzamanlılık
 
@@ -81,7 +97,6 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 
 ## Bilinen sınırlamalar (Faz 2)
 
-- Mesajlar onaylı (ack) teslim edilmez. Ağ aniden koparken yazılan mesaj kaybolabilir. Server'ın planlı kapanışında kayıp olmaz (`server_closing`).
 - Agent 5 dakikadan (lease) uzun süre bağlanamazsa job'u başka bir agent'a verilir. Geri döndüğünde ilk job'un sonucu atılır (bkz. [hub.md](hub.md#canlılık-ve-lease)).
 - Kimlik doğrulama yok (Faz 4).
 
@@ -101,6 +116,8 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 | `TestAgentIgnoresUnknownAndMalformedMessages` | Bozuk ya da bilinmeyen mesajlar agent'ı düşürmez |
 | `TestAgentHelloReportsUndeliveredResult` | Sonucu gönderilememiş job, yeniden bağlanınca hello'da bildirilir |
 | `TestAgentClosesConnectionWhenServerDrains` | `server_closing` gelince agent temiz kapatır ve yeniden bağlanır |
+| `TestAgentResendsUnacknowledgedMessages` | Onaylanmamış log ve sonuç yeni bağlantıda aynı `id` ile tekrar gönderilir |
+| `TestOutbox*` | Kümülatif ack, outbox sınırı |
 | `TestBackoff*` | Büyüme, üst sınır, overflow, jitter aralığı |
 | `TestDockerIntegrationJob` | Gerçek Docker: adımlar workspace paylaşır, exit kodu raporlanır |
 

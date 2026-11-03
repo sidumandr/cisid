@@ -63,6 +63,8 @@ type fakeServer struct {
 	// reject, if set, is called for every handshake; returning true answers 503.
 	reject func(attempt int) bool
 	dials  atomic.Int32
+	// noAck stops the server from acknowledging messages.
+	noAck atomic.Bool
 }
 
 type serverConn struct {
@@ -98,8 +100,13 @@ func newFakeServer(t *testing.T) *fakeServer {
 				return
 			}
 			var msg models.Message
-			if assert.NoError(t, json.Unmarshal(data, &msg)) {
-				sc.msgs <- msg
+			if !assert.NoError(t, json.Unmarshal(data, &msg)) {
+				continue
+			}
+			sc.msgs <- msg
+			if msg.ID > 0 && !fs.noAck.Load() {
+				ack, _ := json.Marshal(models.Message{Type: models.MsgAck, Payload: []byte(fmt.Sprintf(`{"id":%d}`, msg.ID))})
+				_ = conn.Write(r.Context(), websocket.MessageText, ack)
 			}
 		}
 	}))
@@ -559,4 +566,67 @@ func TestAgentClosesConnectionWhenServerDrains(t *testing.T) {
 		t.Fatal("agent did not close the connection")
 	}
 	fs.accept(t) // and reconnects
+}
+
+func TestAgentResendsUnacknowledgedMessages(t *testing.T) {
+	fs := newFakeServer(t)
+	fs.noAck.Store(true)
+	r := &mockRunner{}
+	r.On("Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(writeTo("compiling\n", "")).Return(0, nil).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
+
+	startAgent(t, fs, r)
+	a := lastStarted
+	first := fs.accept(t)
+	first.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID: 31,
+		Steps: []models.StepSpec{{Name: "s", Image: "alpine:3.22", Commands: []string{"make"}}},
+	})
+
+	// The server receives the log and the result but never acknowledges them.
+	sent := []models.Message{first.next(t), first.next(t)}
+	assert.Equal(t, []int64{1, 2}, []int64{sent[0].ID, sent[1].ID}, "IDs follow the send order")
+	assert.Equal(t, []models.MessageType{models.MsgJobLog, models.MsgJobResult}, []models.MessageType{sent[0].Type, sent[1].Type})
+	require.NoError(t, first.conn.Close(websocket.StatusGoingAway, "server crashed"))
+
+	fs.noAck.Store(false)
+	second := fs.accept(t)
+	assert.Equal(t, int64(31), second.hello.RunningJobID, "an unacknowledged result keeps the job reported")
+	resent := []models.Message{second.next(t), second.next(t)}
+	assert.Equal(t, sent, resent, "unacknowledged messages are sent again, unchanged")
+
+	require.Eventually(t, func() bool { return a.out.pending.Load() == 0 && a.runningJob.Load() == 0 },
+		testTimeout, 5*time.Millisecond, "acknowledged messages are forgotten")
+}
+
+func TestOutboxAck(t *testing.T) {
+	o := newOutbox(10)
+	for _, typ := range []models.MessageType{models.MsgJobLog, models.MsgJobLog, models.MsgJobResult} {
+		require.True(t, o.tryPut(models.Message{Type: typ}))
+	}
+	for range 3 {
+		o.take(<-o.ch)
+	}
+	assert.EqualValues(t, 3, o.pending.Load())
+
+	acked := o.ack(2)
+	assert.Len(t, acked, 2)
+	assert.EqualValues(t, 1, o.pending.Load())
+	assert.Equal(t, int64(3), o.unacked()[0].ID)
+
+	assert.Empty(t, o.ack(2), "acks are cumulative and idempotent")
+	assert.Len(t, o.ack(99), 1)
+	assert.Zero(t, o.pending.Load())
+}
+
+func TestOutboxDropsLogsWhenFull(t *testing.T) {
+	o := newOutbox(2)
+	require.True(t, o.tryPut(models.Message{Type: models.MsgJobLog}))
+	o.take(<-o.ch) // sent but unacknowledged still counts
+	require.True(t, o.tryPut(models.Message{Type: models.MsgJobLog}))
+
+	assert.False(t, o.tryPut(models.Message{Type: models.MsgJobLog}))
+	assert.EqualValues(t, 1, o.dropped.Load())
+	assert.EqualValues(t, 2, o.pending.Load())
 }

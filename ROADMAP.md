@@ -23,7 +23,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] Server → istemci log yayını (WebSocket) ve log okuma API'si.
 - [x] Agent reconnect: exponential backoff + jitter.
 - [x] Job lease + heartbeat: hiç geri dönmeyen agent'ın işi lease dolunca tekrar kuyruğa döner, geri dönen agent işini geri alır.
-- [ ] Mesajların onaylı (ack) teslimi. Planlı server kapanışında kayıp `server_closing` ile önlendi, ani ağ kopmaları için ack gerekiyor.
+- [x] Mesajların onaylı (ack) teslimi: kopan bağlantıda onaylanmamış mesajlar tekrar gönderilir, server tekrarlara karşı güvenlidir.
 - [x] Mesaj protokolü tipleri `pkg/models` altında.
 
 ## Faz 3 — Features

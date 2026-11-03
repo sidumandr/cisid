@@ -2,8 +2,10 @@ package hub
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,14 +25,16 @@ import (
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
-// fakeRunner stands in for Docker. Each Run writes the step's commit SHA and
-// exits with the next queued exit code; if gate is set, Run first waits on it.
+// fakeRunner stands in for Docker. Each Run writes the step's commit SHA,
+// then lines more numbered lines, and exits with the next queued exit code;
+// if gate is set, Run first waits on it.
 type fakeRunner struct {
 	mu      sync.Mutex
 	codes   []int
 	steps   []runner.Step
 	gate    chan struct{}
 	started chan struct{}
+	lines   int
 }
 
 func (r *fakeRunner) Run(ctx context.Context, step runner.Step, stdout, stderr io.Writer) (int, error) {
@@ -40,10 +44,14 @@ func (r *fakeRunner) Run(ctx context.Context, step runner.Step, stdout, stderr i
 	if len(r.codes) > 0 {
 		code, r.codes = r.codes[0], r.codes[1:]
 	}
-	gate, started := r.gate, r.started
+	gate, started, lines := r.gate, r.started, r.lines
 	r.mu.Unlock()
 
 	_, _ = io.WriteString(stdout, "checked out "+step.Env["CISID_COMMIT_SHA"]+"\n")
+	for i := range lines {
+		_, _ = fmt.Fprintf(stdout, "line %03d\n", i+1)
+		time.Sleep(2 * time.Millisecond)
+	}
 	if started != nil {
 		close(started)
 	}
@@ -64,6 +72,7 @@ func (r *fakeRunner) RemoveVolume(context.Context, string) error { return nil }
 type system struct {
 	store  *db.Store
 	runner *fakeRunner
+	proxy  *tcpProxy // between the agent and the server
 	hub    atomic.Pointer[Hub]
 	stop   context.CancelFunc
 	done   chan struct{}
@@ -81,9 +90,10 @@ func newSystem(t *testing.T, r *fakeRunner) *system {
 		s.hub.Load().ServeHTTP(w, req)
 	}))
 	t.Cleanup(srv.Close)
+	s.proxy = newTCPProxy(t, strings.TrimPrefix(srv.URL, "http://"))
 
 	a, err := agent.New(agent.Config{
-		ServerURL:    "ws" + strings.TrimPrefix(srv.URL, "http"),
+		ServerURL:    "ws://" + s.proxy.addr(),
 		Name:         "it-agent",
 		MinBackoff:   10 * time.Millisecond,
 		MaxBackoff:   50 * time.Millisecond,
@@ -247,4 +257,92 @@ func TestIntegrationJobOfVanishedAgentIsRequeued(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.JobStatusRunning, job.Status)
 	assert.Equal(t, "live-agent", job.Agent)
+}
+
+// tcpProxy forwards TCP connections to target. cut drops every connection
+// at once, like a network failure, without a WebSocket close handshake.
+type tcpProxy struct {
+	ln     net.Listener
+	target string
+	mu     sync.Mutex
+	conns  []net.Conn
+}
+
+func newTCPProxy(t *testing.T, target string) *tcpProxy {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	p := &tcpProxy{ln: ln, target: target}
+	go p.serve()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		p.cut()
+	})
+	return p
+}
+
+func (p *tcpProxy) addr() string { return p.ln.Addr().String() }
+
+func (p *tcpProxy) serve() {
+	for {
+		down, err := p.ln.Accept()
+		if err != nil {
+			return
+		}
+		up, err := net.Dial("tcp", p.target)
+		if err != nil {
+			_ = down.Close()
+			continue
+		}
+		p.mu.Lock()
+		p.conns = append(p.conns, down, up)
+		p.mu.Unlock()
+		pipe := func(dst, src net.Conn) {
+			_, _ = io.Copy(dst, src)
+			_ = dst.Close()
+			_ = src.Close()
+		}
+		go pipe(up, down)
+		go pipe(down, up)
+	}
+}
+
+func (p *tcpProxy) cut() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, c := range p.conns {
+		_ = c.Close()
+	}
+	p.conns = nil
+}
+
+func TestIntegrationLogsSurviveNetworkFailures(t *testing.T) {
+	const lines = 300
+	r := &fakeRunner{lines: lines}
+	s := newSystem(t, r)
+	const sha = "5555555555555555555555555555555555555555"
+
+	id := s.queue(t, sha)
+
+	// Drop the connection a few times while the job streams its logs.
+	cuts := make(chan struct{})
+	go func() {
+		defer close(cuts)
+		for range 3 {
+			time.Sleep(120 * time.Millisecond)
+			s.proxy.cut()
+		}
+	}()
+
+	job := s.waitFinished(t, id)
+	<-cuts
+	assert.Equal(t, models.JobStatusSuccess, job.Status)
+
+	logs, err := s.store.JobLogs(t.Context(), id)
+	require.NoError(t, err)
+	require.Len(t, logs, lines+1, "no log chunk is lost")
+	for i, l := range logs {
+		require.Equal(t, int64(i+1), l.Seq, "chunks are contiguous")
+	}
+	assert.Equal(t, fmt.Sprintf("line %03d\n", lines), logs[lines].Data)
 }

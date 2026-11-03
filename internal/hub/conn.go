@@ -151,11 +151,12 @@ func (h *Hub) register(ctx context.Context, hello models.AgentHello) (*agentConn
 	}
 
 	a := &agentConn{
-		name:  hello.Name,
-		out:   make(chan models.Message, outBuffer),
-		kick:  make(chan struct{}),
-		drain: make(chan struct{}),
-		jobID: hello.RunningJobID,
+		name:     hello.Name,
+		out:      make(chan models.Message, outBuffer),
+		kick:     make(chan struct{}),
+		drain:    make(chan struct{}),
+		ackReady: make(chan struct{}, 1),
+		jobID:    hello.RunningJobID,
 	}
 
 	h.mu.Lock()
@@ -184,17 +185,32 @@ func (h *Hub) unregister(a *agentConn) {
 	}
 }
 
-// writeLoop is the only goroutine that sends messages on conn. It also
+// writeLoop is the only goroutine that sends messages on conn. It
+// acknowledges processed agent messages, coalescing acks under load, and
 // pings the agent so dead connections are noticed.
 func (h *Hub) writeLoop(ctx context.Context, conn *websocket.Conn, a *agentConn) error {
 	ping := time.NewTicker(pingInterval)
 	defer ping.Stop()
 
 	drain := a.drain
+	var acked int64
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-a.ackReady:
+			id := a.processed.Load()
+			if id <= acked {
+				continue
+			}
+			msg, err := models.NewMessage(models.MsgAck, models.Ack{ID: id})
+			if err != nil {
+				return err
+			}
+			if err := write(ctx, conn, msg); err != nil {
+				return err
+			}
+			acked = id
 		case <-drain:
 			drain = nil // announce once
 			if err := write(ctx, conn, models.Message{Type: models.MsgServerClosing, Payload: []byte("{}")}); err != nil {
@@ -240,32 +256,45 @@ func (h *Hub) readLoop(ctx context.Context, conn *websocket.Conn, a *agentConn) 
 			h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
 			continue
 		}
+		h.handle(ctx, a, msg)
 
-		switch msg.Type {
-		case models.MsgJobLog:
-			var l models.JobLog
-			if err := msg.Decode(&l); err != nil {
-				h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
-				continue
+		// Acknowledge once handled (stored, or deliberately dropped), so the
+		// agent can forget it. Duplicates are acknowledged again.
+		if msg.ID > 0 {
+			a.processed.Store(msg.ID)
+			select {
+			case a.ackReady <- struct{}{}:
+			default:
 			}
-			h.handleLog(ctx, a, l)
-		case models.MsgJobResult:
-			var res models.JobResult
-			if err := msg.Decode(&res); err != nil {
-				h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
-				continue
-			}
-			h.handleResult(ctx, a, res)
-		case models.MsgJobRejected:
-			var rej models.JobRejected
-			if err := msg.Decode(&rej); err != nil {
-				h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
-				continue
-			}
-			h.handleRejected(ctx, a, rej)
-		default:
-			h.log.DebugContext(ctx, "ignoring unknown message", "agent", a.name, "type", msg.Type)
 		}
+	}
+}
+
+func (h *Hub) handle(ctx context.Context, a *agentConn, msg models.Message) {
+	switch msg.Type {
+	case models.MsgJobLog:
+		var l models.JobLog
+		if err := msg.Decode(&l); err != nil {
+			h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
+			return
+		}
+		h.handleLog(ctx, a, l)
+	case models.MsgJobResult:
+		var res models.JobResult
+		if err := msg.Decode(&res); err != nil {
+			h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
+			return
+		}
+		h.handleResult(ctx, a, res)
+	case models.MsgJobRejected:
+		var rej models.JobRejected
+		if err := msg.Decode(&rej); err != nil {
+			h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
+			return
+		}
+		h.handleRejected(ctx, a, rej)
+	default:
+		h.log.DebugContext(ctx, "ignoring unknown message", "agent", a.name, "type", msg.Type)
 	}
 }
 
@@ -284,9 +313,15 @@ func (h *Hub) handleResult(ctx context.Context, a *agentConn, res models.JobResu
 		h.log.WarnContext(ctx, "dropping result for a job the agent does not hold", "agent", a.name, "job_id", res.JobID)
 		return
 	}
-	if err := h.store.FinishJob(ctx, a.name, res); err != nil {
+	err := h.store.FinishJob(ctx, a.name, res)
+	switch {
+	case errors.Is(err, db.ErrJobConflict):
+		// A resent result for a job already finished, or one that moved to
+		// another agent after its lease expired.
+		h.log.InfoContext(ctx, "ignoring result for a job no longer running here", "job_id", res.JobID, "agent", a.name)
+	case err != nil:
 		h.log.ErrorContext(ctx, "store job result", "job_id", res.JobID, "error", err)
-	} else {
+	default:
 		h.log.InfoContext(ctx, "job finished", "job_id", res.JobID, "agent", a.name,
 			"status", res.Status, "exit_code", res.ExitCode)
 	}
