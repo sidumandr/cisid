@@ -182,9 +182,11 @@ func TestRunEndToEnd(t *testing.T) {
 
 	conn, err := pgx.Connect(t.Context(), dbURL)
 	require.NoError(t, err)
-	defer conn.Close(context.Background())
+	// Cleanups run last-in first-out: delete the row, then close the connection.
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 	t.Cleanup(func() {
-		_, _ = conn.Exec(context.Background(), "DELETE FROM jobs WHERE id = $1", queued.JobID)
+		_, err := conn.Exec(context.Background(), "DELETE FROM jobs WHERE id = $1", queued.JobID)
+		assert.NoError(t, err)
 	})
 	var branch, status string
 	require.NoError(t, conn.QueryRow(t.Context(),
