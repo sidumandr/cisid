@@ -33,7 +33,8 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] Secret yönetimi (şifreli saklama, env olarak enjekte, loglarda maskeleme).
 - [ ] Branch / event filtreleri, matrix build.
 - [x] GitHub commit status raporlama ([docs/commit-status.md](docs/commit-status.md)).
-- [ ] Job iptal / yeniden çalıştırma API'si, basit web arayüzü veya CLI.
+- [x] Job iptal / yeniden çalıştırma API'si (token korumalı).
+- [ ] Basit web arayüzü.
 
 ## Faz 4 — Production
 

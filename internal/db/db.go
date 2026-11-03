@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,19 @@ var (
 // JobEventsChannel is the PostgreSQL NOTIFY channel on which the ID of a
 // job is published whenever it gets new log output or finishes.
 const JobEventsChannel = "cisid_job_events"
+
+// requeueSet puts a job back into the queue, or cancels it if a cancel was
+// requested while it ran: running it again would defeat the request.
+const requeueSet = `
+	status = CASE WHEN cancel_requested_at IS NULL THEN 'pending' ELSE 'canceled' END,
+	agent = CASE WHEN cancel_requested_at IS NULL THEN NULL ELSE agent END,
+	started_at = CASE WHEN cancel_requested_at IS NULL THEN NULL ELSE started_at END,
+	finished_at = CASE WHEN cancel_requested_at IS NULL THEN NULL ELSE now() END,
+	error = CASE WHEN cancel_requested_at IS NULL THEN error ELSE '` + CancelReason + `' END,
+	lease_expires_at = NULL, updated_at = now()`
+
+// CancelReason is the error recorded for a job canceled through the API.
+const CancelReason = "canceled by request"
 
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
@@ -118,7 +132,7 @@ func (s *Store) ClaimJob(ctx context.Context, agent string, lease time.Duration)
 func (s *Store) RequeueJob(ctx context.Context, id int64, agent string) error {
 	const q = `
 		UPDATE jobs
-		SET status = 'pending', agent = NULL, started_at = NULL, lease_expires_at = NULL, updated_at = now()
+		SET ` + requeueSet + `
 		WHERE id = $1 AND status = 'running' AND agent = $2`
 
 	tag, err := s.pool.Exec(ctx, q, id, agent)
@@ -137,7 +151,7 @@ func (s *Store) RequeueJob(ctx context.Context, id int64, agent string) error {
 func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error) {
 	const q = `
 		UPDATE jobs
-		SET status = 'pending', agent = NULL, started_at = NULL, lease_expires_at = NULL, updated_at = now()
+		SET ` + requeueSet + `
 		WHERE status = 'running' AND agent = $1 AND id <> $2`
 
 	tag, err := s.pool.Exec(ctx, q, agent, keep)
@@ -145,6 +159,75 @@ func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) 
 		return 0, fmt.Errorf("requeue jobs of %s: %w", agent, err)
 	}
 	return int(tag.RowsAffected()), nil
+}
+
+// CancelJob cancels a pending job at once, or asks for a running job to be
+// stopped by its agent (see CancelRequestedJobs). It returns the job after
+// the change, ErrJobNotFound, or ErrJobConflict if the job already finished.
+func (s *Store) CancelJob(ctx context.Context, id int64) (models.Job, error) {
+	q := `
+		UPDATE jobs SET
+			status = CASE WHEN status = 'pending' THEN 'canceled' ELSE status END,
+			finished_at = CASE WHEN status = 'pending' THEN now() ELSE finished_at END,
+			error = CASE WHEN status = 'pending' THEN '` + CancelReason + `' ELSE error END,
+			cancel_requested_at = COALESCE(cancel_requested_at, now()),
+			updated_at = now()
+		WHERE id = $1 AND status IN ('pending', 'running')
+		RETURNING ` + jobColumns
+
+	job, err := scanJob(s.pool.QueryRow(ctx, q, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		if _, err := s.GetJob(ctx, id); err != nil {
+			return models.Job{}, err
+		}
+		return models.Job{}, fmt.Errorf("%w: job %d already finished", ErrJobConflict, id)
+	}
+	if err != nil {
+		return models.Job{}, fmt.Errorf("cancel job %d: %w", id, err)
+	}
+	if _, err := s.pool.Exec(ctx, "SELECT pg_notify($1, $2)", JobEventsChannel, strconv.FormatInt(id, 10)); err != nil {
+		return job, fmt.Errorf("announce canceled job %d: %w", id, err)
+	}
+	return job, nil
+}
+
+// CancelRequestedJobs returns the running jobs of the given agents that
+// should be stopped.
+func (s *Store) CancelRequestedJobs(ctx context.Context, agents []string) ([]models.Job, error) {
+	if len(agents) == 0 {
+		return nil, nil
+	}
+	q := "SELECT " + jobColumns + ` FROM jobs
+		WHERE status = 'running' AND cancel_requested_at IS NOT NULL AND agent = ANY($1)
+		ORDER BY id`
+
+	rows, err := s.pool.Query(ctx, q, agents)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs to cancel: %w", err)
+	}
+	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (models.Job, error) { return scanJob(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list jobs to cancel: %w", err)
+	}
+	return jobs, nil
+}
+
+// RerunJob queues a new job for the same commit as job id and returns it.
+func (s *Store) RerunJob(ctx context.Context, id int64) (models.Job, error) {
+	const q = `
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status)
+		SELECT repo, clone_url, branch, commit_sha, 'pending' FROM jobs WHERE id = $1
+		RETURNING id`
+
+	var newID int64
+	err := s.pool.QueryRow(ctx, q, id).Scan(&newID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.Job{}, fmt.Errorf("%w: %d", ErrJobNotFound, id)
+	}
+	if err != nil {
+		return models.Job{}, fmt.Errorf("rerun job %d: %w", id, err)
+	}
+	return s.GetJob(ctx, newID)
 }
 
 // ListJobs returns the most recent jobs, newest first.
@@ -211,7 +294,7 @@ func (s *Store) RenewLeases(ctx context.Context, agents []string, lease time.Dur
 func (s *Store) RequeueExpired(ctx context.Context) ([]int64, error) {
 	const q = `
 		UPDATE jobs
-		SET status = 'pending', agent = NULL, started_at = NULL, lease_expires_at = NULL, updated_at = now()
+		SET ` + requeueSet + `
 		WHERE status = 'running' AND lease_expires_at < now()
 		RETURNING id`
 

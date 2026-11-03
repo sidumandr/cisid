@@ -33,6 +33,7 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
 | `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |
+| `job_cancel` | server → agent | `{"job_id":42}`. Job'u durdur, sonucu `canceled` ve `canceled by request` olarak raporla |
 | `ack` | server → agent | `{"id":17}`. 17 ve öncesindeki bütün mesajlar işlendi |
 | `server_closing` | server → agent | `{}`. Server kapanıyor: agent göndermeyi bırakır ve bağlantıyı kendisi kapatır (bkz. [hub.md](hub.md#graceful-shutdown)) |
 

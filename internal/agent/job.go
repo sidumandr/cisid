@@ -39,10 +39,37 @@ func (a *Agent) executeJobs(ctx context.Context, jobs <-chan models.JobAssignmen
 			}
 			return
 		case job := <-jobs:
-			a.report(ctx, a.execute(ctx, job))
+			jobCtx := a.startJob(ctx, job.JobID)
+			res := a.execute(jobCtx, job)
+			a.endJob(job.JobID)
+			a.report(ctx, res)
 			a.busy.Store(false)
 		}
 	}
+}
+
+// startJob returns the context job jobID runs under; canceling it with a
+// cause stops the job. A cancel that arrived before the start applies now.
+func (a *Agent) startJob(ctx context.Context, jobID int64) context.Context {
+	jobCtx, cancel := context.WithCancelCause(ctx)
+	a.jobMu.Lock()
+	defer a.jobMu.Unlock()
+	a.jobID, a.cancelJob = jobID, cancel
+	if a.cancelLater[jobID] {
+		delete(a.cancelLater, jobID)
+		cancel(errCanceledByServer)
+	}
+	return jobCtx
+}
+
+func (a *Agent) endJob(jobID int64) {
+	a.jobMu.Lock()
+	defer a.jobMu.Unlock()
+	if a.cancelJob != nil {
+		a.cancelJob(nil)
+	}
+	a.jobID, a.cancelJob = 0, nil
+	delete(a.cancelLater, jobID)
 }
 
 // execute runs the steps of job in order on a shared workspace volume and
@@ -70,11 +97,9 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 		res.FailedStep, res.ExitCode = &i, code
 		switch {
 		case ctx.Err() != nil:
+			// The cause tells a cancel request from an agent shutdown.
 			res.Status = models.JobStatusCanceled
-			res.Error = ctx.Err().Error()
-			if err != nil {
-				res.Error = err.Error()
-			}
+			res.Error = context.Cause(ctx).Error()
 		case err != nil:
 			res.Status, res.Error = models.JobStatusFailed, err.Error()
 		default:

@@ -25,6 +25,8 @@ const (
 	MsgServerClosing MessageType = "server_closing"
 	// MsgAck acknowledges, cumulatively, every agent message up to an ID.
 	MsgAck MessageType = "ack"
+	// MsgJobCancel asks an agent to stop a job; it reports it as canceled.
+	MsgJobCancel MessageType = "job_cancel"
 )
 
 // Message is the envelope for every WebSocket message.
@@ -37,6 +39,11 @@ type Message struct {
 	ID      int64           `json:"id,omitempty"`
 	Type    MessageType     `json:"type"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// JobCancel is the payload of MsgJobCancel.
+type JobCancel struct {
+	JobID int64 `json:"job_id"`
 }
 
 // Ack is the payload of MsgAck: the agent may forget every message with an

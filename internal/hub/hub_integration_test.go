@@ -346,3 +346,19 @@ func TestIntegrationLogsSurviveNetworkFailures(t *testing.T) {
 	}
 	assert.Equal(t, fmt.Sprintf("line %03d\n", lines), logs[lines].Data)
 }
+
+func TestIntegrationCancelRunningJob(t *testing.T) {
+	r := &fakeRunner{gate: make(chan struct{}), started: make(chan struct{})}
+	s := newSystem(t, r)
+	id := s.queue(t, "7777777777777777777777777777777777777777")
+	<-r.started
+
+	_, err := s.store.CancelJob(t.Context(), id)
+	require.NoError(t, err)
+	s.hub.Load().Wake()
+
+	job := s.waitFinished(t, id)
+	assert.Equal(t, models.JobStatusCanceled, job.Status)
+	assert.Equal(t, db.CancelReason, job.Error)
+	assert.Equal(t, 0, *job.FailedStep)
+}

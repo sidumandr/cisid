@@ -38,6 +38,9 @@ var ErrInvalidConfig = errors.New("invalid agent config")
 // errServerClosing ends a session the server asked to close.
 var errServerClosing = errors.New("server is shutting down")
 
+// errCanceledByServer is the cause of a job stopped through the API.
+var errCanceledByServer = errors.New("canceled by request")
+
 // StepRunner runs step containers. *runner.DockerRunner satisfies it.
 type StepRunner interface {
 	Run(ctx context.Context, step runner.Step, stdout, stderr io.Writer) (int, error)
@@ -70,6 +73,13 @@ type Agent struct {
 	// runningJob is the job accepted last whose result the server has not
 	// yet acknowledged; 0 when there is none. Reported in the hello.
 	runningJob atomic.Int64
+
+	// jobMu guards the job being executed and cancel requests for jobs
+	// accepted but not started yet.
+	jobMu       sync.Mutex
+	jobID       int64
+	cancelJob   context.CancelCauseFunc
+	cancelLater map[int64]bool
 }
 
 // New validates cfg and returns an Agent. A nil log uses slog.Default().
@@ -97,7 +107,7 @@ func New(cfg Config, r StepRunner, log *slog.Logger) (*Agent, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Agent{cfg: cfg, runner: r, log: log, out: newOutbox(outboxSize)}, nil
+	return &Agent{cfg: cfg, runner: r, log: log, out: newOutbox(outboxSize), cancelLater: map[int64]bool{}}, nil
 }
 
 // Run connects to the server and runs assigned jobs until ctx is canceled,
@@ -261,6 +271,13 @@ func (a *Agent) readLoop(ctx context.Context, conn *websocket.Conn, stopping <-c
 		case models.MsgServerClosing:
 			// Keep reading: the close handshake needs a reader.
 			drain()
+		case models.MsgJobCancel:
+			var c models.JobCancel
+			if err := msg.Decode(&c); err != nil {
+				a.log.WarnContext(ctx, "ignoring malformed cancel request", "error", err)
+				continue
+			}
+			a.cancel(ctx, c.JobID)
 		case models.MsgAck:
 			var ack models.Ack
 			if err := msg.Decode(&ack); err != nil {
@@ -271,6 +288,22 @@ func (a *Agent) readLoop(ctx context.Context, conn *websocket.Conn, stopping <-c
 		default:
 			a.log.DebugContext(ctx, "ignoring unknown message", "type", msg.Type)
 		}
+	}
+}
+
+// cancel stops job jobID if it is running, or marks it to be stopped as
+// soon as it starts if it was accepted but not started yet.
+func (a *Agent) cancel(ctx context.Context, jobID int64) {
+	a.jobMu.Lock()
+	defer a.jobMu.Unlock()
+	switch {
+	case a.jobID == jobID && a.cancelJob != nil:
+		a.log.InfoContext(ctx, "canceling job", "job_id", jobID)
+		a.cancelJob(errCanceledByServer)
+	case a.runningJob.Load() == jobID:
+		a.cancelLater[jobID] = true
+	default:
+		a.log.DebugContext(ctx, "ignoring cancel for a job not held", "job_id", jobID)
 	}
 }
 

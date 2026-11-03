@@ -22,6 +22,7 @@ const (
 	defaultPollInterval = 5 * time.Second
 	defaultDrainTimeout = 5 * time.Second
 	defaultLease        = 5 * time.Minute
+	cancelPollInterval  = 2 * time.Second
 )
 
 // Store is the persistence the hub needs. *db.Store satisfies it.
@@ -30,6 +31,7 @@ type Store interface {
 	RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error)
 	RequeueExpired(ctx context.Context) ([]int64, error)
 	AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error
+	CancelRequestedJobs(ctx context.Context, agents []string) ([]models.Job, error)
 	RequeueJob(ctx context.Context, id int64, agent string) error
 	RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error)
 	FinishJob(ctx context.Context, agent string, res models.JobResult) error
@@ -113,8 +115,9 @@ type agentConn struct {
 	ackReady  chan struct{}
 
 	// Guarded by Hub.mu.
-	jobID   int64 // job the agent is running, 0 when idle
-	blocked bool  // rejected work; no new jobs until it reports a result
+	jobID      int64 // job the agent is running, 0 when idle
+	blocked    bool  // rejected work; no new jobs until it reports a result
+	cancelSent int64 // job a cancel request was last sent for
 }
 
 // New returns a Hub.
@@ -155,30 +158,76 @@ func (h *Hub) Run(ctx context.Context) error {
 	defer tick.Stop()
 	leaseTick := time.NewTicker(h.lease / 3)
 	defer leaseTick.Stop()
+	cancelTick := time.NewTicker(cancelPollInterval)
+	defer cancelTick.Stop()
+
+	h.dispatch(ctx)
 	for {
-		h.dispatch(ctx)
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-h.wake:
+			h.deliverCancels(ctx)
+			h.dispatch(ctx)
 		case <-tick.C:
+			h.dispatch(ctx)
 		case <-leaseTick.C:
 			h.maintainLeases(ctx)
+			h.dispatch(ctx)
+		case <-cancelTick.C:
+			// Cancel requests may come through another server's API.
+			h.deliverCancels(ctx)
 		}
 	}
+}
+
+// deliverCancels sends job_cancel to agents connected here that hold a job
+// with a cancel request, once per job and connection.
+func (h *Hub) deliverCancels(ctx context.Context) {
+	names := h.agentNames()
+	jobs, err := h.store.CancelRequestedJobs(ctx, names)
+	if err != nil {
+		if ctx.Err() == nil {
+			h.log.ErrorContext(ctx, "list jobs to cancel", "error", err)
+		}
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, job := range jobs {
+		a := h.agents[job.Agent]
+		if a == nil || a.jobID != job.ID || a.cancelSent == job.ID {
+			continue
+		}
+		msg, err := models.NewMessage(models.MsgJobCancel, models.JobCancel{JobID: job.ID})
+		if err != nil {
+			continue
+		}
+		select {
+		case a.out <- msg:
+			a.cancelSent = job.ID
+			h.log.InfoContext(ctx, "asked agent to cancel job", "job_id", job.ID, "agent", a.name)
+		default:
+		}
+	}
+}
+
+func (h *Hub) agentNames() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	names := make([]string, 0, len(h.agents))
+	for name := range h.agents {
+		names = append(names, name)
+	}
+	return names
 }
 
 // maintainLeases renews the leases of jobs on agents connected here and
 // requeues jobs whose lease expired, i.e. whose agent has been gone for a
 // whole lease on every server. Requeued jobs are dispatched right after.
 func (h *Hub) maintainLeases(ctx context.Context) {
-	h.mu.Lock()
-	names := make([]string, 0, len(h.agents))
-	for name := range h.agents {
-		names = append(names, name)
-	}
-	h.mu.Unlock()
-
+	names := h.agentNames()
 	if _, err := h.store.RenewLeases(ctx, names, h.lease); err != nil && ctx.Err() == nil {
 		h.log.ErrorContext(ctx, "renew job leases", "error", err)
 	}

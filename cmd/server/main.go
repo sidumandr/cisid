@@ -94,7 +94,12 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 
 	broker := events.New(log)
-	jobsAPI := api.NewJobsAPI(store, broker, log)
+	jobsAPI := api.NewJobsAPI(store, broker, log,
+		api.WithWriteToken(cfg.APIToken),
+		api.WithJobChanged(func(id int64) {
+			agents.Wake() // dispatches reruns and delivers cancels here at once
+			jobChanged(id)
+		}))
 
 	srv := &http.Server{
 		Handler: api.NewRouter(api.Handlers{

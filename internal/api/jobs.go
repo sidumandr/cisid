@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,41 +33,72 @@ type JobReader interface {
 	JobLogsAfter(ctx context.Context, id, after int64, limit int) ([]models.JobLog, error)
 }
 
-var _ JobReader = (*db.Store)(nil)
+// JobStore reads and changes jobs. *db.Store satisfies it.
+type JobStore interface {
+	JobReader
+	CancelJob(ctx context.Context, id int64) (models.Job, error)
+	RerunJob(ctx context.Context, id int64) (models.Job, error)
+}
+
+var _ JobStore = (*db.Store)(nil)
 
 // JobEvents signals that a job may have changed. *events.Broker satisfies it.
 type JobEvents interface {
 	Subscribe(jobID int64) (<-chan struct{}, func())
 }
 
-// JobsAPI serves read access to jobs and their logs:
+// JobsAPIOption configures a JobsAPI.
+type JobsAPIOption func(*JobsAPI)
+
+// WithWriteToken enables the endpoints that change jobs for requests with
+// "Authorization: Bearer <token>". Without a token they answer 403.
+func WithWriteToken(token string) JobsAPIOption {
+	return func(j *JobsAPI) { j.token = token }
+}
+
+// WithJobChanged registers a callback run after a job is canceled or
+// queued again, e.g. to wake the dispatcher. It must not block.
+func WithJobChanged(f func(jobID int64)) JobsAPIOption {
+	return func(j *JobsAPI) { j.changed = f }
+}
+
+// JobsAPI serves jobs and their logs:
 //
-//	GET /api/jobs                    recent jobs, newest first (?limit=, max 200)
-//	GET /api/jobs/{id}               one job
-//	GET /api/jobs/{id}/logs          log chunks (?after=seq), up to 1000 per call
-//	GET /api/jobs/{id}/logs/stream   live logs as server-sent events
+//	GET  /api/jobs                    recent jobs, newest first (?limit=, max 200)
+//	GET  /api/jobs/{id}               one job
+//	GET  /api/jobs/{id}/logs          log chunks (?after=seq), up to 1000 per call
+//	GET  /api/jobs/{id}/logs/stream   live logs as server-sent events
+//	POST /api/jobs/{id}/cancel        cancel a job (needs the write token)
+//	POST /api/jobs/{id}/rerun         queue the job's commit again (needs the write token)
 type JobsAPI struct {
-	store        JobReader
+	store        JobStore
 	events       JobEvents
 	log          *slog.Logger
 	pollInterval time.Duration
+	token        string
+	changed      func(jobID int64)
 
 	closing   chan struct{}
 	closeOnce sync.Once
 }
 
 // NewJobsAPI returns a JobsAPI. A nil log uses slog.Default().
-func NewJobsAPI(store JobReader, events JobEvents, log *slog.Logger) *JobsAPI {
+func NewJobsAPI(store JobStore, events JobEvents, log *slog.Logger, opts ...JobsAPIOption) *JobsAPI {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &JobsAPI{
+	j := &JobsAPI{
 		store:        store,
 		events:       events,
 		log:          log,
 		pollInterval: streamPollInterval,
+		changed:      func(int64) {},
 		closing:      make(chan struct{}),
 	}
+	for _, opt := range opts {
+		opt(j)
+	}
+	return j
 }
 
 // Close ends all open log streams. Register it with
@@ -79,6 +112,75 @@ func (j *JobsAPI) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/jobs/{id}", j.get)
 	mux.HandleFunc("GET /api/jobs/{id}/logs", j.logs)
 	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.stream)
+	mux.HandleFunc("POST /api/jobs/{id}/cancel", j.authorized(j.cancel))
+	mux.HandleFunc("POST /api/jobs/{id}/rerun", j.authorized(j.rerun))
+}
+
+// authorized lets a request through only with the write token.
+func (j *JobsAPI) authorized(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if j.token == "" {
+			writeError(w, http.StatusForbidden, "write API disabled: CISID_API_TOKEN is not set")
+			return
+		}
+		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(j.token)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="cisid"`)
+			writeError(w, http.StatusUnauthorized, "missing or wrong API token")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// cancel cancels a pending job (200) or asks the agent of a running one to
+// stop it (202); the job is returned in both cases.
+func (j *JobsAPI) cancel(w http.ResponseWriter, r *http.Request) {
+	id, ok := jobID(w, r)
+	if !ok {
+		return
+	}
+	job, err := j.store.CancelJob(r.Context(), id)
+	switch {
+	case errors.Is(err, db.ErrJobNotFound):
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	case errors.Is(err, db.ErrJobConflict):
+		writeError(w, http.StatusConflict, "job already finished")
+		return
+	case err != nil:
+		j.internalError(w, r, "cancel job", err)
+		return
+	}
+	j.log.InfoContext(r.Context(), "job cancel requested", "job_id", id, "status", job.Status)
+	j.changed(id)
+
+	code := http.StatusAccepted
+	if job.Status == models.JobStatusCanceled {
+		code = http.StatusOK
+	}
+	writeJSON(w, code, job)
+}
+
+// rerun queues a new job for the same commit and returns it (201).
+func (j *JobsAPI) rerun(w http.ResponseWriter, r *http.Request) {
+	id, ok := jobID(w, r)
+	if !ok {
+		return
+	}
+	job, err := j.store.RerunJob(r.Context(), id)
+	if errors.Is(err, db.ErrJobNotFound) {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	if err != nil {
+		j.internalError(w, r, "rerun job", err)
+		return
+	}
+	j.log.InfoContext(r.Context(), "job queued again", "job_id", job.ID, "rerun_of", id)
+	j.changed(job.ID)
+	w.Header().Set("Location", fmt.Sprintf("/api/jobs/%d", job.ID))
+	writeJSON(w, http.StatusCreated, job)
 }
 
 func (j *JobsAPI) list(w http.ResponseWriter, r *http.Request) {

@@ -36,6 +36,16 @@ func (m *mockJobReader) GetJob(ctx context.Context, id int64) (models.Job, error
 	return args.Get(0).(models.Job), args.Error(1)
 }
 
+func (m *mockJobReader) CancelJob(ctx context.Context, id int64) (models.Job, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(models.Job), args.Error(1)
+}
+
+func (m *mockJobReader) RerunJob(ctx context.Context, id int64) (models.Job, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(models.Job), args.Error(1)
+}
+
 func (m *mockJobReader) JobLogsAfter(ctx context.Context, id, after int64, limit int) ([]models.JobLog, error) {
 	args := m.Called(ctx, id, after, limit)
 	logs, _ := args.Get(0).([]models.JobLog)
@@ -81,9 +91,9 @@ func (f *fakeEvents) subscribed(jobID int64) bool {
 	return ok
 }
 
-func newJobsAPI(t *testing.T, store *mockJobReader, ev *fakeEvents) (*JobsAPI, http.Handler) {
+func newJobsAPI(t *testing.T, store *mockJobReader, ev *fakeEvents, opts ...JobsAPIOption) (*JobsAPI, http.Handler) {
 	t.Helper()
-	jobs := NewJobsAPI(store, ev, slog.New(slog.DiscardHandler))
+	jobs := NewJobsAPI(store, ev, slog.New(slog.DiscardHandler), opts...)
 	jobs.pollInterval = time.Hour // tests drive the stream with events
 	t.Cleanup(jobs.Close)
 	return jobs, NewRouter(Handlers{
@@ -333,4 +343,81 @@ func TestStreamEndsOnShutdown(t *testing.T) {
 
 	jobs.Close()
 	expectEnd(t, events)
+}
+
+const writeToken = "test-token-0123456789"
+
+func post(t *testing.T, h http.Handler, target, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, target, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestWriteEndpointsNeedToken(t *testing.T) {
+	t.Run("disabled without a configured token", func(t *testing.T) {
+		_, h := newJobsAPI(t, &mockJobReader{}, &fakeEvents{})
+		rec := post(t, h, "/api/jobs/1/cancel", "anything")
+		assert.Equal(t, http.StatusForbidden, rec.Code)
+		assert.Contains(t, rec.Body.String(), "CISID_API_TOKEN")
+	})
+
+	t.Run("missing or wrong token", func(t *testing.T) {
+		store := &mockJobReader{}
+		_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken))
+		for _, token := range []string{"", "wrong", writeToken + "x"} {
+			for _, path := range []string{"/api/jobs/1/cancel", "/api/jobs/1/rerun"} {
+				rec := post(t, h, path, token)
+				assert.Equal(t, http.StatusUnauthorized, rec.Code, "%s with %q", path, token)
+				assert.NotEmpty(t, rec.Header().Get("WWW-Authenticate"))
+			}
+		}
+		store.AssertNotCalled(t, "CancelJob", mock.Anything, mock.Anything)
+		store.AssertNotCalled(t, "RerunJob", mock.Anything, mock.Anything)
+	})
+}
+
+func TestCancelJob(t *testing.T) {
+	canceled := runningJob(1)
+	canceled.Status = models.JobStatusCanceled
+	store := &mockJobReader{}
+	store.On("CancelJob", mock.Anything, int64(1)).Return(canceled, nil).Once()
+	store.On("CancelJob", mock.Anything, int64(2)).Return(runningJob(2), nil).Once()
+	store.On("CancelJob", mock.Anything, int64(3)).Return(models.Job{}, fmt.Errorf("x: %w", db.ErrJobConflict)).Once()
+	store.On("CancelJob", mock.Anything, int64(4)).Return(models.Job{}, fmt.Errorf("x: %w", db.ErrJobNotFound)).Once()
+	var changed []int64
+	_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken),
+		WithJobChanged(func(id int64) { changed = append(changed, id) }))
+
+	assert.Equal(t, http.StatusOK, post(t, h, "/api/jobs/1/cancel", writeToken).Code, "pending job canceled at once")
+	assert.Equal(t, http.StatusAccepted, post(t, h, "/api/jobs/2/cancel", writeToken).Code, "running job asked to stop")
+	assert.Equal(t, http.StatusConflict, post(t, h, "/api/jobs/3/cancel", writeToken).Code)
+	assert.Equal(t, http.StatusNotFound, post(t, h, "/api/jobs/4/cancel", writeToken).Code)
+	assert.Equal(t, []int64{1, 2}, changed)
+	store.AssertExpectations(t)
+}
+
+func TestRerunJob(t *testing.T) {
+	store := &mockJobReader{}
+	again := runningJob(9)
+	again.Status = models.JobStatusPending
+	store.On("RerunJob", mock.Anything, int64(5)).Return(again, nil).Once()
+	store.On("RerunJob", mock.Anything, int64(6)).Return(models.Job{}, db.ErrJobNotFound).Once()
+	var changed []int64
+	_, h := newJobsAPI(t, store, &fakeEvents{}, WithWriteToken(writeToken),
+		WithJobChanged(func(id int64) { changed = append(changed, id) }))
+
+	rec := post(t, h, "/api/jobs/5/rerun", writeToken)
+	assert.Equal(t, http.StatusCreated, rec.Code)
+	assert.Equal(t, "/api/jobs/9", rec.Header().Get("Location"))
+	var got models.Job
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, int64(9), got.ID)
+	assert.Equal(t, []int64{9}, changed)
+
+	assert.Equal(t, http.StatusNotFound, post(t, h, "/api/jobs/6/rerun", writeToken).Code)
 }

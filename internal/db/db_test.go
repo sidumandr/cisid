@@ -486,3 +486,73 @@ func TestStoreUnreportedJobs(t *testing.T) {
 	assert.Equal(t, ids[0], jobs[0].ID)
 	assert.Equal(t, models.JobStatusRunning, jobs[0].Status)
 }
+
+func TestStoreCancelJob(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	ids := createJobs(t, s, 3)
+	running, err := s.ClaimJob(ctx, "agent-1", time.Minute) // ids[0]
+	require.NoError(t, err)
+
+	// A pending job is canceled at once.
+	job, err := s.CancelJob(ctx, ids[1])
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusCanceled, job.Status)
+	assert.Equal(t, CancelReason, job.Error)
+	assert.NotNil(t, job.FinishedAt)
+	_, err = s.ClaimJob(ctx, "agent-2", time.Minute)
+	require.NoError(t, err) // ids[2]: the canceled job is skipped
+	_, err = s.ClaimJob(ctx, "agent-3", time.Minute)
+	assert.ErrorIs(t, err, ErrNoPendingJob)
+
+	// A running job keeps running until its agent stops it.
+	job, err = s.CancelJob(ctx, running.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusRunning, job.Status)
+	toCancel, err := s.CancelRequestedJobs(ctx, []string{"agent-1", "agent-2"})
+	require.NoError(t, err)
+	require.Len(t, toCancel, 1)
+	assert.Equal(t, running.ID, toCancel[0].ID)
+
+	_, err = s.CancelJob(ctx, ids[1])
+	assert.ErrorIs(t, err, ErrJobConflict, "already finished")
+	_, err = s.CancelJob(ctx, ids[2]+100)
+	assert.ErrorIs(t, err, ErrJobNotFound)
+}
+
+func TestStoreCanceledJobIsNotRequeued(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	createJobs(t, s, 1)
+	job, err := s.ClaimJob(ctx, "agent-1", -time.Second)
+	require.NoError(t, err)
+	_, err = s.CancelJob(ctx, job.ID)
+	require.NoError(t, err)
+
+	// The agent never comes back to stop it.
+	_, err = s.RequeueExpired(ctx)
+	require.NoError(t, err)
+
+	got, err := s.GetJob(ctx, job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusCanceled, got.Status)
+	assert.Equal(t, CancelReason, got.Error)
+	_, err = s.ClaimJob(ctx, "agent-2", time.Minute)
+	assert.ErrorIs(t, err, ErrNoPendingJob)
+}
+
+func TestStoreRerunJob(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	id := createJobs(t, s, 1)[0]
+
+	job, err := s.RerunJob(ctx, id)
+
+	require.NoError(t, err)
+	assert.Greater(t, job.ID, id)
+	assert.Equal(t, models.JobStatusPending, job.Status)
+	assert.Equal(t, "6113728f27ae82c7b1a177c8d03f9e96e0adf246", job.CommitSHA)
+
+	_, err = s.RerunJob(ctx, id+100)
+	assert.ErrorIs(t, err, ErrJobNotFound)
+}

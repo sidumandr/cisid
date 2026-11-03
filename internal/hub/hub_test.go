@@ -50,6 +50,12 @@ func (m *mockStore) RequeueExpired(ctx context.Context) ([]int64, error) {
 	return ids, args.Error(1)
 }
 
+func (m *mockStore) CancelRequestedJobs(ctx context.Context, agents []string) ([]models.Job, error) {
+	args := m.Called(ctx, agents)
+	jobs, _ := args.Get(0).([]models.Job)
+	return jobs, args.Error(1)
+}
+
 func (m *mockStore) AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error {
 	return m.Called(ctx, agent, id, lease).Error(0)
 }
@@ -129,6 +135,7 @@ func newFixture(t *testing.T, setup func(s *mockStore, p *mockPlanner), opts ...
 	f.store.On("RenewLeases", mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
 	f.store.On("RequeueExpired", mock.Anything).Return([]int64(nil), nil).Maybe()
 	f.store.On("AdoptJob", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	f.store.On("CancelRequestedJobs", mock.Anything, mock.Anything).Return([]models.Job(nil), nil).Maybe()
 	f.planner.On("Plan", mock.Anything, mock.Anything).Return(cloneSteps, nil).Maybe()
 
 	f.hub = New(f.store, f.planner, append([]Option{WithLogger(slog.New(slog.DiscardHandler)),
@@ -604,4 +611,22 @@ func TestHubReportsJobChanges(t *testing.T) {
 		return len(changes) == 2
 	}, testTimeout, 5*time.Millisecond)
 	assert.Equal(t, []int64{42, 42}, changes, "assigned, then finished")
+}
+
+func TestHubDeliversCancelRequestsOnce(t *testing.T) {
+	running := job(42)
+	running.Agent = "agent-1"
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		s.On("CancelRequestedJobs", mock.Anything, mock.Anything).Return([]models.Job{running}, nil)
+	})
+	a := f.connect(t, "agent-1", 0)
+	a.expectAssignment(t)
+
+	f.hub.Wake()
+	a.expectMessage(t, models.MsgJobCancel)
+
+	f.hub.Wake()
+	f.hub.Wake()
+	a.expectNoMessage(t)
 }

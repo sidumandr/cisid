@@ -2,7 +2,7 @@
 
 Server, job'ları ve loglarını salt-okunur bir HTTP API üzerinden sunar (`internal/api/jobs.go`). Bütün yanıtlar JSON'dur, canlı log akışı ise [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) ile gelir.
 
-> Kimlik doğrulama yok (Faz 4). Server'ı güvenilmeyen bir ağa açmadan önce önüne erişim kontrolü koyun.
+> Okuma uç noktalarında kimlik doğrulama yok (Faz 4). Server'ı güvenilmeyen bir ağa açmadan önce önüne erişim kontrolü koyun. Değişiklik yapan uç noktalar token ister (aşağıya bak).
 
 ## Endpoint'ler
 
@@ -12,6 +12,8 @@ Server, job'ları ve loglarını salt-okunur bir HTTP API üzerinden sunar (`int
 | `GET /api/jobs/{id}` | Tek job |
 | `GET /api/jobs/{id}/logs?after=0` | `seq` > `after` olan log parçaları, istek başına en fazla 1000 |
 | `GET /api/jobs/{id}/logs/stream` | Canlı log akışı (SSE) |
+| `POST /api/jobs/{id}/cancel` | Job'u iptal et (token gerekir) |
+| `POST /api/jobs/{id}/rerun` | Aynı commit için yeni job oluştur (token gerekir) |
 
 Hatalar: geçersiz parametre `400`, olmayan job `404`. Gövde `{"status":"error","reason":"..."}` biçimindedir.
 
@@ -44,6 +46,30 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`. Gövde `{"status":"error"
 ```
 
 `seq` job içinde 1'den başlar ve sırayı belirler. Parçalar satır sınırına denk gelmeyebilir. İstemci aynı `stream`'deki parçaları uç uca ekleyerek gösterir.
+
+## İptal ve yeniden çalıştırma
+
+Bu uç noktalar `CISID_API_TOKEN` tanımlıysa açıktır. Token en az 16 karakter olmalıdır ve `Authorization` başlığıyla gönderilir. Token tanımlı değilse `403`, eksik ya da yanlışsa `401` döner.
+
+```bash
+curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080/api/jobs/42/cancel
+```
+
+```bash
+curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080/api/jobs/42/rerun
+```
+
+**İptal:**
+
+| Job durumu | Sonuç |
+|---|---|
+| `pending` | Hemen `canceled` olur, yanıt `200` |
+| `running` | İptal isteği kaydedilir, yanıt `202`. Agent'ın bağlı olduğu server agent'a `job_cancel` gönderir (en geç 2 sn), agent container'ı durdurur ve job `canceled` olur. |
+| Bitmiş | `409` |
+
+Her iki durumda da job'un `error` alanı `canceled by request` olur. İstek hangi server'a gelirse gelsin çalışır. Agent bir daha hiç bağlanmazsa iptal isteği olan job, lease dolunca tekrar kuyruğa alınmaz, `canceled` olur.
+
+**Yeniden çalıştırma:** Aynı repo, branch ve commit için yeni bir `pending` job oluşturur. Yanıt `201` olur, `Location` başlığı yeni job'u gösterir.
 
 ## Canlı akış
 

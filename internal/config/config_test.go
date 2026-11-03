@@ -95,6 +95,11 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"CISID_GITHUB_API_URL must be an http(s) URL"},
 		},
 		{
+			name: "API token too short",
+			vars: with(map[string]string{"CISID_API_TOKEN": "short"}),
+			want: []string{"CISID_API_TOKEN must be at least 16 characters"},
+		},
+		{
 			name: "public URL is not http",
 			vars: with(map[string]string{"CISID_PUBLIC_URL": "ci.example.com"}),
 			want: []string{"CISID_PUBLIC_URL must be an http(s) URL"},
@@ -119,7 +124,7 @@ func TestLoadErrors(t *testing.T) {
 }
 
 func TestConfigLogValueRedactsSecrets(t *testing.T) {
-	cfg, err := Load(env(with(map[string]string{"CISID_GITHUB_TOKEN": "ghp_secret"})))
+	cfg, err := Load(env(with(map[string]string{"CISID_GITHUB_TOKEN": "ghp_secret", "CISID_API_TOKEN": "api-secret-0123456789"})))
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -129,6 +134,8 @@ func TestConfigLogValueRedactsSecrets(t *testing.T) {
 	assert.NotContains(t, out, "s3cret")
 	assert.NotContains(t, out, "hook-secret")
 	assert.NotContains(t, out, "ghp_secret")
+	assert.NotContains(t, out, "api-secret")
+	assert.Contains(t, out, "config.api_token_set=true")
 	assert.Contains(t, out, "config.github_token_set=true")
 	assert.Contains(t, out, "localhost:5432/cisid")
 	assert.Contains(t, out, "config.http_addr=:8080")

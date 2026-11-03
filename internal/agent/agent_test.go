@@ -630,3 +630,59 @@ func TestOutboxDropsLogsWhenFull(t *testing.T) {
 	assert.EqualValues(t, 1, o.dropped.Load())
 	assert.EqualValues(t, 2, o.pending.Load())
 }
+
+func TestAgentCancelsRunningJob(t *testing.T) {
+	fs := newFakeServer(t)
+	r := &mockRunner{}
+	started := make(chan struct{})
+	r.On("Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			close(started)
+			<-args.Get(0).(context.Context).Done() // the runner stops the container
+		}).Return(-1, context.Canceled).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
+
+	startAgent(t, fs, r)
+	sc := fs.accept(t)
+	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID: 51,
+		Steps: []models.StepSpec{
+			{Name: "build", Image: "alpine:3.22", Commands: []string{"sleep 600"}},
+			{Name: "deploy", Image: "alpine:3.22", Commands: []string{"deploy"}},
+		},
+	})
+	<-started
+
+	sc.send(t, models.MsgJobCancel, models.JobCancel{JobID: 51})
+
+	_, res := sc.collectJob(t, 51)
+	assert.Equal(t, models.JobResult{
+		JobID: 51, Status: models.JobStatusCanceled, ExitCode: -1, FailedStep: intPtr(0),
+		Error: "canceled by request",
+	}, res)
+	r.AssertExpectations(t) // deploy never ran
+}
+
+func TestAgentIgnoresCancelForOtherJobs(t *testing.T) {
+	a, err := New(Config{ServerURL: "ws://localhost/agent/ws", Name: "a"}, &mockRunner{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	ctx := a.startJob(t.Context(), 1)
+
+	a.cancel(t.Context(), 2)
+
+	assert.NoError(t, ctx.Err())
+}
+
+func TestAgentCancelsJobAcceptedButNotStarted(t *testing.T) {
+	a, err := New(Config{ServerURL: "ws://localhost/agent/ws", Name: "a"}, &mockRunner{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	a.runningJob.Store(7) // accepted, waiting for the executor
+
+	a.cancel(t.Context(), 7)
+	ctx := a.startJob(t.Context(), 7)
+
+	require.Error(t, ctx.Err())
+	assert.Equal(t, errCanceledByServer, context.Cause(ctx))
+	a.endJob(7)
+	assert.Empty(t, a.cancelLater)
+}

@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// minAPITokenLen keeps API tokens out of guessing range.
+const minAPITokenLen = 16
+
 // ErrInvalidConfig is returned when required settings are missing or invalid.
 var ErrInvalidConfig = errors.New("invalid config")
 
@@ -23,6 +26,7 @@ type Config struct {
 	GitHubAPIURL    string        // CISID_GITHUB_API_URL, default https://api.github.com
 	GitHubToken     string        // CISID_GITHUB_TOKEN, optional (private repos, rate limits, commit statuses)
 	PublicURL       string        // CISID_PUBLIC_URL, optional base URL users reach the server at
+	APIToken        string        // CISID_API_TOKEN, optional; enables cancel/rerun
 }
 
 // Load reads the configuration through getenv (normally os.Getenv) and
@@ -35,6 +39,7 @@ func Load(getenv func(string) string) (Config, error) {
 		GitHubAPIURL:  getenv("CISID_GITHUB_API_URL"),
 		GitHubToken:   getenv("CISID_GITHUB_TOKEN"),
 		PublicURL:     strings.TrimSuffix(getenv("CISID_PUBLIC_URL"), "/"),
+		APIToken:      getenv("CISID_API_TOKEN"),
 	}
 	var problems []error
 
@@ -62,6 +67,10 @@ func Load(getenv func(string) string) (Config, error) {
 		if u, err := url.Parse(cfg.PublicURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			problems = append(problems, fmt.Errorf("CISID_PUBLIC_URL must be an http(s) URL"))
 		}
+	}
+
+	if cfg.APIToken != "" && len(cfg.APIToken) < minAPITokenLen {
+		problems = append(problems, fmt.Errorf("CISID_API_TOKEN must be at least %d characters", minAPITokenLen))
 	}
 
 	cfg.ShutdownTimeout = 15 * time.Second
@@ -103,5 +112,6 @@ func (c Config) LogValue() slog.Value {
 		slog.String("github_api_url", c.GitHubAPIURL),
 		slog.Bool("github_token_set", c.GitHubToken != ""),
 		slog.String("public_url", c.PublicURL),
+		slog.Bool("api_token_set", c.APIToken != ""),
 	)
 }
