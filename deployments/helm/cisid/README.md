@@ -1,40 +1,42 @@
 # cisid Helm chart
 
-cisid'i Kubernetes'e kurar:
+**English** · [Türkçe](README.tr.md)
 
-- **server:** Deployment ve Service. İsteğe bağlı olarak Ingress ve ServiceMonitor.
-- **agent:** StatefulSet. Her pod'da adımları çalıştıran bir Docker-in-Docker sidecar'ı vardır.
-- **PostgreSQL:** Deneme için tek kopya bir StatefulSet. İsteğe bağlıdır, production'da harici bir veritabanı kullanılır.
+Installs cisid on Kubernetes:
 
-Kubernetes 1.29 veya üstü gerekir: Docker-in-Docker, native sidecar olarak çalışır.
+- **server:** Deployment and Service. Optionally, Ingress and ServiceMonitor.
+- **agent:** StatefulSet. Each pod has a Docker-in-Docker sidecar that runs the steps.
+- **PostgreSQL:** A single-replica StatefulSet for trying things out. It is optional; in production, use an external database.
 
-## Önce: image'lar
+Requires Kubernetes 1.29 or later: Docker-in-Docker runs as a native sidecar.
 
-Etiketlenen her sürümde image'lar ve chart `ghcr.io/sidumandr` altına yayımlanır ([release.md](../../../docs/release.md)). Chart'ın varsayılan değerleri bu image'ları kullanır ve yayımlanan chart doğrudan kurulabilir:
+## First: images
+
+For every tagged release, the images and the chart are published under `ghcr.io/sidumandr` ([release.md](../../../docs/release.md)). The chart's default values use these images, and you can install the published chart directly:
 
 ```bash
 helm install ci oci://ghcr.io/sidumandr/charts/cisid --version 0.1.0 --namespace ci
 ```
 
-Henüz yayımlanmış bir sürüm yoksa ya da kendi değişikliklerinizi kullanacaksanız, image'ları proje kökünden derleyip kendi registry'nize gönderin:
+If there is no published release yet, or you want to use your own changes, build the images from the project root and push them to your own registry:
 
 ```bash
-docker build --target server -t ghcr.io/<hesap>/cisid-server:0.1.0 .
+docker build --target server -t ghcr.io/<account>/cisid-server:0.1.0 .
 ```
 
 ```bash
-docker build --target agent -t ghcr.io/<hesap>/cisid-agent:0.1.0 .
+docker build --target agent -t ghcr.io/<account>/cisid-agent:0.1.0 .
 ```
 
 ```bash
-docker push ghcr.io/<hesap>/cisid-server:0.1.0 && docker push ghcr.io/<hesap>/cisid-agent:0.1.0
+docker push ghcr.io/<account>/cisid-server:0.1.0 && docker push ghcr.io/<account>/cisid-agent:0.1.0
 ```
 
-Etiket varsayılan olarak chart'ın `appVersion` değeridir (`0.1.0`). Farklıysa `server.image.tag` ve `agent.image.tag` ile verin. Özel registry için `imagePullSecrets` kullanın.
+The tag defaults to the chart's `appVersion` (`0.1.0`). If yours differs, set it with `server.image.tag` and `agent.image.tag`. For a private registry, use `imagePullSecrets`.
 
-## Kurulum
+## Installation
 
-Agent pod'ları privileged bir container (`hostSocket` modunda bir hostPath volume'u) kullandığı için namespace'in Pod Security seviyesi `privileged` olmalıdır:
+Agent pods use a privileged container (in `hostSocket` mode, a hostPath volume), so the namespace's Pod Security level must be `privileged`:
 
 ```bash
 kubectl create namespace ci && kubectl label namespace ci pod-security.kubernetes.io/enforce=privileged
@@ -42,84 +44,84 @@ kubectl create namespace ci && kubectl label namespace ci pod-security.kubernete
 
 ```bash
 helm install ci deployments/helm/cisid --namespace ci \
-  --set server.image.repository=ghcr.io/<hesap>/cisid-server \
-  --set agent.image.repository=ghcr.io/<hesap>/cisid-agent \
+  --set server.image.repository=ghcr.io/<account>/cisid-server \
+  --set agent.image.repository=ghcr.io/<account>/cisid-agent \
   --set-string secrets.webhookSecret=$(openssl rand -hex 32) \
   --set-string secrets.agentToken=$(openssl rand -hex 24) \
   --set-string postgresql.auth.password=$(openssl rand -hex 16)
 ```
 
-Secret'ları `--set-string` ile verin. Yalnızca rakamlardan oluşan bir değer `--set` ile sayıya dönüşür ve şema doğrulamasından geçmez.
+Pass secrets with `--set-string`. With `--set`, a value made only of digits becomes a number and fails schema validation.
 
-Kurulumdan sonra Helm, GitHub webhook adresini ve webhook secret'ını okuma komutunu yazar. Server'ın veritabanına ulaştığını denemek için:
+After installation, Helm prints the GitHub webhook URL and the command that reads the webhook secret. To check that the server reaches the database:
 
 ```bash
 helm test ci --namespace ci
 ```
 
-## Değerler
+## Values
 
-Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.json` hatalı yazılmış anahtarları ve yanlış türleri kurulumda reddeder.
+The full list with descriptions is in [values.yaml](values.yaml). `values.schema.json` rejects misspelled keys and wrong types at install time.
 
-| Değer | Varsayılan | Açıklama |
+| Value | Default | Description |
 |---|---|---|
-| `secrets.webhookSecret` | — | GitHub webhook secret'ı; `/webhooks/github`'ı açar |
-| `secrets.agentToken` | — | **Zorunlu.** Agent token'ı, en az 16 karakter |
-| `secrets.apiToken` | — | İptal, yeniden çalıştırma ve secret uç noktalarını açar |
-| `secrets.readToken` | — | Job'ları, logları ve metrikleri okumak için token ister. Yoksa server'a ulaşan herkes okur. |
-| `secrets.secretKey` | — | Repo secret'larını şifreleyen anahtar (base64, 32 byte). Bir kopyasını ayrıca saklayın. |
-| `secrets.githubToken` | — | Özel repolar, rate limit ve commit status için |
-| `secrets.giteaToken`, `secrets.giteaWebhookSecret` | — | Gitea'nın token'ı ve webhook secret'ı (`server.giteaURL` ile) |
-| `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo'nun token'ı ve webhook secret'ı (`server.forgejoURL` ile) |
-| `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab'ın token'ı ve webhook secret'ı |
-| `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud'un token'ı ve webhook secret'ı |
-| `secrets.oauthClientSecrets.<sağlayıcı>` | — | Sağlayıcıyla giriş için OAuth uygulamasının client secret'ı (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
-| `secrets.adminPassword` | — | İlk açılışta `server.adminUser`'ı admin olarak oluşturur, en az 10 karakter ([hesaplar](../../../docs/accounts.md)) |
-| `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
-| `server.replicaCount` | `1` | Server kopyası |
-| `server.giteaURL`, `server.forgejoURL` | — | Gitea ve Forgejo sunucularının adresi; verilince açılırlar |
-| `server.gitlabURL` | GitLab.com | Kendi GitLab kurulumunuzun adresi |
-| `server.readAccess` | — | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister. Boşsa read token varken `signed-in`, yokken `public`. |
-| `server.sessionTTL` | `7d` | Bir girişin süresi |
-| `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
-| `server.oauthClientIDs.<sağlayıcı>` | — | OAuth uygulamasının client id'si; secret'ı ve `server.publicURL` (ya da ingress) gerekir |
-| `server.oauthSignupRole` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte hesap açılır |
-| `server.pollInterval` | `1m` | İzlenen branch'lerin yoklanma aralığı; `0` polling'i kapatır ([polling](../../../docs/polling.md)) |
-| `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
-| `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
-| `server.tls.secretName` | — | Server için HTTPS, agent'lar için `wss://` |
-| `server.buildForks` | `false` | Fork'lardan gelen pull request'leri de derler, secret vermeden |
-| `server.logRetention` | `90d` | Biten job'ların loglarının saklanma süresi, `0` sonsuza dek saklar |
-| `agent.replicaCount` | `1` | Agent sayısı. Her agent aynı anda bir job çalıştırır. |
-| `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Adım ve servis container'larının sınırları |
-| `agent.docker.mode` | `dind` | `dind` ya da `hostSocket` |
-| `agent.docker.dind.persistence.enabled` | `false` | Çekilen image'ları ve job önbelleklerini agent başına bir volume'da saklar |
-| `postgresql.enabled` | `true` | Dahili PostgreSQL. Kapalıysa `database.url` gerekir. |
-| `postgresql.auth.password` | — | Dahili PostgreSQL'in şifresi. Yalnızca harf, rakam ve `. _ ~ -` içerebilir. |
-| `ingress.enabled`, `ingress.hosts`, `ingress.tls` | kapalı | Webhook ve arayüz için dış erişim |
+| `secrets.webhookSecret` | — | GitHub webhook secret; enables `/webhooks/github` |
+| `secrets.agentToken` | — | **Required.** Agent token, at least 16 characters |
+| `secrets.apiToken` | — | Enables the cancel, rerun and secret endpoints |
+| `secrets.readToken` | — | Requires a token to read jobs, logs and metrics. Without it, anyone who reaches the server can read them. |
+| `secrets.secretKey` | — | Key that encrypts repository secrets (base64, 32 bytes). Keep a separate copy of it. |
+| `secrets.githubToken` | — | For private repositories, rate limits and commit status |
+| `secrets.giteaToken`, `secrets.giteaWebhookSecret` | — | Gitea's token and webhook secret (with `server.giteaURL`) |
+| `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo's token and webhook secret (with `server.forgejoURL`) |
+| `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab's token and webhook secret |
+| `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud's token and webhook secret |
+| `secrets.oauthClientSecrets.<forge>` | — | Client secret of the OAuth app for signing in through a forge (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
+| `secrets.adminPassword` | — | Creates `server.adminUser` as an admin on first start, at least 10 characters ([accounts](../../../docs/accounts.md)) |
+| `secrets.existingSecret` | — | Reads the values above from a Secret you manage (see below) |
+| `server.replicaCount` | `1` | Server replicas |
+| `server.giteaURL`, `server.forgejoURL` | — | Addresses of the Gitea and Forgejo servers; setting them turns them on |
+| `server.gitlabURL` | GitLab.com | Address of your own GitLab installation |
+| `server.readAccess` | — | `public`: anyone can read; `signed-in`: reading requires a sign-in or a token. If empty, `signed-in` when a read token is set, `public` when not. |
+| `server.sessionTTL` | `7d` | How long a sign-in lasts |
+| `server.adminUser` | `admin` | The account that `secrets.adminPassword` creates |
+| `server.oauthClientIDs.<forge>` | — | Client ID of the OAuth app; needs its secret and `server.publicURL` (or an ingress) |
+| `server.oauthSignupRole` | — | `viewer` or `maintainer`: forge users without an account get one on their first sign-in |
+| `server.pollInterval` | `1m` | Polling interval for watched branches; `0` turns polling off ([polling](../../../docs/polling.md)) |
+| `server.publicURL` | first ingress host | External address for commit status links |
+| `server.trustProxy` | `true` with an ingress | Takes the client IP from `X-Forwarded-For` |
+| `server.tls.secretName` | — | HTTPS for the server, `wss://` for the agents |
+| `server.buildForks` | `false` | Also builds pull requests from forks, without secrets |
+| `server.logRetention` | `90d` | How long logs of finished jobs are kept; `0` keeps them forever |
+| `agent.replicaCount` | `1` | Number of agents. Each agent runs one job at a time. |
+| `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Limits for step and service containers |
+| `agent.docker.mode` | `dind` | `dind` or `hostSocket` |
+| `agent.docker.dind.persistence.enabled` | `false` | Keeps pulled images and job caches in a volume per agent |
+| `postgresql.enabled` | `true` | Built-in PostgreSQL. When off, `database.url` is required. |
+| `postgresql.auth.password` | — | Password of the built-in PostgreSQL. It may contain only letters, digits and `. _ ~ -`. |
+| `ingress.enabled`, `ingress.hosts`, `ingress.tls` | off | External access for webhooks and the UI |
 | `tracing.otlpEndpoint` | — | OTLP/HTTP collector ([tracing.md](../../../docs/tracing.md)) |
-| `metrics.serviceMonitor.enabled` | `false` | Prometheus Operator için ServiceMonitor |
-| `metrics.serviceMonitor.authorize` | `false` | Metrikleri okuma token'ıyla çeker; `secrets.readToken` varsa açın |
+| `metrics.serviceMonitor.enabled` | `false` | ServiceMonitor for the Prometheus Operator |
+| `metrics.serviceMonitor.authorize` | `false` | Scrapes metrics with the read token; turn it on when `secrets.readToken` is set |
 
-## Var olan bir Secret
+## An existing Secret
 
-Secret'ları bir secrets operator'ı ya da GitOps aracıyla yönetiyorsanız `secrets.existingSecret` ile adını verin. Chart o zaman kendi Secret'ını oluşturmaz ve şu anahtarları okur:
+If you manage secrets with a secrets operator or a GitOps tool, pass the Secret's name with `secrets.existingSecret`. The chart then does not create its own Secret and reads these keys:
 
-| Anahtar | |
+| Key | |
 |---|---|
-| `webhook-secret` | İsteğe bağlı |
-| `agent-token` | Zorunlu |
-| `postgres-password` | Dahili PostgreSQL ile zorunlu |
-| `database-url` | Harici veritabanıyla zorunlu (`postgres://...`) |
-| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password` | İsteğe bağlı |
+| `webhook-secret` | Optional |
+| `agent-token` | Required |
+| `postgres-password` | Required with the built-in PostgreSQL |
+| `database-url` | Required with an external database (`postgres://...`) |
+| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password` | Optional |
 
-Agent token'ını değiştirmek için anahtara önce `yeni,eski` yazın: server ikisini de kabul eder, agent'lar ilkini gönderir. Bütün agent'lar yeniden başladıktan sonra yalnızca `yeni`yi bırakın.
+To rotate the agent token, first set the key to `new,old`: the server accepts both, and agents send the first one. After all agents restart, keep only `new`.
 
-## Agent'lar Docker'a nasıl ulaşır
+## How agents reach Docker
 
-**`dind` (varsayılan):** Her agent pod'unda bir `docker:dind` sidecar'ı çalışır. Agent ve adımlar yalnızca bu Docker'ı görür. Docker yalnızca pod içinde paylaşılan bir Unix socket'i dinler, TCP portu açmaz. Sidecar native sidecar olduğu için agent'tan önce başlar ve ondan sonra durur. Böylece kapanışta iptal edilen job'un container'ları temizlenebilir.
+**`dind` (default):** Each agent pod runs a `docker:dind` sidecar. The agent and the steps see only this Docker. Docker listens only on a Unix socket shared within the pod and opens no TCP port. Because the sidecar is a native sidecar, it starts before the agent and stops after it. This way, the containers of a job canceled at shutdown can be cleaned up.
 
-Sidecar `privileged` çalışır. Bir container kaçışı node'u etkileyebilir. Agent'ları CI'a ayrılmış node'larda çalıştırın:
+The sidecar runs `privileged`. A container escape can affect the node. Run the agents on nodes dedicated to CI:
 
 ```yaml
 agent:
@@ -131,15 +133,15 @@ agent:
       effect: NoSchedule
 ```
 
-Docker'ın verileri (image'lar, adımların container'ları) varsayılan olarak pod'un geçici deposunda, yani node'un diskinde tutulur ve pod yeniden başladığında silinir. `agent.docker.dind.resources` ile `ephemeral-storage` sınırı verebilirsiniz. `agent.docker.dind.persistence.enabled=true`, her agent'a image'ların saklandığı bir PersistentVolume verir.
+By default, Docker's data (images, step containers) is kept in the pod's ephemeral storage, that is, on the node's disk, and is deleted when the pod restarts. You can set an `ephemeral-storage` limit with `agent.docker.dind.resources`. `agent.docker.dind.persistence.enabled=true` gives each agent a PersistentVolume that stores the images.
 
-**`hostSocket`:** Agent, node'un Docker socket'ini kullanır. Yalnızca Docker Engine çalıştıran node'larda işe yarar (çoğu cluster containerd kullanır). Adımlar o node'daki bütün container'ları yönetebilir.
+**`hostSocket`:** The agent uses the node's Docker socket. This only works on nodes that run Docker Engine (most clusters use containerd). Steps can manage every container on that node.
 
-Agent'lar StatefulSet olduğu için her biri pod adını (`ci-cisid-agent-0` gibi) agent adı olarak kullanır. Yeniden başlayan bir agent aynı adla bağlanır ve server onun yarım kalan job'unu lease süresini beklemeden kuyruğa geri koyar.
+Because the agents are a StatefulSet, each one uses its pod name (such as `ci-cisid-agent-0`) as its agent name. An agent that restarts connects with the same name, and the server puts its unfinished job back in the queue without waiting for the lease to expire.
 
 ## TLS
 
-Cluster içinde agent'lar token'ı varsayılan olarak şifresiz `ws://` ile gönderir ve açılışta bunu uyarı olarak loglar. TLS için bir `kubernetes.io/tls` Secret'ı verin. Sertifika server Service'inin adını kapsamalıdır: `<fullname>-server.<namespace>.svc`. Kurulumdan sonraki notlar adın tamamını yazar. cert-manager ile:
+Inside the cluster, agents send the token unencrypted over `ws://` by default and log this as a warning at startup. For TLS, provide a `kubernetes.io/tls` Secret. The certificate must cover the name of the server Service: `<fullname>-server.<namespace>.svc`. The post-install notes print the full name. With cert-manager:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -160,17 +162,17 @@ spec:
 helm upgrade ci deployments/helm/cisid --namespace ci --reuse-values --set server.tls.secretName=cisid-server-tls
 ```
 
-Agent'lar Secret'ın yalnızca `ca.crt` anahtarını görür, private key'i görmez. Kendinden imzalı bir sertifikada `ca.crt` yoksa `server.tls.caKey=tls.crt` verin. Ingress kullanıyorsanız controller'a backend'in HTTPS olduğunu söyleyin. ingress-nginx için bu annotation `nginx.ingress.kubernetes.io/backend-protocol: HTTPS` şeklindedir.
+Agents see only the Secret's `ca.crt` key, not the private key. If a self-signed certificate has no `ca.crt`, set `server.tls.caKey=tls.crt`. If you use an ingress, tell the controller that the backend is HTTPS. For ingress-nginx, the annotation is `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`.
 
-## Veritabanı
+## Database
 
-Dahili PostgreSQL tek kopyadır, yedeklenmez ve yüksek erişilebilirlik sağlamaz. Denemek için uygundur. Production'da yönetilen ya da replikalı bir veritabanı kullanın:
+The built-in PostgreSQL is a single replica, has no backups and no high availability. It is fine for trying things out. In production, use a managed or replicated database:
 
 ```bash
 --set postgresql.enabled=false --set-string database.url='postgres://cisid:...@db.example.com:5432/cisid?sslmode=require'
 ```
 
-Dahili PostgreSQL'e yalnızca server pod'larının bağlanmasına izin veren bir NetworkPolicy kurulur. Adımlar da cluster içinde çalıştığı için bu önemlidir. NetworkPolicy'yi uygulayan bir CNI yoksa bu kural etkisizdir.
+The chart installs a NetworkPolicy that lets only the server pods connect to the built-in PostgreSQL. This matters because the steps also run inside the cluster. Without a CNI that enforces NetworkPolicy, this rule has no effect.
 
 ## Ingress
 
@@ -184,24 +186,24 @@ ingress:
       hosts: [ci.example.com]
 ```
 
-Ingress açıkken `server.publicURL` ilk host'tan türetilir (`https://ci.example.com`) ve server istemci IP'sini `X-Forwarded-For`'dan alır. Böylece rate limit, ingress controller'ın değil istemcinin adresine göre uygulanır. GitHub webhook adresi `https://ci.example.com/webhooks/github` olur.
+With the ingress on, `server.publicURL` is derived from the first host (`https://ci.example.com`), and the server takes the client IP from `X-Forwarded-For`. This way, rate limiting applies to the client's address, not the ingress controller's. The GitHub webhook URL becomes `https://ci.example.com/webhooks/github`.
 
-## Yükseltme ve kaldırma
+## Upgrading and uninstalling
 
-- Server güncellenirken önce yeni pod hazır olur, sonra eskisi kapanır. Bağlı agent'lar yeni server'a yeniden bağlanır ve job'lar kesilmez.
-- Agent'lar sırayla güncellenir. Kapanan bir agent'ın üzerindeki job **iptal edilir** (`canceled`). Gerekirse yeniden çalıştırın.
-- `helm uninstall`, StatefulSet'lerin PersistentVolumeClaim'lerini (veritabanı, image önbelleği) silmez. Verileri silmek için onları ayrıca silin.
+- When the server is updated, the new pod becomes ready first, and then the old one shuts down. Connected agents reconnect to the new server, and jobs are not interrupted.
+- Agents are updated one at a time. The job on an agent that shuts down is **canceled** (`canceled`). Rerun it if needed.
+- `helm uninstall` does not delete the StatefulSets' PersistentVolumeClaims (database, image cache). To delete the data, delete them separately.
 
-## Doğrulama
+## Verification
 
-Chart, [charttest](../charttest) modülündeki testlerle cluster olmadan doğrulanır:
+The tests in the [charttest](../charttest) module verify the chart without a cluster:
 
 ```bash
 cd deployments/helm/charttest && go test ./...
 ```
 
-Testler chart'ı Helm SDK ile render eder ve `helm lint` kurallarını çalıştırır. Her nesneyi API server gibi, alan adlarına büyük-küçük harf duyarlı ve bilinmeyen alanları hata sayarak Kubernetes tipine çevirir. Nesneler arası bağlantıları da denetler: Service seçicileri, Secret anahtarları, volume'lar, probe portları, `$(VAR)` sırası, Ingress ve NetworkPolicy hedefleri. cisid'in kendi CI'ı bu testleri her push'ta çalıştırır.
+The tests render the chart with the Helm SDK and run the `helm lint` rules. They convert each object to its Kubernetes type the way the API server does: field names are case-sensitive and unknown fields count as errors. They also check the links between objects: Service selectors, Secret keys, volumes, probe ports, `$(VAR)` order, Ingress and NetworkPolicy targets. cisid's own CI runs these tests on every push.
 
-Chart henüz gerçek bir cluster'a kurulmadı. Pod'ların güvenlik ayarları Docker'da denendi: salt okunur dosya sistemi, bütün capability'ler kapalı, PostgreSQL için uid 70 ve server için uid 10001. Bu ayarlarla `hostSocket` modundaki bir agent, TLS üzerinden cisid'in kendi CI'ını başarıyla çalıştırdı.
+The chart has not been installed on a real cluster yet. The pods' security settings were tested in Docker: a read-only file system, all capabilities dropped, uid 70 for PostgreSQL and uid 10001 for the server. With these settings, an agent in `hostSocket` mode successfully ran cisid's own CI over TLS.
 
-Docker-in-Docker sidecar'ı da chart'taki ayarlarla Docker'da denendi. Agent, pod'daki gibi sidecar'ın ağını paylaştı. Sidecar'daki Docker yalnızca Unix socket'ini dinledi, TCP portu açmadı. cisid'in CI'ı sidecar içinde geçti: yarış dedektörüyle testler, job ağındaki PostgreSQL servisi ve chart testleri. Job bitince sidecar'da container, ağ ya da volume kalmadı. Job sürerken durdurulan agent job'u `canceled` olarak raporladı. Container'larını hâlâ çalışan sidecar üzerinden temizledi ve 16 saniyede çıktı (süre sınırı 60 saniye).
+The Docker-in-Docker sidecar was also tested in Docker with the chart's settings. The agent shared the sidecar's network, as in the pod. Docker in the sidecar listened only on its Unix socket and opened no TCP port. cisid's CI passed inside the sidecar: tests with the race detector, the PostgreSQL service on the job network and the chart tests. After the job finished, no container, network or volume was left in the sidecar. An agent stopped while a job was running reported the job as `canceled`. It cleaned up its containers through the still-running sidecar and exited in 16 seconds (the time limit is 60 seconds).

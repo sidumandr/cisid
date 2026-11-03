@@ -1,77 +1,79 @@
-# Webhook'lar
+# Webhooks
 
-`internal/api/webhook.go` sağlayıcılardan gelen webhook'ları alır. Her branch push'u ve her pull request değişikliği için `jobs` tablosuna `pending` durumunda bir kayıt ekler. Her sağlayıcının kendi adresi vardır: `/webhooks/github`, `/webhooks/gitea`, `/webhooks/forgejo`, `/webhooks/gitlab`, `/webhooks/bitbucket`. Bir sağlayıcının adresi, webhook secret'ı verildiğinde açılır.
+**English** · [Türkçe](tr/webhook.md)
 
-Bu belge GitHub'ı anlatır; diğer sağlayıcıların kurulumu ve farkları [forges.md](forges.md)'dedir. Tekilleştirme, fork kuralı, PR iptali ve yanıtlar hepsinde aynıdır.
+`internal/api/webhook.go` receives webhooks from forges. For every branch push and every pull request change, it inserts a row with the `pending` status into the `jobs` table. Each forge has its own URL: `/webhooks/github`, `/webhooks/gitea`, `/webhooks/forgejo`, `/webhooks/gitlab`, `/webhooks/bitbucket`. A forge's URL is enabled when its webhook secret is set.
 
-## GitHub tarafında kurulum
+This document covers GitHub; setup and differences for the other forges are in [forges.md](forges.md). Deduplication, the fork rule, PR cancellation and the responses are the same for all of them.
 
-Repo → **Settings → Webhooks → Add webhook**:
+## Setup on GitHub
 
-| Alan | Değer |
+Repository → **Settings → Webhooks → Add webhook**:
+
+| Field | Value |
 |---|---|
-| Payload URL | `https://<sunucu>/webhooks/github` |
+| Payload URL | `https://<server>/webhooks/github` |
 | Content type | `application/json` |
-| Secret | Rastgele, uzun bir değer (ör. `openssl rand -hex 32`) |
-| Events | **Let me select individual events** → *Pushes* ve *Pull requests* |
+| Secret | A long, random value (e.g. `openssl rand -hex 32`) |
+| Events | **Let me select individual events** → *Pushes* and *Pull requests* |
 
-Aynı secret, server'a da verilmelidir. Secret boşsa `NewWebhookHandler` `ErrEmptySecret` döner, handler oluşturulmaz.
+The server must get the same secret. If the secret is empty, `NewWebhookHandler` returns `ErrEmptySecret` and no handler is created.
 
-## İstek işleme
+## Request handling
 
-1. Sadece `POST` kabul edilir.
-2. Body en fazla 25 MB olabilir (GitHub'ın limiti).
-3. `X-Hub-Signature-256` başlığı `sha256=<hex>` formatında olmalı ve body'nin secret ile HMAC-SHA256'sına eşit olmalıdır. Karşılaştırma sabit zamanlıdır (`hmac.Equal`).
-4. `X-GitHub-Event` başlığına göre:
+1. Only `POST` is accepted.
+2. The body can be at most 25 MB (GitHub's limit).
+3. The `X-Hub-Signature-256` header must be in the `sha256=<hex>` format and must equal the HMAC-SHA256 of the body with the secret. The comparison is constant-time (`hmac.Equal`).
+4. Depending on the `X-GitHub-Event` header:
    - `ping` → `200 {"status":"pong"}`
-   - `push` → aşağıya bak
-   - `pull_request` → [Pull request'ler](#pull-requestler)
-   - diğerleri → `200 {"status":"ignored"}`
-5. Push payload'ından alınan alanlar:
+   - `push` → see below
+   - `pull_request` → [Pull requests](#pull-requests)
+   - others → `200 {"status":"ignored"}`
+5. Fields taken from the push payload:
    - `repository.full_name` → `jobs.repo`
    - `repository.clone_url` → `jobs.clone_url`
-   - `ref` (`refs/heads/` öneki atılır) → `jobs.branch`
-   - `after` → `jobs.commit_sha` (40 ya da 64 karakter hex olmalı)
+   - `ref` (with the `refs/heads/` prefix stripped) → `jobs.branch`
+   - `after` → `jobs.commit_sha` (must be 40 or 64 hex characters)
 
-## Pull request'ler
+## Pull requests
 
-`pull_request` olayında yalnızca şu eylemler job oluşturur: `opened`, `reopened` ve yeni commit'lerin geldiği `synchronize`. Diğerleri (`labeled`, `edited` gibi) yok sayılır.
+In a `pull_request` event only these actions create a job: `opened`, `reopened` and `synchronize`, which brings new commits. Other actions (such as `labeled` and `edited`) are ignored.
 
-- Derlenen commit, PR'ın son commit'idir (`pull_request.head.sha`). Commit ana repodan çekilir; GitHub her PR'ın commit'lerini ana repoda da sunduğu için fork'un adresi hiç kullanılmaz.
-- `jobs.branch` PR'ın kendi branch'idir (`head.ref`), `target_branch` birleştirileceği branch (`base.ref`), `pull_request` PR numarasıdır.
-- PR'a yeni bir commit gelince aynı PR'ın bitmemiş eski job'ları iptal edilir: bekleyenler hemen, çalışanlar agent'ları tarafından durdurularak.
-- PR kapanınca (merge dahil) bitmemiş job'ları iptal edilir.
-- **Fork'lar:** Başka bir repodan gelen PR'lar varsayılan olarak derlenmez, çünkü dışarıdan gelen kodu agent'larda çalıştırır. `CISID_BUILD_FORKS=true` ile açılır. Açıksa da fork PR'larına hiçbir secret verilmez ([secrets.md](secrets.md)).
-- `pull_request.updated_at` 7 günden eskiyse olay yok sayılır (`stale delivery`).
+- The commit that is built is the PR's latest commit (`pull_request.head.sha`). The commit is fetched from the main repository. GitHub serves every PR's commits in the main repository too, so the fork's URL is never used.
+- `jobs.branch` is the PR's own branch (`head.ref`), `target_branch` is the branch it merges into (`base.ref`), and `pull_request` is the PR number.
+- When a new commit arrives on a PR, the unfinished older jobs of the same PR are canceled: pending jobs immediately, running jobs by their agents, which stop them.
+- When a PR is closed (merges included), its unfinished jobs are canceled.
+- **Forks:** PRs from another repository are not built by default, because building them runs outside code on the agents. Enable them with `CISID_BUILD_FORKS=true`. Even then, fork PRs get no secrets ([secrets.md](secrets.md)).
+- If `pull_request.updated_at` is older than 7 days, the event is ignored (`stale delivery`).
 
-## Tekrar (replay) koruması
+## Replay protection
 
-- Bir push payload'ı yalnızca bir kez job oluşturur. Tekilleştirme anahtarı **imzalı gövdenin SHA-256 özetidir**, `X-GitHub-Delivery` başlığı değildir. O başlık imzaya dahil olmadığı için saldırgan onu değiştirebilir, ama gövdeyi imzayı bozmadan değiştiremez. Kayıt ve job aynı transaction'da oluşur, bu yüzden GitHub'ın "Redeliver" ile yaptığı tekrar gönderimler de güvenlidir.
-- `repository.pushed_at` 7 günden eskiyse payload yok sayılır (`stale delivery`). Tekilleştirme kayıtları 8 gün tutulur ve sonra silinir. Böylece yakalanmış eski bir payload hiçbir zaman ikinci kez job oluşturamaz.
+- A push payload creates a job only once. The deduplication key is **the SHA-256 hash of the signed body**, not the `X-GitHub-Delivery` header. That header is not part of the signature, so an attacker can change it, but an attacker cannot change the body without breaking the signature. The record and the job are created in the same transaction, so resends through GitHub's "Redeliver" are also safe.
+- If `repository.pushed_at` is older than 7 days, the payload is ignored (`stale delivery`). Deduplication records are kept for 8 days and then deleted. This way a captured old payload can never create a job a second time.
 
-## Yanıtlar
+## Responses
 
-| Durum | Kod | Body |
+| Case | Code | Body |
 |---|---|---|
-| Job kuyruğa alındı | `202` | `{"status":"queued","job_id":42}` (birden fazla job açıldıysa ayrıca `"job_ids":[42,43]`) |
+| Job queued | `202` | `{"status":"queued","job_id":42}` (if more than one job was opened, also `"job_ids":[42,43]`) |
 | Tag push | `200` | `{"status":"ignored","reason":"not a branch push"}` |
-| Branch silindi | `200` | `{"status":"ignored","reason":"branch deleted"}` |
-| Aynı payload daha önce işlendi | `200` | `{"status":"ignored","reason":"duplicate delivery"}` |
-| `pushed_at` 7 günden eski | `200` | `{"status":"ignored","reason":"stale delivery"}` |
-| PR'da derleme gerektirmeyen eylem | `200` | `{"status":"ignored","reason":"pull request action \"labeled\" does not build"}` |
-| Fork'tan PR, `CISID_BUILD_FORKS` kapalı | `200` | `{"status":"ignored","reason":"pull request from a fork (CISID_BUILD_FORKS is off)"}` |
-| PR kapandı | `200` | `{"status":"canceled","reason":"pull request closed","canceled":[41,42]}` |
-| Rate limit aşıldı | `429` | `{"status":"error","reason":"too many requests"}`, `Retry-After: 1` |
+| Branch deleted | `200` | `{"status":"ignored","reason":"branch deleted"}` |
+| Same payload already processed | `200` | `{"status":"ignored","reason":"duplicate delivery"}` |
+| `pushed_at` older than 7 days | `200` | `{"status":"ignored","reason":"stale delivery"}` |
+| PR action that does not need a build | `200` | `{"status":"ignored","reason":"pull request action \"labeled\" does not build"}` |
+| PR from a fork, `CISID_BUILD_FORKS` off | `200` | `{"status":"ignored","reason":"pull request from a fork (CISID_BUILD_FORKS is off)"}` |
+| PR closed | `200` | `{"status":"canceled","reason":"pull request closed","canceled":[41,42]}` |
+| Rate limit exceeded | `429` | `{"status":"error","reason":"too many requests"}`, `Retry-After: 1` |
 | Ping | `200` | `{"status":"pong"}` |
-| Desteklenmeyen event | `200` | `{"status":"ignored","reason":"unsupported event \"issues\""}` |
-| İmza eksik / yanlış | `401` | `{"status":"error","reason":"invalid signature"}` |
-| Bozuk ya da eksik payload | `400` | `{"status":"error","reason":"invalid push payload"}` (PR'da `invalid pull request payload`) |
-| Body 25 MB'tan büyük | `413` | `{"status":"error","reason":"payload too large"}` |
-| `POST` dışında method | `405` | `{"status":"error","reason":"method not allowed"}` |
-| Veritabanı hatası | `500` | `{"status":"error","reason":"could not queue job"}` |
-| Sağlayıcının API'sine ulaşılamadı (yalnızca Bitbucket PR'larında) | `503` | `{"status":"error","reason":"bitbucket is unavailable, redeliver later"}` |
+| Unsupported event | `200` | `{"status":"ignored","reason":"unsupported event \"issues\""}` |
+| Signature missing or wrong | `401` | `{"status":"error","reason":"invalid signature"}` |
+| Malformed or missing payload | `400` | `{"status":"error","reason":"invalid push payload"}` (`invalid pull request payload` for PRs) |
+| Body larger than 25 MB | `413` | `{"status":"error","reason":"payload too large"}` |
+| Method other than `POST` | `405` | `{"status":"error","reason":"method not allowed"}` |
+| Database error | `500` | `{"status":"error","reason":"could not queue job"}` |
+| The forge's API is unreachable (Bitbucket PRs only) | `503` | `{"status":"error","reason":"bitbucket is unavailable, redeliver later"}` |
 
-## Elle deneme
+## Trying it by hand
 
 ```bash
 SECRET=s3cr3t-webhook-key
@@ -85,21 +87,21 @@ curl -i -X POST http://localhost:8080/webhooks/github \
   --data-binary @"$BODY"
 ```
 
-Sunucuyu yerelde çalıştırmak için bkz. [server.md](server.md).
+To run the server locally, see [server.md](server.md).
 
-## Testler
+## Tests
 
-`internal/api/webhook_test.go`, `internal/api/testdata/` altındaki gerçekçi GitHub payload'larını kullanır:
+`internal/api/webhook_test.go` uses realistic GitHub payloads from `internal/api/testdata/`:
 
-| Dosya | Senaryo |
+| File | Scenario |
 |---|---|
-| `push.json` | `main` branch'ine push |
-| `push_nested_branch.json` | `feature/webhook` gibi `/` içeren branch |
-| `push_branch_deleted.json` | Branch silme (`deleted: true`) |
+| `push.json` | Push to the `main` branch |
+| `push_nested_branch.json` | A branch that contains `/`, such as `feature/webhook` |
+| `push_branch_deleted.json` | Branch deletion (`deleted: true`) |
 | `push_tag.json` | Tag push (`refs/tags/...`) |
-| `ping.json` | Webhook ilk eklendiğinde gelen ping |
+| `ping.json` | The ping sent when the webhook is first added |
 
-Veritabanı `testify/mock` ile mock'lanır. `internal/db` testi gerçek PostgreSQL ister:
+The database is mocked with `testify/mock`. The `internal/db` test requires a real PostgreSQL:
 
 ```bash
 CISID_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/cisid_test?sslmode=disable go test ./internal/db/...

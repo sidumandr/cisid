@@ -1,8 +1,10 @@
 # ADR 001: Agent ↔ server protokolü WebSocket'te kalıyor
 
+[English](../../adr/001-agent-protocol-websocket.md) · **Türkçe**
+
 - **Durum:** Kabul edildi
 - **Tarih:** 2026-11-03
-- **İlgili:** [ROADMAP.md](../../ROADMAP.md) Faz 4, [agent.md](../agent.md), [hub.md](../hub.md)
+- **İlgili:** [ROADMAP.md](../../../ROADMAP.tr.md) Faz 4, [agent.md](../agent.md), [hub.md](../hub.md)
 
 ## Bağlam
 

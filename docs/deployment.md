@@ -1,8 +1,10 @@
-# Dağıtım
+# Deployment
 
-cisid iki binary'den oluşur: `cisid-server` (API, hub, web arayüzü) ve `cisid-agent` (job'ları Docker'da çalıştıran worker). İkisi de tek bir `Dockerfile` ile derlenir. Tek makinede docker compose, Kubernetes'te Helm chart'ı kullanılır ([Kubernetes](#kubernetes)).
+**English** · [Türkçe](tr/deployment.md)
 
-## Image'lar
+cisid consists of two binaries: `cisid-server` (API, hub, web UI) and `cisid-agent` (the worker that runs jobs in Docker). Both are built from a single `Dockerfile`. On a single machine, use docker compose; on Kubernetes, use the Helm chart ([Kubernetes](#kubernetes)).
+
+## Images
 
 ```bash
 docker build --target server -t cisid-server .
@@ -12,73 +14,73 @@ docker build --target server -t cisid-server .
 docker build --target agent -t cisid-agent .
 ```
 
-| Image | Taban | Kullanıcı | Not |
+| Image | Base | User | Note |
 |---|---|---|---|
-| `server` | `alpine:3.22` | uid 10001 | Ayrıcalık gerektirmez, `8080` portunu dinler |
-| `agent` | `alpine:3.22` | root | Host'un Docker socket'ine erişmek için |
+| `server` | `alpine:3.22` | uid 10001 | Needs no privileges, listens on port `8080` |
+| `agent` | `alpine:3.22` | root | To access the host's Docker socket |
 
-Binary'ler `CGO_ENABLED=0` ile statik derlenir. Image'larda Go toolchain ve kaynak kod yer almaz.
+The binaries are built statically with `CGO_ENABLED=0`. The images contain no Go toolchain and no source code.
 
-## docker compose ile tüm stack
+## The full stack with docker compose
 
-`compose.stack.yaml` PostgreSQL, server ve bir agent başlatır. PostgreSQL tanımını `compose.yaml`'dan alır. `compose.yaml` tek başına yalnızca geliştirme için PostgreSQL'i çalıştırır ve hiçbir değişken istemez.
+`compose.stack.yaml` starts PostgreSQL, the server and one agent. It takes the PostgreSQL definition from `compose.yaml`. On its own, `compose.yaml` runs only PostgreSQL for development and needs no variables.
 
-Proje kökünde bir `.env` dosyası oluşturun (git'e eklemeyin):
+Create a `.env` file in the project root (do not add it to git):
 
 ```
-CISID_GITHUB_WEBHOOK_SECRET=uzun-rastgele-bir-değer
-CISID_AGENT_TOKEN=en-az-16-karakter-rastgele-token
-CISID_API_TOKEN=en-az-16-karakter-yazma-token
-CISID_SECRET_KEY=base64-32-byte-anahtar
-CISID_GITHUB_TOKEN=commit-status-için-github-token
+CISID_GITHUB_WEBHOOK_SECRET=a-long-random-value
+CISID_AGENT_TOKEN=random-token-of-at-least-16-chars
+CISID_API_TOKEN=write-token-of-at-least-16-chars
+CISID_SECRET_KEY=base64-32-byte-key
+CISID_GITHUB_TOKEN=github-token-for-commit-status
 CISID_PUBLIC_URL=https://ci.example.com
-# Diğer sağlayıcılar, ör. ofisteki Gitea:
+# Other forges, e.g. the office Gitea:
 CISID_GITEA_URL=https://git.example.com
-CISID_GITEA_TOKEN=gitea-erişim-token'ı
-CISID_GITEA_WEBHOOK_SECRET=uzun-rastgele-bir-değer
-# Webhook'u server'a ulaşamayan sağlayıcılar için (bkz. docs/polling.md):
+CISID_GITEA_TOKEN=gitea-access-token
+CISID_GITEA_WEBHOOK_SECRET=a-long-random-value
+# For forges whose webhooks cannot reach the server (see docs/polling.md):
 CISID_POLL_INTERVAL=1m
 ```
 
-`CISID_AGENT_TOKEN` zorunludur, eksikse compose başlamaz. Sağlayıcıların ayarları ([forges.md](forges.md)) ve diğerleri isteğe bağlıdır. Diğerleri isteğe bağlıdır, anlamları için [server.md](server.md) ve [secrets.md](secrets.md). Her komutta `-f` yazmamak için `.env`'e `COMPOSE_FILE=compose.stack.yaml` ekleyebilirsiniz.
+`CISID_AGENT_TOKEN` is required; compose does not start without it. The forge settings ([forges.md](forges.md)) and the other variables are optional. For what the others mean, see [server.md](server.md) and [secrets.md](secrets.md). To avoid typing `-f` in every command, you can add `COMPOSE_FILE=compose.stack.yaml` to `.env`.
 
 ```bash
 docker compose -f compose.stack.yaml up -d --build --wait
 ```
 
-Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile değiştirilir). Webhook adresleri `/webhooks/<sağlayıcı>` yollarıdır, ör. `/webhooks/github` ya da `/webhooks/gitea` ([forges.md](forges.md)). `.env`'deki `OTEL_EXPORTER_OTLP_ENDPOINT` server'a ve agent'a aktarılır ve trace'leri açar ([tracing.md](tracing.md)).
+The server opens at `http://localhost:8080` (change it with `CISID_HTTP_PORT`). Webhook URLs are the `/webhooks/<forge>` paths, e.g. `/webhooks/github` or `/webhooks/gitea` ([forges.md](forges.md)). `OTEL_EXPORTER_OTLP_ENDPOINT` in `.env` is passed to the server and the agent and turns on traces ([tracing.md](tracing.md)).
 
-Daha fazla agent:
+More agents:
 
 ```bash
 docker compose -f compose.stack.yaml up -d --scale agent=3
 ```
 
-Her agent kendi container hostname'ini ad olarak kullanır. Sabit bir ad isterseniz `CISID_AGENT_NAME` verin, ama o zaman `--scale` kullanmayın: aynı adla bağlanan ikinci agent ilkinin bağlantısını devralır.
+Each agent uses its own container hostname as its name. If you want a fixed name, set `CISID_AGENT_NAME`, but then do not use `--scale`: a second agent that connects with the same name takes over the first one's connection.
 
-Durdurmak (veritabanı volume'u korunur):
+To stop (the database volume is kept):
 
 ```bash
 docker compose -f compose.stack.yaml down
 ```
 
-### Agent ve Docker socket
+### Agents and the Docker socket
 
-Agent, step ve service container'larını host'un Docker daemon'ında başlatır (`/var/run/docker.sock` bağlanır). Bu, agent container'ına host üzerinde root eşdeğeri yetki verir. Agent'ı yalnızca CI için ayrılmış bir makinede çalıştırın ve güvenmediğiniz repoların job'larını bu makinede çalıştırmayın. Container sınırları için [runner.md](runner.md).
+The agent starts step and service containers on the host's Docker daemon (`/var/run/docker.sock` is mounted). This gives the agent container root-equivalent access on the host. Run the agent only on a machine dedicated to CI, and do not run jobs from repositories you do not trust on that machine. For container limits, see [runner.md](runner.md).
 
-Step'ler agent container'ının içinde değil host daemon'ında çalıştığı için workspace bir Docker volume'udur, agent'ın dosya sistemi kullanılmaz.
+Because steps run on the host daemon and not inside the agent container, the workspace is a Docker volume. The agent's file system is not used.
 
 ### TLS
 
-Compose stack'te agent server'a compose'un özel ağı üzerinden `ws://server:8080` ile bağlanır ve token'ı şifresiz gönderdiği için başlangıçta bir uyarı yazar. Agent'lar başka makinelerdeyse server'ı TLS ile çalıştırın (`CISID_TLS_CERT_FILE`, `CISID_TLS_KEY_FILE`) ya da bir reverse proxy arkasına koyun ve agent'ları `wss://` ile bağlayın ([agent.md](agent.md)).
+In the compose stack, the agent connects to the server over compose's private network with `ws://server:8080`. Because it sends the token unencrypted, it logs a warning at startup. If agents run on other machines, run the server with TLS (`CISID_TLS_CERT_FILE`, `CISID_TLS_KEY_FILE`) or put it behind a reverse proxy, and connect the agents with `wss://` ([agent.md](agent.md)).
 
-## Production notları
+## Production notes
 
-- Server durumsuzdur: tüm durum PostgreSQL'dedir. Server yeniden başlatıldığında agent'lar yeniden bağlanır ve çalışan job'lar kaldıkları yerden devam eder ([hub.md](hub.md)).
-- Birden fazla server kopyası aynı veritabanını kullanabilir: job'lar `FOR UPDATE SKIP LOCKED` ile dağıtılır, sahiplik lease'lerle veritabanında tutulur, log akışı PostgreSQL `LISTEN/NOTIFY` ile tüm kopyalara ulaşır ve zamanlamalar tek bir kopyada çalışır. `TestRunTwoServers` bunu uçtan uca dener: bir kopyaya gelen push diğerine bağlı agent'ta çalışır, ilk kopya logları canlı akıtır ve job'u iptal edebilir. Bir kopyaya gelen job'u yalnızca başka kopyaya bağlı agent'lar alabiliyorsa, job yoklama aralığı kadar, en fazla 5 saniye bekler.
-- Veritabanı yedeğini düzenli alın. Secret'lar `CISID_SECRET_KEY` olmadan çözülemez, anahtarı ayrı saklayın.
-- Server internete açıksa `CISID_READ_TOKEN` tanımlayın; job'lar, loglar ve `/metrics` o zaman token ister ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` açık kalır.
+- The server is stateless: all state is in PostgreSQL. When the server restarts, agents reconnect and running jobs continue where they left off ([hub.md](hub.md)).
+- Multiple server replicas can share the same database: jobs are dispatched with `FOR UPDATE SKIP LOCKED`, ownership is kept in the database with leases, the log stream reaches all replicas through PostgreSQL `LISTEN/NOTIFY`, and schedules run on a single replica. `TestRunTwoServers` tests this end to end: a push that arrives at one replica runs on an agent connected to the other, and the first replica streams the logs live and can cancel the job. If only agents connected to another replica can take a job that arrives at one replica, the job waits for up to one job polling interval, at most 5 seconds.
+- Back up the database regularly. Secrets cannot be decrypted without `CISID_SECRET_KEY`, so store the key separately.
+- If the server is exposed to the internet, set `CISID_READ_TOKEN`; jobs, logs and `/metrics` then require the token ([api.md](api.md#read-access)). `/healthz` and `/readyz` stay open.
 
 ## Kubernetes
 
-[deployments/helm/cisid](../deployments/helm/cisid/README.md) chart'ı server'ı bir Deployment olarak, agent'ları ise Docker-in-Docker sidecar'lı bir StatefulSet olarak kurar. Deneme için tek kopya bir PostgreSQL de kurabilir. Kurulum, TLS, harici veritabanı ve güvenlik notları chart'ın README'sindedir.
+The [deployments/helm/cisid](../deployments/helm/cisid/README.md) chart installs the server as a Deployment and the agents as a StatefulSet with a Docker-in-Docker sidecar. For trying it out, it can also install a single-replica PostgreSQL. Installation, TLS, an external database and security notes are in the chart's README.

@@ -1,13 +1,15 @@
 # Agent Hub
 
-`internal/hub` agent protokolünün server tarafıdır. Agent'ların WebSocket bağlantılarını tutar, bekleyen job'ları boştaki agent'lara dağıtır ve agent'lardan gelen log ve sonuçları veritabanına yazar. Server'da `GET /agent/ws` yolunda çalışır.
+**English** · [Türkçe](tr/hub.md)
 
-## Akış
+`internal/hub` is the server side of the agent protocol. It holds the agents' WebSocket connections, hands pending jobs to idle agents and writes the logs and results that agents send to the database. It runs on the server at `GET /agent/ws`.
+
+## Flow
 
 ```
 GitHub ──webhook──► jobs (pending) ──Wake──► dispatcher
                                                  │ ClaimJob (FOR UPDATE SKIP LOCKED)
-                                                 │ Planner.Plan → adımlar
+                                                 │ Planner.Plan → steps
                                                  ▼
                                      job_assigned ──► agent
                                                        │
@@ -15,73 +17,73 @@ GitHub ──webhook──► jobs (pending) ──Wake──► dispatcher
             jobs     ◄── FinishJob    ◄── job_result ◄─┘
 ```
 
-1. Webhook bir job oluşturur (`pending`) ve hub'ı uyandırır (`Wake`). Hub ayrıca 5 saniyede bir kendiliğinden bakar. Böylece başka bir server örneğinin oluşturduğu job'lar da kaçmaz.
-2. Dispatcher her boştaki agent için `ClaimJob` çağırır. Bu sorgu en eski `pending` job'u `running` yapar ve agent'a atar. `FOR UPDATE SKIP LOCKED` sayesinde aynı job iki agent'a gitmez, birden fazla server aynı anda çalışsa bile.
-3. `Planner` job'un adımlarını üretir ve agent'a `job_assigned` gönderilir. `.cisid.yml` yoksa ya da geçersizse job `failed` olur ve sıradaki job'a geçilir. GitHub'a geçici olarak ulaşılamıyorsa job kuyruğa geri döner.
-4. Agent'tan gelen `job_log` mesajları `job_logs` tablosuna, `job_result` mesajı `jobs` tablosuna yazılır. Sonuç gelince agent tekrar boşa çıkar ve hub sıradaki job'a bakar.
+1. A webhook creates a job (`pending`) and wakes the hub (`Wake`). The hub also checks on its own every 5 seconds, so it does not miss jobs that another server instance created.
+2. The dispatcher calls `ClaimJob` for each idle agent. This query sets the oldest `pending` job to `running` and assigns it to the agent. Thanks to `FOR UPDATE SKIP LOCKED`, the same job never goes to two agents, even when several servers run at the same time.
+3. The `Planner` produces the job's steps, and the hub sends `job_assigned` to the agent. If `.cisid.yml` is missing or invalid, the job becomes `failed` and the hub moves on to the next job. If GitHub is temporarily unreachable, the job goes back to the queue.
+4. `job_log` messages from the agent are written to the `job_logs` table, and the `job_result` message to the `jobs` table. When the result arrives, the agent is idle again and the hub looks for the next job.
 
 ## Planner
 
-`internal/pipeline` job'un adımlarını üretir: önce **clone**, sonra pushlanan commit'teki `.cisid.yml` adımları ([pipeline.md](pipeline.md)). Plan geçici bir sebeple üretilemezse job başarısız sayılmaz. Job kuyruğa geri döner ve o dağıtım turu durur, aynı job hemen tekrar alınmaz.
+`internal/pipeline` produces the job's steps: first **clone**, then the steps from `.cisid.yml` in the pushed commit ([pipeline.md](pipeline.md)). If the plan cannot be produced for a temporary reason, the job does not count as failed. The job goes back to the queue and that dispatch round stops, so the same job is not picked up again right away.
 
-Webhook'tan gelen değerler (clone URL, branch, SHA) script'in içine yazılmaz. Ortam değişkeni olarak verilir ve script içinde sadece tırnak içinde kullanılır (`"$CISID_CLONE_URL"`). Bu yüzden shell injection'a açık değildir.
+Values from the webhook (clone URL, branch, SHA) are not written into the script. They are passed as environment variables and used only inside quotes in the script (`"$CISID_CLONE_URL"`). So the script is not open to shell injection.
 
-## Sahiplik kuralları
+## Ownership rules
 
-- Agent sadece **elindeki** job için log ve sonuç gönderebilir. Başka bir job'a ait mesajlar atılır ve uyarı loglanır.
-- `FinishJob` sadece job o agent'ta `running` durumundaysa başarılı olur. Tekrar kuyruğa alınmış ya da bitmiş bir job'a sonuç yazılamaz.
-- Aynı adla ikinci bir bağlantı gelirse eskisi kapatılır. Bu, kopup yeniden bağlanan agent'ın yarım açık kalan (half-open) eski bağlantısını temizler.
+- An agent can send logs and results only for the job it **holds**. Messages for any other job are dropped, and a warning is logged.
+- `FinishJob` succeeds only if the job is `running` on that agent. A result cannot be written to a job that was requeued or has finished.
+- If a second connection arrives with the same name, the old one is closed. This cleans up the half-open old connection of an agent that dropped and reconnected.
 
-## Yeniden bağlanma ve kayıp job'lar
+## Reconnection and lost jobs
 
-Agent her bağlantıda `agent_hello` içinde elindeki job'u bildirir (`running_job_id`). Job'un sonucu henüz gönderilmediyse de o job bildirilir. Hub bu bilgiyle iki şey yapar:
+On every connection, the agent reports the job it holds in `agent_hello` (`running_job_id`). It also reports a job whose result it has not sent yet. The hub uses this to do two things:
 
-- Veritabanında bu agent'a atanmış görünen **diğer** `running` job'ları tekrar kuyruğa alır (`RequeueAgentJobs`). Bu durum iki şekilde oluşur: atama mesajı agent'a hiç ulaşmamıştır, ya da agent yeniden başlamıştır.
-- Bildirilen job bitene kadar agent'a yeni iş vermez.
+- It requeues the **other** `running` jobs that the database shows as assigned to this agent (`RequeueAgentJobs`). This happens in two ways: the assignment message never reached the agent, or the agent restarted.
+- It gives the agent no new work until the reported job finishes.
 
-Server yeniden başlarsa agent bağlantıyı tekrar kurar, çalışan job devam eder ve sonucu yeni server'a teslim edilir (`TestIntegrationJobSurvivesServerRestart`).
+If the server restarts, the agent reconnects, the running job continues and its result is delivered to the new server (`TestIntegrationJobSurvivesServerRestart`).
 
-Agent bir işi reddederse (`job_rejected`) job tekrar kuyruğa alınır. Agent bir sonuç bildirene ya da yeniden bağlanana kadar yeni iş almaz. Bu, "meşgul agent'a sürekli iş gönderip reddedilme" döngüsünü önler.
+If an agent rejects a job (`job_rejected`), the job goes back to the queue. The agent gets no new work until it reports a result or reconnects. This prevents a loop of "keep sending work to a busy agent and getting rejected".
 
-## Onaylı teslim
+## Acknowledged delivery
 
-Hub agent'tan gelen her numaralı mesajı işledikten sonra (yazdıktan ya da bilerek attıktan sonra) onaylar. Writer goroutine'i yoğunlukta onayları birleştirir ve en son işlenen `id` için tek bir `ack` gönderir. Agent onaylanmamış mesajları yeni bağlantıda tekrar gönderir. Ayrıntılar [agent.md](agent.md#onaylı-teslim) dosyasında.
+The hub acknowledges each numbered message from the agent after it processes it (after writing it or deliberately dropping it). Under load, the writer goroutine merges acknowledgements and sends a single `ack` for the last processed `id`. The agent resends unacknowledged messages on the new connection. See [agent.md](agent.md#acknowledged-delivery) for details.
 
 ## Graceful shutdown
 
-WebSocket kütüphanesinin `Close` metodu, kapanış el sıkışmasını beklerken karşıdan gelen veri mesajlarını **okuyup atar**. Hub bağlantıyı kendisi kapatsaydı, agent'ın o anda gönderdiği log ve sonuçlar kaybolurdu. Bu yüzden kapanış şöyle işler:
+The WebSocket library's `Close` method **reads and discards** incoming data messages while it waits for the closing handshake. If the hub closed the connection itself, the logs and results the agent sent at that moment would be lost. So shutdown works like this:
 
-1. Hub her agent'a `server_closing` gönderir.
-2. Agent o an yazdığı mesajı bitirir, outbox'tan yeni mesaj almayı bırakır ve bağlantıyı **kendisi** kapatır.
-3. Hub, agent'ın kapanış çerçevesine kadar gelen her mesajı işler ve onaylar. Gönderilmemiş ya da onaylanmamış mesajlar agent'ın outbox'ında kalır ve yeni server'a iletilir.
-4. Bunu yapmayan (eski) bir agent'ın bağlantısı 5 sn sonra zorla kapatılır (`WithDrainTimeout`).
+1. The hub sends `server_closing` to each agent.
+2. The agent finishes the message it is writing, stops taking new messages from the outbox and closes the connection **itself**.
+3. The hub processes and acknowledges every message that arrives before the agent's close frame. Unsent or unacknowledged messages stay in the agent's outbox and are delivered to the new server.
+4. An (old) agent that does not do this has its connection force-closed after 5 s (`WithDrainTimeout`).
 
-## Canlılık ve lease
+## Liveness and leases
 
-Hub her bağlantıya 30 sn'de bir WebSocket ping gönderir. Pong 10 sn içinde gelmezse bağlantı kapatılır ve ölü bağlantılar fark edilir.
+The hub sends a WebSocket ping to each connection every 30 s. If the pong does not arrive within 10 s, the hub closes the connection, so dead connections are detected.
 
-Her `running` job'un bir **lease** süresi vardır (`jobs.lease_expires_at`, varsayılan 5 dk, `WithLease`):
+Each `running` job has a **lease** (`jobs.lease_expires_at`, 5 min by default, `WithLease`):
 
-- `ClaimJob` job'u lease ile birlikte verir.
-- Hub her lease/3 sürede kendisine bağlı agent'ların job'larının lease'ini uzatır (`RenewLeases`).
-- Aynı turda lease'i dolmuş job'ları kuyruğa geri alır (`RequeueExpired`) ve hemen dağıtır. Lease'i dolan bir job'un agent'ı bu süre boyunca hiçbir server'a bağlı olmamıştır.
-- Bağlantısı kopan agent'ın job'u lease dolana kadar beklenir. Böylece kısa kopmalar ve server yeniden başlatmaları job'u yeniden çalıştırmaz.
-- Geri dönen agent hello'da job'unu bildirirse job ona geri bağlanır (`AdoptJob`), lease süresi dolmuş olsa bile. Tek koşul, job'un bu arada başka bir agent'a verilmemiş olmasıdır. Verilmişse eski agent'ın sonucu atılır.
+- `ClaimJob` hands out the job with a lease.
+- Every lease/3, the hub renews the leases of the jobs held by agents connected to it (`RenewLeases`).
+- In the same round, it requeues jobs whose lease has expired (`RequeueExpired`) and dispatches them right away. When a job's lease expires, its agent has not been connected to any server for that whole time.
+- When an agent's connection drops, its job waits until the lease expires. So short disconnects and server restarts do not rerun the job.
+- If a returning agent reports its job in the hello, the job is reattached to it (`AdoptJob`), even if the lease has expired. The only condition is that the job has not gone to another agent in the meantime. If it has, the old agent's result is discarded.
 
-Bütün zamanlar veritabanının saatine göre hesaplanır (`now()`). Server'ların saatleri arasındaki farklar sonucu etkilemez.
+All times come from the database clock (`now()`). Clock differences between servers do not affect the result.
 
-## Bilinen sınırlamalar
+## Known limitations
 
-- Her log parçası ayrı bir `INSERT` ile yazılır. Yoğun log üreten job'larda toplu yazma (batch) gerekebilir.
-- Birden fazla server kopyasında, bir kopyaya gelen job'u başka kopyaya bağlı agent'lar ancak o kopyanın bir sonraki yoklamasında (en fazla 5 saniye) alır. Uyandırma yalnızca job'un geldiği kopyada anında olur.
+- Each log chunk is written with a separate `INSERT`. Jobs that produce a lot of logs may need batched writes.
+- With several server replicas, agents connected to another replica pick up a job that arrived at one replica only on their own replica's next poll (at most 5 seconds). The wake-up is immediate only on the replica that received the job.
 
-## Testler
+## Tests
 
-| Test | Kapsam |
+| Test | Coverage |
 |---|---|
-| `hub_test.go` | Mock store ve planner, ham WebSocket istemcisi: job yaşam döngüsü, hello zorunluluğu, yeniden bağlanma, reddetme, sahiplik, plan hatası, çoklu agent, bağlantı değişimi, drain ile ve drain olmadan kapanış |
-| `hub_integration_test.go` | Gerçek PostgreSQL ve gerçek agent: başarılı ve başarısız job'lar, job sürerken server'ın yeniden başlaması, kaybolan agent'ın job'unun lease dolunca başka agent'a geçmesi |
-| `cmd/server` `TestRunEndToEnd` | Gerçek server, gerçek agent ve imzalı webhook, sonuç ve loglar veritabanında |
+| `hub_test.go` | Mock store and planner, raw WebSocket client: job lifecycle, required hello, reconnection, rejection, ownership, plan error, multiple agents, connection replacement, shutdown with and without drain |
+| `hub_integration_test.go` | Real PostgreSQL and a real agent: successful and failed jobs, a server restart while a job runs, a lost agent's job moving to another agent when the lease expires |
+| `cmd/server` `TestRunEndToEnd` | Real server, real agent and a signed webhook: result and logs in the database |
 
 ```bash
 CISID_TEST_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' go test ./internal/hub/ ./cmd/server/

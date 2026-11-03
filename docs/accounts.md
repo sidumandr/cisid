@@ -1,116 +1,118 @@
-# Hesaplar ve roller
+# Accounts and roles
 
-cisid'de kullanıcı hesapları vardır. Her kullanıcının bir **rolü** olur ve kullanıcılar şifreyle, git sağlayıcılarıyla (GitHub, Gitea, Forgejo, GitLab, Bitbucket; [aşağıda](#sağlayıcıyla-giriş)) ya da kişisel API token'larıyla giriş yapar. Server'ın kendi token'ları (`CISID_API_TOKEN`, `CISID_READ_TOKEN`) eskisi gibi çalışmaya devam eder; hesaplar onların yanına eklenir.
+**English** · [Türkçe](tr/accounts.md)
 
-## Roller
+cisid has user accounts. Every user has a **role**, and users sign in with a password, through a forge (GitHub, Gitea, Forgejo, GitLab, Bitbucket; [below](#signing-in-through-a-forge)) or with personal API tokens. The server's own tokens (`CISID_API_TOKEN`, `CISID_READ_TOKEN`) keep working as before; accounts are added alongside them.
 
-| Rol | Yapabildikleri |
+## Roles
+
+| Role | What it can do |
 |---|---|
-| `viewer` | Job'ları, logları ve metrikleri okur |
-| `maintainer` | Ayrıca build başlatır, job iptal eder ve yeniden çalıştırır; zamanlamaları, yoklanan branch'leri ve secret'ları yönetir |
-| `admin` | Ayrıca kullanıcıları yönetir |
+| `viewer` | Reads jobs, logs and metrics |
+| `maintainer` | Also starts builds, cancels and reruns jobs; manages schedules, polled branches and secrets |
+| `admin` | Also manages users |
 
-Her rol, kendinden öncekilerin yapabildiği her şeyi yapar.
+Each role can do everything the roles before it can do.
 
-## Kim, nasıl tanınır
+## Who is recognized and how
 
-| Yol | Kim | Not |
+| Method | Who | Note |
 |---|---|---|
-| `Authorization: Bearer <CISID_API_TOKEN>` | admin | Server'ın token'ı; bir kullanıcıya ait değildir |
+| `Authorization: Bearer <CISID_API_TOKEN>` | admin | The server's token; it does not belong to a user |
 | `Authorization: Bearer <CISID_READ_TOKEN>` | viewer | |
-| `Authorization: Bearer cisid_...` | Token'ın sahibi, kendi rolüyle | Kişisel token ([aşağıda](#kişisel-tokenlar)) |
-| Oturum cookie'si (`cisid_session`) | Giriş yapan kullanıcı | `POST /api/login` ile alınır |
-| Okuma cookie'si (`cisid_token`) | viewer | Arayüzde okuma ya da API token'ıyla giriş yapılınca alınır, yalnızca okur |
+| `Authorization: Bearer cisid_...` | The token's owner, with their own role | Personal token ([below](#personal-tokens)) |
+| Session cookie (`cisid_session`) | The signed-in user | Issued by `POST /api/login` |
+| Read cookie (`cisid_token`) | viewer | Issued when you sign in in the UI with the read or API token; read-only |
 
-Bir istek kabul edilmeyen bir Bearer token taşıyorsa cookie'lere bakılmaz. Kimliği olmayan bir istek `401`, rolü yetmeyen bir istek `403` alır.
+If a request carries a Bearer token that is not accepted, cookies are not checked. A request with no identity gets `401`; a request whose role is not enough gets `403`.
 
-## İlk admin
+## The first admin
 
-Yeni bir server'da ilk hesabı açmanın iki yolu var:
+There are two ways to create the first account on a new server:
 
-- `CISID_ADMIN_PASSWORD` verin. Server açılışta `CISID_ADMIN_USER` (varsayılan `admin`) adlı bir admin oluşturur; kullanıcı zaten varsa dokunmaz, şifresini değiştirmez. Şifreyi sonra arayüzden değiştirin.
-- Ya da `CISID_API_TOKEN` ile kullanıcı API'sini çağırın; API token'ı admin'dir:
+- Set `CISID_ADMIN_PASSWORD`. At startup the server creates an admin named `CISID_ADMIN_USER` (default `admin`); if the user already exists, the server leaves it alone and does not change its password. Change the password in the UI afterwards.
+- Or call the user API with `CISID_API_TOKEN`; the API token is an admin:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" \
-  -d '{"username":"ahmet","role":"admin","password":"en-az-10-karakter"}' \
+  -d '{"username":"ahmet","role":"admin","password":"at-least-10-characters"}' \
   http://localhost:8080/api/users
 ```
 
-## Okuma erişimi
+## Read access
 
-| `CISID_READ_ACCESS` | Anlamı |
+| `CISID_READ_ACCESS` | Meaning |
 |---|---|
-| `public` | Herkes job'ları, logları ve metrikleri okur. `CISID_READ_TOKEN` yoksa varsayılandır. |
-| `signed-in` | Okumak giriş ya da token ister. `CISID_READ_TOKEN` varsa varsayılandır. |
+| `public` | Anyone can read jobs, logs and metrics. The default when `CISID_READ_TOKEN` is not set. |
+| `signed-in` | Reading requires signing in or a token. The default when `CISID_READ_TOKEN` is set. |
 
-Değişiklikler her zaman maintainer ister. Hiç kullanıcı ve `CISID_API_TOKEN` yoksa değişiklik yapan uç noktalar `403` döner, çünkü kimse yetkili olamaz.
+Changes always require a maintainer. If there are no users and no `CISID_API_TOKEN`, endpoints that make changes return `403`, because nobody can be authorized.
 
-## Giriş ve oturumlar
+## Sign-in and sessions
 
-- `POST /api/login` gövdesi `{"username":"...","password":"..."}` ya da `{"token":"..."}`. Başarılıysa `204` ve bir oturum cookie'si döner (HttpOnly, HTTPS'te `Secure`, `SameSite=Lax`). Kişisel token'la giriş de bir oturum açar; server'ın token'larıyla giriş yalnızca okuma cookie'si verir.
-- Yanlış şifre ile olmayan kullanıcı aynı yanıtı alır (`401 wrong username or password`) ve aynı sürede döner.
-- Oturum `CISID_SESSION_TTL` kadar sürer (varsayılan `7d`). Server yalnızca oturumun SHA-256 özetini saklar. `POST /api/logout` oturumu siler. Süresi dolan oturumlar saatlik temizlikte silinir.
-- **CSRF:** Cookie ile tanınan bir istek bir şey değiştiriyorsa `X-Cisid-Request` başlığını göndermelidir, yoksa `403` alır. Başka bir siteden gönderilen form bu başlığı ekleyemez. Web arayüzü bunu her istekte gönderir; Bearer token'la gelen isteklerin göndermesi gerekmez.
-- Şifreler en az 10 karakterdir ve PBKDF2-HMAC-SHA256 (600.000 tur, tuzlu) ile saklanır. Hash'ler API'den hiçbir zaman dönmez.
-- `GET /api/me`: kimin giriş yaptığı (`user`, `role`, `via`), okumanın açık olup olmadığı (`public_read`), hesapların açık olup olmadığı (`accounts`).
+- The body of `POST /api/login` is `{"username":"...","password":"..."}` or `{"token":"..."}`. On success it returns `204` and a session cookie (HttpOnly, `Secure` over HTTPS, `SameSite=Lax`). Signing in with a personal token also opens a session; signing in with the server's tokens only gives a read cookie.
+- A wrong password and a nonexistent user get the same response (`401 wrong username or password`) and take the same time.
+- A session lasts `CISID_SESSION_TTL` (default `7d`). The server stores only the SHA-256 hash of the session. `POST /api/logout` deletes the session. The hourly cleanup deletes expired sessions.
+- **CSRF:** A request identified by a cookie that changes something must send the `X-Cisid-Request` header, or it gets `403`. A form submitted from another site cannot add this header. The web UI sends it with every request; requests with a Bearer token do not need to send it.
+- Passwords are at least 10 characters and are stored with PBKDF2-HMAC-SHA256 (600,000 iterations, salted). The API never returns hashes.
+- `GET /api/me`: who is signed in (`user`, `role`, `via`), whether reading is open (`public_read`), whether accounts are enabled (`accounts`).
 
-## Sağlayıcıyla giriş
+## Signing in through a forge
 
-Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, authorization code akışı). Her sağlayıcıda bir OAuth uygulaması kaydedilir ve client id ile secret'ı server'a verilir. Giriş diyaloğunda her sağlayıcı için bir **Sign in with ...** düğmesi çıkar.
+Users can sign in with their forge accounts (OAuth 2.0, authorization code flow). You register an OAuth app on each forge and give its client ID and secret to the server. The sign-in dialog shows a **Sign in with ...** button for each forge.
 
-| Değişken | Açıklama |
+| Variable | Description |
 |---|---|
-| `CISID_GITHUB_OAUTH_CLIENT_ID`, `CISID_GITHUB_OAUTH_CLIENT_SECRET` | GitHub (ya da GitHub Enterprise Server, `CISID_GITHUB_API_URL`'den) |
-| `CISID_GITEA_OAUTH_CLIENT_ID`, `..._SECRET` | Gitea (`CISID_GITEA_URL` gerekir) |
-| `CISID_FORGEJO_OAUTH_CLIENT_ID`, `..._SECRET` | Forgejo (`CISID_FORGEJO_URL` gerekir) |
-| `CISID_GITLAB_OAUTH_CLIENT_ID`, `..._SECRET` | GitLab (`CISID_GITLAB_URL`, varsayılan GitLab.com) |
-| `CISID_BITBUCKET_OAUTH_CLIENT_ID`, `..._SECRET` | Bitbucket Cloud (OAuth consumer'ın key ve secret'ı) |
-| `CISID_OAUTH_SIGNUP_ROLE` | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte bu rolle hesap açılır. Boşsa yalnızca admin'in bağladığı kullanıcılar girer. |
-| `CISID_PUBLIC_URL` | Zorunlu: sağlayıcı tarayıcıyı `<CISID_PUBLIC_URL>/auth/<sağlayıcı>/callback` adresine geri gönderir |
+| `CISID_GITHUB_OAUTH_CLIENT_ID`, `CISID_GITHUB_OAUTH_CLIENT_SECRET` | GitHub (or GitHub Enterprise Server, from `CISID_GITHUB_API_URL`) |
+| `CISID_GITEA_OAUTH_CLIENT_ID`, `..._SECRET` | Gitea (requires `CISID_GITEA_URL`) |
+| `CISID_FORGEJO_OAUTH_CLIENT_ID`, `..._SECRET` | Forgejo (requires `CISID_FORGEJO_URL`) |
+| `CISID_GITLAB_OAUTH_CLIENT_ID`, `..._SECRET` | GitLab (`CISID_GITLAB_URL`, default GitLab.com) |
+| `CISID_BITBUCKET_OAUTH_CLIENT_ID`, `..._SECRET` | Bitbucket Cloud (the OAuth consumer's key and secret) |
+| `CISID_OAUTH_SIGNUP_ROLE` | `viewer` or `maintainer`: a forge user without an account gets an account with this role on their first sign-in. If empty, only users an admin has linked can sign in. |
+| `CISID_PUBLIC_URL` | Required: the forge sends the browser back to `<CISID_PUBLIC_URL>/auth/<forge>/callback` |
 
-**Uygulamayı kaydetmek.** Her sağlayıcıda *callback* (redirect) adresi `https://<cisid>/auth/<sağlayıcı>/callback` olur.
+**Registering the app.** On every forge the *callback* (redirect) URL is `https://<cisid>/auth/<forge>/callback`.
 
-| Sağlayıcı | Nerede | İzin |
+| Forge | Where | Permission |
 |---|---|---|
-| GitHub | Settings → Developer settings → **OAuth Apps** → New OAuth App | İzin gerekmez (herkese açık profil) |
-| Gitea, Forgejo | Settings → **Applications** → OAuth2 Applications (ya da site yönetiminden) | `read:user` |
-| GitLab | User settings → **Applications** (ya da grup/admin uygulaması) | `read_user` |
-| Bitbucket | Workspace settings → **OAuth consumers** → Add consumer; *This is a private consumer* işaretli | *Account: Read* |
+| GitHub | Settings → Developer settings → **OAuth Apps** → New OAuth App | No permission needed (public profile) |
+| Gitea, Forgejo | Settings → **Applications** → OAuth2 Applications (or from site administration) | `read:user` |
+| GitLab | User settings → **Applications** (or a group or admin application) | `read_user` |
+| Bitbucket | Workspace settings → **OAuth consumers** → Add consumer; with *This is a private consumer* checked | *Account: Read* |
 
-**Hesaplar nasıl eşleşir.**
+**How accounts are matched.**
 
-- Bir admin kullanıcıya sağlayıcıdaki kullanıcı adını yazar (`identities`, ör. `{"gitea":"ahmet"}`; arayüzde *Forge logins*). O kullanıcı sağlayıcıyla ilk kez girdiğinde sağlayıcının **değişmeyen kullanıcı numarası** hesaba bağlanır. Sonraki girişler bu numarayla eşleşir: kullanıcı sağlayıcıda adını değiştirse de girer, eski adını alan başka biri giremez.
-- `CISID_OAUTH_SIGNUP_ROLE` tanımlıysa eşleşmeyen sağlayıcı kullanıcısı için hesap açılır. Kullanıcı adı sağlayıcıdaki adından türetilir; alınmışsa sonuna sağlayıcının adı eklenir (`ahmet-gitea`). Kendi kurduğunuz bir Gitea ya da GitLab'da herkes çalışansa kullanışlıdır. **GitHub.com, GitLab.com ya da Bitbucket'ta açmayın:** o sağlayıcıda hesabı olan herkes girebilir.
-- Devre dışı bırakılan kullanıcı sağlayıcıyla da giremez.
+- An admin enters the user's username on the forge (`identities`, e.g. `{"gitea":"ahmet"}`; *Forge logins* in the UI). The first time that user signs in through the forge, the forge's **immutable user ID** is linked to the account. Later sign-ins match on this ID: the user can still sign in after changing their name on the forge, and someone else who takes the old name cannot.
+- If `CISID_OAUTH_SIGNUP_ROLE` is set, cisid creates an account for a forge user who does not match. The username is derived from their name on the forge; if that is taken, the forge's name is appended (`ahmet-gitea`). This is useful on a Gitea or GitLab you host yourself where everyone is an employee. **Do not enable it on GitHub.com, GitLab.com or Bitbucket:** anyone with an account on that forge can sign in.
+- A disabled user cannot sign in through a forge either.
 
-**Güvenlik.** Giriş `state` parametresiyle bağlanır (kısa ömürlü, HttpOnly bir cookie'de, `SameSite=Lax`). Dönüş adresi yalnızca bu sitedeki bir yol olabilir (açık yönlendirme yok). Sağlayıcının verdiği erişim token'ı yalnızca "kim giriş yaptı" sorusu için kullanılır, saklanmaz. Başarısız bir giriş **Hesap** sayfasına nedeniyle döner (`/account?signin=unknown` gibi).
+**Security.** The sign-in is bound by the `state` parameter (in a short-lived HttpOnly cookie, `SameSite=Lax`). The return address can only be a path on this site (no open redirect). The access token the forge issues is used only to answer "who signed in" and is not stored. A failed sign-in returns to the **Account** page with the reason (such as `/account?signin=unknown`).
 
-## Kişisel token'lar
+## Personal tokens
 
-Kullanıcılar betikler ve CLI için token oluşturur. Token sahibinin rolüyle çalışır; rol değişirse token'ın yetkisi de değişir. Kullanıcı devre dışı bırakılır ya da silinirse token'ları çalışmaz.
+Users create tokens for scripts and the CLI. A token works with its owner's role; if the role changes, so does what the token can do. If the user is disabled or deleted, their tokens stop working.
 
-| Yol | Açıklama |
+| Endpoint | Description |
 |---|---|
-| `GET /api/me/tokens` | Token'lar: ad, oluşturulma ve son kullanım zamanı. Token'ın kendisi listelenmez. |
-| `POST /api/me/tokens` | `{"name":"deploy script"}` ile yeni token. Token yalnızca bu yanıtta görünür: `{"id":3,"name":"...","token":"cisid_..."}` |
-| `DELETE /api/me/tokens/{id}` | Token'ı iptal eder |
-| `PUT /api/me/password` | `{"current":"...","new":"..."}` ile şifre değiştirir. Şifresi olmayan (yalnızca sağlayıcıyla giren) kullanıcı `current` boş bırakarak şifre koyar. |
+| `GET /api/me/tokens` | Tokens: name, creation time and last-used time. The token itself is not listed. |
+| `POST /api/me/tokens` | New token with `{"name":"deploy script"}`. The token appears only in this response: `{"id":3,"name":"...","token":"cisid_..."}` |
+| `DELETE /api/me/tokens/{id}` | Revokes the token |
+| `PUT /api/me/password` | Changes the password with `{"current":"...","new":"..."}`. A user without a password (who only signs in through a forge) sets one by leaving `current` empty. |
 
-Token'lar `cisid_` ile başlar; sızan token'ları kod taramalarında bulmayı kolaylaştırır. Server yalnızca özetlerini saklar.
+Tokens start with `cisid_`; this makes leaked tokens easier to find in code scans. The server stores only their hashes.
 
-## Kullanıcı yönetimi (admin)
+## User management (admin)
 
-| Yol | Açıklama |
+| Endpoint | Description |
 |---|---|
-| `GET /api/users` | Kullanıcılar: ad, rol, şifresi var mı, devre dışı mı, sağlayıcı hesapları |
-| `POST /api/users` | `{"username":"ahmet","role":"maintainer","password":"...","identities":{"gitea":"ahmet"}}`; `password` ve `identities` isteğe bağlı. Ad alınmışsa `409`. |
-| `PATCH /api/users/{username}` | `role`, `password` (`""` şifreyi kaldırır), `disabled`, `identities` alanlarından istenenler |
-| `DELETE /api/users/{username}` | Kullanıcıyı, oturumlarını ve token'larını siler |
+| `GET /api/users` | Users: name, role, whether they have a password, whether they are disabled, forge accounts |
+| `POST /api/users` | `{"username":"ahmet","role":"maintainer","password":"...","identities":{"gitea":"ahmet"}}`; `password` and `identities` are optional. `409` if the name is taken. |
+| `PATCH /api/users/{username}` | Any of the fields `role`, `password` (`""` removes the password), `disabled`, `identities` |
+| `DELETE /api/users/{username}` | Deletes the user, their sessions and their tokens |
 
-- Kullanıcı adı küçük harf, rakam, `.`, `_` ve `-` içerir, en fazla 39 karakterdir.
-- Bir admin kendi rolünü düşüremez, kendini devre dışı bırakamaz ya da silemez; bunu başka bir admin ya da API token'ı yapar. Böylece kimse yanlışlıkla kendini dışarıda bırakmaz.
-- Devre dışı bırakılan kullanıcının oturumları hemen kapanır ve token'ları çalışmaz.
-- `identities`, kullanıcının sağlayıcılardaki kullanıcı adlarıdır.
+- A username contains lowercase letters, digits, `.`, `_` and `-`, and is at most 39 characters long.
+- An admin cannot lower their own role, disable themselves or delete themselves; another admin or the API token does that. This way nobody locks themselves out by mistake.
+- A disabled user's sessions end immediately and their tokens stop working.
+- `identities` holds the user's usernames on the forges.
 
-Arayüzde: kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını (şifre, token'lar, çıkış) açar; admin'ler **Kullanıcılar** sayfasını da görür.
+In the UI: the person icon at the bottom of the sidebar opens the **Account** page (password, tokens, sign-out); admins also see the **Users** page.

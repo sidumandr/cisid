@@ -1,47 +1,49 @@
-# Polling: webhook'suz push build'leri
+# Polling: push builds without webhooks
 
-Bir sağlayıcının webhook'u server'a ulaşamıyorsa (ör. ofis ağındaki, NAT ya da firewall arkasındaki bir sunucu), cisid branch'leri kendisi yoklayabilir. Server izlenen her branch'in son commit'ine belli aralıklarla bakar; commit değiştiyse bir **push** build'i açar. Hiçbir port açmak, tünel kurmak ya da sağlayıcıda webhook tanımlamak gerekmez: bağlantıyı her zaman server başlatır.
+**English** · [Türkçe](tr/polling.md)
 
-Polling bütün sağlayıcılarda çalışır ([forges.md](forges.md)). Webhook'larla birlikte de kullanılabilir.
+If a forge's webhook cannot reach the server (e.g. a server on an office network, behind NAT or a firewall), cisid can poll branches itself. The server checks the latest commit of every watched branch at regular intervals; if the commit has changed, it opens a **push** build. You do not need to open a port, set up a tunnel or define a webhook on the forge: the server always opens the connection.
 
-## Kurulum
+Polling works with all forges ([forges.md](forges.md)). You can also use it together with webhooks.
 
-| Değişken | Varsayılan | Açıklama |
+## Setup
+
+| Variable | Default | Description |
 |---|---|---|
-| `CISID_POLL_INTERVAL` | `1m` | Her branch'in yoklanma aralığı. En az `10s`. `0` polling'i kapatır. |
+| `CISID_POLL_INTERVAL` | `1m` | How often each branch is polled. At least `10s`. `0` disables polling. |
 
-Bir branch'i izlemek için arayüzde repo sayfasındaki **Polling** sekmesinden **Poll a branch** düğmesini kullanın ya da API'yi çağırın (API token'ı gerekir):
+To watch a branch, use the **Poll a branch** button on the **Polling** tab of the repository page in the UI, or call the API (requires a maintainer: a sign-in or a token):
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' \
   http://localhost:8080/api/repos/gitea:office/app/watches
 ```
 
-Repo henüz cisid'de hiç derlenmediyse arayüzde görünmez; ilk branch'i API ile ekleyin ya da adresini doğrudan açın: `/repos/gitea:office/app`.
+If cisid has never built the repository, the repository does not appear in the UI. Add the first branch through the API, or open the repository's URL directly: `/repos/gitea:office/app`.
 
-| Yol | Açıklama |
+| Endpoint | Description |
 |---|---|
-| `GET /api/repos/{owner}/{repo}/watches` | İzlenen branch'ler: `branch`, `last_sha`, `last_poll_at`, `last_job_id`, `last_error` (okuma erişimi ister) |
-| `POST /api/repos/{owner}/{repo}/watches` | `{"branch":"main"}` ile branch'i izlemeye başlar; `branch` verilmezse varsayılan branch. Yeniyse `201`, zaten izleniyorsa `200`. Repo ya da branch yoksa `404`, polling kapalıysa `409`. |
-| `DELETE /api/repos/{owner}/{repo}/watches/{branch}` | İzlemeyi bırakır: `204`, izlenmiyorsa `404`. `/` içeren branch adları olduğu gibi yazılır: `.../watches/release/1.0`. |
+| `GET /api/repos/{owner}/{repo}/watches` | Watched branches: `branch`, `last_sha`, `last_poll_at`, `last_job_id`, `last_error` (requires read access) |
+| `POST /api/repos/{owner}/{repo}/watches` | Starts watching the branch with `{"branch":"main"}`; without `branch`, the default branch. `201` if new, `200` if already watched. `404` if the repository or branch does not exist, `409` if polling is disabled. |
+| `DELETE /api/repos/{owner}/{repo}/watches/{branch}` | Stops watching: `204`, or `404` if the branch is not watched. Write branch names that contain `/` as they are: `.../watches/release/1.0`. |
 
-## Çalışma şekli
+## How it works
 
-- **İlk yoklama** branch'in o anki son commit'ini derler; böylece izlemenin çalıştığı hemen görülür. Sonraki yoklamalar yalnızca yeni bir commit gelince build açar.
-- Build'ler **push** build'leridir: `CISID_EVENT=push`, commit status bağlamı `cisid`, `when.event: [push]` adımları çalışır. Yoklama arasında birden fazla commit push edildiyse yalnızca sonuncusu derlenir.
-- Her yoklama sağlayıcıya tek bir istek atar (branch'in son commit'i). Server her 5 saniyede vakti gelen branch'leri alır.
-- **Birden fazla server kopyası** aynı veritabanını paylaşıyorsa her yoklamayı yalnızca bir kopya yapar ve aynı commit hiçbir zaman iki kez derlenmez: branch'in son görülen commit'i, build'i açan transaction'da güncellenir.
-- Yoklama başarısız olursa (sağlayıcıya ulaşılamadı, token geçersiz, branch silindi) hata `last_error`'a yazılır, arayüzde görünür ve sonraki yoklamada tekrar denenir. Başarılı bir yoklama hatayı temizler.
-- Polling yalnızca branch'leri izler. **Pull request'ler** için webhook gerekir.
+- The **first poll** builds the branch's current latest commit, so you see right away that watching works. Later polls open a build only when a new commit arrives.
+- The builds are **push** builds: `CISID_EVENT=push`, commit status context `cisid`, and `when.event: [push]` steps run. If more than one commit was pushed between polls, only the last one is built.
+- Each poll sends a single request to the forge (the branch's latest commit). Every 5 seconds the server picks up the branches that are due.
+- If **several server replicas** share the same database, only one replica does each poll, and the same commit is never built twice: the branch's last seen commit is updated in the transaction that opens the build.
+- If a poll fails (the forge is unreachable, the token is invalid, the branch was deleted), the error is written to `last_error`, shows up in the UI and is retried at the next poll. A successful poll clears the error.
+- Polling watches only branches. **Pull requests** require a webhook.
 
-## Rate limit
+## Rate limits
 
-Her izlenen branch, aralık başına bir istek demektir. 1 dakikalık aralıkla bir branch saatte 60 istek yapar.
+Each watched branch means one request per interval. With a 1-minute interval, one branch makes 60 requests an hour.
 
-| Sağlayıcı | Token'sız | Token'la |
+| Forge | Without a token | With a token |
 |---|---|---|
-| GitHub | IP başına saatte 60: tek bir branch'i ancak karşılar | Saatte 5000: 1 dakikalık aralıkla yaklaşık 80 branch |
-| GitLab.com, Bitbucket Cloud | Düşük sınırlar | Bol |
-| Gitea, Forgejo, kendi GitLab'ınız | Sunucunun ayarına bağlı | Sunucunun ayarına bağlı |
+| GitHub | 60 an hour per IP: barely enough for a single branch | 5000 an hour: about 80 branches at a 1-minute interval |
+| GitLab.com, Bitbucket Cloud | Low limits | Plenty |
+| Gitea, Forgejo, your own GitLab | Depends on the server's settings | Depends on the server's settings |
 
-Çok sayıda branch izliyorsanız sağlayıcının token'ını verin ya da `CISID_POLL_INTERVAL`'ı uzatın.
+If you watch many branches, set the forge's token or increase `CISID_POLL_INTERVAL`.

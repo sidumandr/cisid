@@ -1,163 +1,165 @@
 # Agent
 
-`cmd/agent` bir worker süreci başlatır. Agent server'a WebSocket ile bağlanır, atanan job'ları [Docker runner](runner.md) ile çalıştırır, logları anlık olarak server'a gönderir ve sonucu raporlar. Asıl mantık `internal/agent` paketindedir.
+**English** · [Türkçe](tr/agent.md)
 
-## Çalıştırma
+`cmd/agent` starts a worker process. The agent connects to the server over WebSocket, runs assigned jobs with the [Docker runner](runner.md), streams logs to the server live and reports the result. The core logic lives in the `internal/agent` package.
+
+## Running
 
 ```bash
 CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run ./cmd/agent
 ```
 
-| Değişken | Varsayılan | Açıklama |
+| Variable | Default | Description |
 |---|---|---|
-| `CISID_SERVER_URL` | `ws://localhost:8080/agent/ws` | Server'ın agent endpoint'i (`ws://` ya da `wss://`) |
-| `CISID_AGENT_NAME` | hostname | Server'a bildirilen ad (`X-Cisid-Agent` başlığı ve `agent_hello`) |
-| `CISID_AGENT_TOKEN` | — | Server'ın istediği agent token'ı. `Authorization: Bearer` başlığıyla gönderilir. Virgülle ayrılmış bir liste verilirse ilki gönderilir. |
-| `CISID_SERVER_CA_FILE` | — | `wss://` için güvenilecek PEM CA dosyası (ör. kendinden imzalı ya da şirket içi CA) |
-| `CISID_STEP_MEMORY` | — | Her adım ve servis container'ı için bellek limiti (`512m`, `2g`). Swap kullanılamaz, limiti aşan container öldürülür. |
-| `CISID_STEP_CPUS` | — | Container başına CPU limiti (`2`, `0.5`) |
-| `CISID_STEP_PIDS` | `4096` | Container başına süreç limiti (fork bomb koruması) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` vb. | — | Trace'lerin gönderileceği OTLP/HTTP collector. Verilmezse trace kapalıdır ([tracing.md](tracing.md)). |
-| `DOCKER_HOST` vb. | Docker varsayılanı | Docker daemon bağlantısı (`client.FromEnv`) |
+| `CISID_SERVER_URL` | `ws://localhost:8080/agent/ws` | The server's agent endpoint (`ws://` or `wss://`) |
+| `CISID_AGENT_NAME` | hostname | Name reported to the server (`X-Cisid-Agent` header and `agent_hello`) |
+| `CISID_AGENT_TOKEN` | — | Agent token the server requires. Sent in the `Authorization: Bearer` header. If you give a comma-separated list, the first one is sent. |
+| `CISID_SERVER_CA_FILE` | — | PEM CA file to trust for `wss://` (e.g. a self-signed or internal company CA) |
+| `CISID_STEP_MEMORY` | — | Memory limit for each step and service container (`512m`, `2g`). Swap is not available, and a container that exceeds the limit is killed. |
+| `CISID_STEP_CPUS` | — | CPU limit per container (`2`, `0.5`) |
+| `CISID_STEP_PIDS` | `4096` | Process limit per container (fork bomb protection) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` etc. | — | OTLP/HTTP collector to send traces to. If not set, tracing is off ([tracing.md](tracing.md)). |
+| `DOCKER_HOST` etc. | Docker default | Docker daemon connection (`client.FromEnv`) |
 
-`SIGINT` / `SIGTERM` graceful shutdown başlatır (aşağıya bak).
+`SIGINT` / `SIGTERM` starts a graceful shutdown (see below).
 
-Agent'ı container olarak çalıştırmak için [deployment.md](deployment.md).
+To run the agent as a container, see [deployment.md](deployment.md).
 
-## Protokol
+## Protocol
 
-Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
+Each message is a JSON envelope. The types are in `pkg/models/protocol.go`.
 
 ```json
-{"id": 17, "type": "<mesaj tipi>", "payload": { ... }}
+{"id": 17, "type": "<message type>", "payload": { ... }}
 ```
 
-`id` sadece agent'ın gönderdiği `job_log`, `job_result` ve `job_rejected` mesajlarında bulunur (bkz. [Onaylı teslim](#onaylı-teslim)).
+`id` is present only in the `job_log`, `job_result` and `job_rejected` messages the agent sends (see [Acknowledged delivery](#acknowledged-delivery)).
 
-| Tip | Yön | Payload |
+| Type | Direction | Payload |
 |---|---|---|
-| `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, her bağlantıda ilk mesaj. `running_job_id`: elindeki ya da sonucu henüz gönderilmemiş job (yoksa alan yazılmaz) |
-| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}],"trace_parent":"00-..."}`. `trace_parent` yalnızca server trace üretiyorsa vardır ([tracing.md](tracing.md)) |
+| `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, the first message on every connection. `running_job_id`: the job the agent holds or whose result it has not sent yet (the field is omitted if there is none) |
+| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}],"trace_parent":"00-..."}`. `trace_parent` is present only if the server produces traces ([tracing.md](tracing.md)) |
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
 | `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |
-| `job_cancel` | server → agent | `{"job_id":42}`. Job'u durdur, sonucu `canceled` ve `canceled by request` olarak raporla |
-| `ack` | server → agent | `{"id":17}`. 17 ve öncesindeki bütün mesajlar işlendi |
-| `server_closing` | server → agent | `{}`. Server kapanıyor: agent göndermeyi bırakır ve bağlantıyı kendisi kapatır (bkz. [hub.md](hub.md#graceful-shutdown)) |
+| `job_cancel` | server → agent | `{"job_id":42}`. Stop the job and report the result as `canceled` with `canceled by request` |
+| `ack` | server → agent | `{"id":17}`. All messages up to and including 17 are processed |
+| `server_closing` | server → agent | `{}`. The server is shutting down: the agent stops sending and closes the connection itself (see [hub.md](hub.md#graceful-shutdown)) |
 
-`seq` her job içinde 1'den başlar ve her log parçasında bir artar. Server sıralamayı ve kayıp parçaları (boşlukları) bununla tespit edebilir.
+`seq` starts at 1 in each job and goes up by one with each log chunk. The server uses it to detect ordering and missing chunks (gaps).
 
-## Job yürütme
+## Job execution
 
-- Agent aynı anda **bir** job çalıştırır. Meşgulken gelen atamaya `job_rejected` döner. Kapanış sırasında gelen atamaya da `job_rejected` döner, sebep `"agent shutting down"` olur.
-- Atamada servis varsa agent önce job'a özel bir Docker ağı oluşturur ve servisleri bu ağda, adlarını host adı olarak kullanarak başlatır. Adımlar aynı ağda çalışır. Job bitince servisler ve ağ silinir ([pipeline.md](pipeline.md#servisler)).
-- Adımlar sırayla çalışır ve ilk başarısız adımda durulur.
-- Her job'a özel bir Docker volume oluşturulur (`cisid-job-<id>-<rastgele>`). Volume tüm adımlarda `/workspace` yoluna bağlanır ve çalışma dizini olarak kullanılır. Job bitince volume silinir.
-- Komutlar tek bir shell script olarak çalıştırılır: `/bin/sh -c "set -ex\n<komutlar>"`. Böylece ilk hatalı komutta durulur ve her komut çalışmadan önce stderr'a yazılır.
-- Adımın istediği secret'lar ortam değişkeni olarak eklenir ve adımın çıktısında `***` ile maskelenir ([secrets.md](secrets.md#loglarda-maskeleme)).
-- Her adıma şu ortam değişkenleri eklenir: `CI=true`, `CISID=true`, `CISID_JOB_ID`, `CISID_STEP`. Bunları adımın kendi `env` alanı ezemez.
-- `timeout_seconds` runner'ın `Step.Timeout` alanına aktarılır.
+- The agent runs **one** job at a time. It answers an assignment that arrives while it is busy with `job_rejected`. It also answers an assignment that arrives during shutdown with `job_rejected`, with the reason `"agent shutting down"`.
+- If the assignment has services, the agent first creates a Docker network for the job and starts the services on that network, with their names as host names. Steps run on the same network. When the job ends, the services and the network are removed ([pipeline.md](pipeline.md#services)).
+- Steps run in order, and the job stops at the first failing step.
+- Each job gets its own Docker volume (`cisid-job-<id>-<random>`). The volume is mounted at `/workspace` in all steps and serves as the working directory. When the job ends, the volume is removed.
+- Commands run as a single shell script: `/bin/sh -c "set -ex\n<commands>"`. So the script stops at the first failing command, and each command is written to stderr before it runs.
+- The secrets a step asks for are added as environment variables and masked as `***` in the step's output ([secrets.md](secrets.md#masking-in-logs)).
+- Every step gets these environment variables: `CI=true`, `CISID=true`, `CISID_JOB_ID`, `CISID_STEP`. The step's own `env` field cannot override them.
+- `timeout_seconds` is passed to the runner's `Step.Timeout` field.
 
-| Sonuç | `status` | `exit_code` | `error` |
+| Outcome | `status` | `exit_code` | `error` |
 |---|---|---|---|
-| Tüm adımlar 0 ile bitti | `success` | 0 | - |
-| Bir adım 0 dışı kodla bitti | `failed` | adımın kodu | - |
-| Runner hatası (pull, timeout, ...) | `failed` | -1 | hata mesajı |
-| Geçersiz atama (adım, image ya da komut yok) | `failed` | -1 | `invalid job ...` |
-| Agent kapatıldı | `canceled` | -1 | `context canceled` |
+| All steps exited with 0 | `success` | 0 | - |
+| A step exited with a non-zero code | `failed` | the step's code | - |
+| Runner error (pull, timeout, ...) | `failed` | -1 | error message |
+| Invalid assignment (no step, image or command) | `failed` | -1 | `invalid job ...` |
+| Agent shut down | `canceled` | -1 | `context canceled` |
 
-## Bağlantı ve yeniden bağlanma
+## Connection and reconnection
 
-- Bağlantı koparsa ya da kurulamazsa agent **exponential backoff + jitter** ile tekrar dener. Bekleme süresi 1 sn'den başlar, her denemede ikiye katlanır ve en fazla 1 dk olur. Gerçek bekleme `[d/2, d]` aralığında rastgele seçilir.
-- Başarılı bir bağlantıdan sonra backoff sıfırlanır.
-- Job'lar bağlantıya değil agent'ın yaşam süresine bağlıdır. Bağlantı koparsa çalışan job devam eder.
-- Giden mesajlar bağlantılar arasında yaşayan bir **outbox**'ta bekler. Outbox en fazla 4096 bekleyen ya da onaylanmamış mesaj tutar. Kopukluk sırasında üretilen loglar ve sonuçlar yeniden bağlanınca gönderilir.
-- Outbox dolarsa yeni **log** parçaları atılır, job yavaşlamaz ve atılan parçalar `seq` boşluğu olarak görünür. **Sonuç** mesajları atılmaz, yer açılmasını bekler.
+- If the connection drops or cannot be established, the agent retries with **exponential backoff + jitter**. The wait starts at 1 s, doubles on each attempt and is capped at 1 min. The actual wait is picked at random in the range `[d/2, d]`.
+- The backoff resets after a successful connection.
+- Jobs are tied to the agent's lifetime, not to the connection. If the connection drops, the running job continues.
+- Outgoing messages wait in an **outbox** that lives across connections. The outbox holds at most 4096 pending or unacknowledged messages. Logs and results produced while disconnected are sent after the agent reconnects.
+- If the outbox is full, new **log** chunks are dropped. The job does not slow down, and the dropped chunks show up as `seq` gaps. **Result** messages are never dropped: they wait for space to free up.
 
-## Onaylı teslim
+## Acknowledged delivery
 
-- Agent her mesaja, gönderdiği anda artan bir `id` verir. Bu yüzden `id` sırası gönderim sırasıyla aynıdır.
-- Mesaj, server `ack` ile onaylayana kadar outbox'ta tutulur. `ack` kümülatiftir: `{"id":17}` 17 ve öncesindeki bütün mesajları onaylar.
-- Bağlantı nasıl koparsa kopsun (ağ hatası, server çökmesi) onaylanmamış mesajlar yeni bağlantıda önce ve aynı `id` ile tekrar gönderilir.
-- Server tekrarlara karşı güvenlidir:
-  - Log parçaları `(job_id, seq)` anahtarıyla bir kez yazılır.
-  - İkinci kez gelen sonuç ya da ret yok sayılır ve yine onaylanır.
-- Sonucu henüz onaylanmamış job hello'da `running_job_id` olarak bildirilmeye devam eder.
-- Kapanışta `FlushTimeout` boyunca bütün mesajların **onaylanması** beklenir.
+- The agent gives each message an `id` that increases at the moment the message is sent. So the `id` order matches the send order.
+- A message stays in the outbox until the server acknowledges it with `ack`. `ack` is cumulative: `{"id":17}` acknowledges all messages up to and including 17.
+- However the connection drops (network error, server crash), unacknowledged messages are resent first on the new connection, with the same `id`.
+- The server is safe against duplicates:
+  - Log chunks are written once, keyed by `(job_id, seq)`.
+  - A result or rejection that arrives a second time is ignored and still acknowledged.
+- A job whose result is not yet acknowledged is still reported as `running_job_id` in the hello.
+- On shutdown, the agent waits up to `FlushTimeout` for all messages to be **acknowledged**.
 
-`TestIntegrationLogsSurviveNetworkFailures`, 300 satırlık log akışı sırasında TCP bağlantısını üç kez keser ve her parçanın sırayla tam bir kez yazıldığını doğrular.
+`TestIntegrationLogsSurviveNetworkFailures` cuts the TCP connection three times during a 300-line log stream and verifies that each chunk is written exactly once, in order.
 
-## Eşzamanlılık
+## Concurrency
 
-| Goroutine | Görev | Ne zaman biter |
+| Goroutine | Task | When it ends |
 |---|---|---|
-| executor | Job'ları sırayla çalıştırır | Agent context'i iptal edilince |
-| writer | Bağlantıya yazan **tek** goroutine | Bağlantı kapanınca |
-| reader | Mesajları okur, job'ları executor'a verir | Bağlantı kapanınca |
-| flush | Kapanışta outbox'ı boşaltır, sonra bağlantıyı kapatır | Executor bitince |
+| executor | Runs jobs one after another | When the agent context is canceled |
+| writer | The **only** goroutine that writes to the connection | When the connection closes |
+| reader | Reads messages and hands jobs to the executor | When the connection closes |
+| flush | Drains the outbox on shutdown, then closes the connection | When the executor finishes |
 
-Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri de durur.
+Writer and reader run in an `errgroup`. If one fails, the other stops too.
 
 ## Graceful shutdown
 
-1. Agent context'i iptal edilir (`SIGTERM`).
-2. Çalışan adımın container'ı runner tarafından durdurulur: önce `SIGTERM`, grace period sonunda `SIGKILL`.
-3. `canceled` sonucu outbox'a yazılır, workspace volume silinir.
-4. Outbox en fazla `FlushTimeout` (10 sn) boyunca boşaltılır.
-5. Bağlantı `1000 Normal Closure` ile kapatılır.
+1. The agent context is canceled (`SIGTERM`).
+2. The runner stops the running step's container: first `SIGTERM`, then `SIGKILL` at the end of the grace period.
+3. The `canceled` result is written to the outbox, and the workspace volume is removed.
+4. The outbox is drained for at most `FlushTimeout` (10 s).
+5. The connection is closed with `1000 Normal Closure`.
 
-## Container izolasyonu
+## Container isolation
 
-- Bütün adım ve servis container'ları `no-new-privileges` ile çalışır: setuid binary'ler container'ın başladığı yetkilerin ötesine geçemez. Container'lar hiçbir zaman `--privileged` başlatılmaz.
-- `CISID_STEP_*` ile verilen limitler her container'a ayrı ayrı uygulanır. Süreç limiti varsayılan olarak 4096'dır.
-- Bellek limitini aşan bir adım çekirdek tarafından öldürülür. Job `failed` olur, `exit_code` 137 ve `error` `out of memory: …` olarak görünür.
-- Servisli job'lar kendi Docker ağında çalışır, diğer job'ların servislerine ulaşamaz.
-- Agent Docker daemon'a tam erişimle çalışır, bu yüzden agent makinesi güvenilmeyen kodun koştuğu yer olarak düşünülmeli. Her agent'ı ayrı ve yalıtılmış bir makinede ya da VM'de çalıştırın.
+- All step and service containers run with `no-new-privileges`: setuid binaries cannot gain privileges beyond those the container started with. Containers never start as `--privileged`.
+- The limits set with `CISID_STEP_*` apply to each container separately. The process limit defaults to 4096.
+- The kernel kills a step that exceeds the memory limit. The job becomes `failed`, with `exit_code` 137 and `error` `out of memory: …`.
+- Jobs with services run in their own Docker network and cannot reach the services of other jobs.
+- The agent runs with full access to the Docker daemon, so treat the agent machine as the place where untrusted code runs. Run each agent on a separate, isolated machine or VM.
 
-## Kimlik doğrulama ve TLS
+## Authentication and TLS
 
-- Server'da `CISID_AGENT_TOKEN` tanımlıysa agent'lar aynı token'ı göstermeden bağlanamaz (`401`). Agent token reddedilirse loglar ve backoff ile denemeye devam eder, böylece server'da token değiştirildiğinde agent'ı yeniden başlatmak yeterli olur.
-- Token ve secret'lar bağlantı üzerinden geçtiği için uzak server'lara `wss://` ile bağlanın. Agent, token'ı yerel olmayan bir adrese şifresiz `ws://` ile gönderiyorsa uyarır.
-- Bütün agent'lar ortak bir token kullanır. Token'ı değiştirmek için server'a `yeni,eski` verin: ikisi de kabul edilir. Agent'lar `yeni`ye geçtikten sonra listeden `eski`yi çıkarın; eski token artık reddedilir. Agent'lar da listeyi alabilir ve ilk token'ı gönderir, böylece ikisi aynı secret'ı paylaşabilir.
+- If `CISID_AGENT_TOKEN` is set on the server, agents cannot connect without presenting the same token (`401`). If the agent's token is rejected, the agent logs it and keeps retrying with backoff. So when you change the token on the server, restarting the agent is enough.
+- Tokens and secrets travel over the connection, so connect to remote servers with `wss://`. The agent warns if it sends the token to a non-local address over unencrypted `ws://`.
+- All agents share one token. To rotate the token, give the server `new,old`: it accepts both. After the agents switch to `new`, remove `old` from the list. The old token is then rejected. Agents also accept the list and send the first token, so the server and the agents can share the same secret.
 
-## Bilinen sınırlamalar
+## Known limitations
 
-- Agent 5 dakikadan (lease) uzun süre bağlanamazsa job'u başka bir agent'a verilir. Geri döndüğünde ilk job'un sonucu atılır (bkz. [hub.md](hub.md#canlılık-ve-lease)).
+- If an agent cannot connect for longer than 5 minutes (the lease), its job goes to another agent. When it comes back, the result of its original job is discarded (see [hub.md](hub.md#liveness-and-leases)).
 
-## Önbellek volume'ları
+## Cache volumes
 
-Atamada `cache` varsa agent her yol için `cisid-cache-<repo anahtarı>-<yol özeti>` adlı bir volume'u bütün adımlara bağlar ([pipeline.md](pipeline.md#önbellek)). Docker volume'u ilk kullanımda `cisid.cache` ve `cisid.cache.path` etiketleriyle oluşturur. Agent bu volume'ları silmez; job'lar arasında kalmaları amaçtır. Disk dolarsa etiketle temizlenebilir:
+If the assignment has `cache`, the agent mounts a volume named `cisid-cache-<repository key>-<path digest>` for each path in all steps ([pipeline.md](pipeline.md#cache)). Docker creates the volume on first use, with the `cisid.cache` and `cisid.cache.path` labels. The agent does not remove these volumes: they are meant to persist between jobs. If the disk fills up, clean them up by label:
 
 ```bash
 docker volume prune -a --filter label=cisid.cache
 ```
 
-Kubernetes'te Docker-in-Docker sidecar'ının verileri pod'la birlikte silinir. Önbelleğin pod yeniden başlayınca da kalması için chart'ta `agent.docker.dind.persistence.enabled=true` verin.
+On Kubernetes, the Docker-in-Docker sidecar's data is deleted with the pod. To keep the cache across pod restarts, set `agent.docker.dind.persistence.enabled=true` in the chart.
 
-## Testler
+## Tests
 
-| Test | Senaryo |
+| Test | Scenario |
 |---|---|
-| `TestAgentRunsAssignedJob` | İki adım; runner'a giden `Step`, log sırası ve `seq`, sonuç, volume temizliği |
-| `TestAgentReportsFailedStep` | 0 dışı exit kodu, sonraki adım çalışmaz |
-| `TestAgentReportsRunnerError` | Image pull hatası |
-| `TestAgentFailsInvalidAssignment` | Adım, image ya da komut eksik |
-| `TestAgentMountsCaches`, `TestAgentRejectsBadCaches` | Önbellek volume'larının adı, etiketi, salt okunur bağlanması; geçersiz anahtar ve yollar |
-| `TestDockerIntegrationCache` | Gerçek Docker: sonraki job önbelleği bulur, salt okunur job yazamaz |
-| `TestAgentRejectsJobWhileBusy` | İkinci atama reddedilir |
-| `TestAgentReconnectsAfterConnectionLoss` | Server bağlantıyı kapatır, agent yeniden bağlanır |
-| `TestAgentRetriesWhileServerUnavailable` | Handshake 3 kez 503 alır, 4. denemede bağlanır |
-| `TestAgentDeliversResultAfterReconnect` | Kopukluk sırasında biten job'un sonucu yeni bağlantıdan gelir |
-| `TestAgentShutdownCancelsRunningJob` | Kapanışta `canceled` sonucu gönderilir, `Run` temiz döner |
-| `TestAgentIgnoresUnknownAndMalformedMessages` | Bozuk ya da bilinmeyen mesajlar agent'ı düşürmez |
-| `TestAgentHelloReportsUndeliveredResult` | Sonucu gönderilememiş job, yeniden bağlanınca hello'da bildirilir |
-| `TestAgentClosesConnectionWhenServerDrains` | `server_closing` gelince agent temiz kapatır ve yeniden bağlanır |
-| `TestAgentResendsUnacknowledgedMessages` | Onaylanmamış log ve sonuç yeni bağlantıda aynı `id` ile tekrar gönderilir |
-| `TestOutbox*` | Kümülatif ack, outbox sınırı |
-| `TestBackoff*` | Büyüme, üst sınır, overflow, jitter aralığı |
-| `TestDockerIntegrationJob` | Gerçek Docker: adımlar workspace paylaşır, exit kodu raporlanır |
+| `TestAgentRunsAssignedJob` | Two steps: the `Step` passed to the runner, log order and `seq`, result, volume cleanup |
+| `TestAgentReportsFailedStep` | Non-zero exit code, the next step does not run |
+| `TestAgentReportsRunnerError` | Image pull error |
+| `TestAgentFailsInvalidAssignment` | Missing step, image or command |
+| `TestAgentMountsCaches`, `TestAgentRejectsBadCaches` | Cache volume names, labels, read-only mounts; invalid keys and paths |
+| `TestDockerIntegrationCache` | Real Docker: the next job finds the cache, a read-only job cannot write to it |
+| `TestAgentRejectsJobWhileBusy` | The second assignment is rejected |
+| `TestAgentReconnectsAfterConnectionLoss` | The server closes the connection, the agent reconnects |
+| `TestAgentRetriesWhileServerUnavailable` | The handshake gets 503 three times and connects on the 4th attempt |
+| `TestAgentDeliversResultAfterReconnect` | The result of a job that finishes while disconnected arrives over the new connection |
+| `TestAgentShutdownCancelsRunningJob` | On shutdown a `canceled` result is sent and `Run` returns cleanly |
+| `TestAgentIgnoresUnknownAndMalformedMessages` | Malformed or unknown messages do not bring the agent down |
+| `TestAgentHelloReportsUndeliveredResult` | A job whose result could not be sent is reported in the hello after reconnecting |
+| `TestAgentClosesConnectionWhenServerDrains` | On `server_closing` the agent closes cleanly and reconnects |
+| `TestAgentResendsUnacknowledgedMessages` | Unacknowledged logs and results are resent on the new connection with the same `id` |
+| `TestOutbox*` | Cumulative ack, outbox limit |
+| `TestBackoff*` | Growth, upper bound, overflow, jitter range |
+| `TestDockerIntegrationJob` | Real Docker: steps share the workspace, the exit code is reported |
 
-Server tarafı `httptest` ile kurulan gerçek bir WebSocket endpoint'idir. Runner `testify/mock` ile mock'lanır.
+The server side is a real WebSocket endpoint set up with `httptest`. The runner is mocked with `testify/mock`.
 
 ```bash
 go test ./internal/agent/

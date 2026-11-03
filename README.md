@@ -1,35 +1,37 @@
 # cisid
 
-Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
+**English** · [Türkçe](README.tr.md)
 
-> Durum: Faz 1–5 tamam, Faz 6 sürüyor. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.md).
+A self-hosted, Docker-based CI/CD system written in Go.
 
-## Dokümanlar
+> Status: Phases 1–6 are done. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
 
-- [ROADMAP.md](ROADMAP.md): fazlar ve ilerleme
-- [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
-- [docs/pipeline.md](docs/pipeline.md): `.cisid.yml` formatı ve adımların çalışma şekli
-- [docs/ui.md](docs/ui.md): Web arayüzü
-- [docs/api.md](docs/api.md): Job API ve canlı log akışı (SSE)
-- [docs/secrets.md](docs/secrets.md): Şifreli repo secret'ları ve loglarda maskeleme
-- [docs/metrics.md](docs/metrics.md): Prometheus metrikleri
-- [docs/tracing.md](docs/tracing.md): OpenTelemetry trace'leri: webhook'tan adımlara tek trace
-- [docs/accounts.md](docs/accounts.md): Kullanıcı hesapları, roller, giriş ve kişisel token'lar
-- [docs/polling.md](docs/polling.md): Webhook'suz push build'leri: branch'leri yoklama
-- [docs/forges.md](docs/forges.md): GitHub, Gitea, Forgejo, GitLab ve Bitbucket kurulumu, repo adları ve özel repolar
-- [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının sağlayıcılarda commit status olarak gösterilmesi
-- [docs/webhook.md](docs/webhook.md): Webhook kurulumu ve davranışı
-- [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
-- [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
-- [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
-- [docs/hub.md](docs/hub.md): Server tarafında job dağıtımı, sahiplik kuralları ve graceful shutdown
-- [docs/deployment.md](docs/deployment.md): Docker image'ları, docker compose ve Kubernetes ile kurulum
-- [docs/release.md](docs/release.md): Sürüm yayımlama: image'lar ve chart GitHub Actions ile ghcr.io'ya
+## Documentation
+
+- [ROADMAP.md](ROADMAP.md): phases and progress
+- [CLAUDE.md](CLAUDE.md): code and commit rules
+- [docs/pipeline.md](docs/pipeline.md): The `.cisid.yml` format and how steps run
+- [docs/ui.md](docs/ui.md): Web UI
+- [docs/api.md](docs/api.md): Job API and live log stream (SSE)
+- [docs/secrets.md](docs/secrets.md): Encrypted repository secrets and masking in logs
+- [docs/metrics.md](docs/metrics.md): Prometheus metrics
+- [docs/tracing.md](docs/tracing.md): OpenTelemetry traces: one trace from the webhook to the steps
+- [docs/accounts.md](docs/accounts.md): User accounts, roles, sign-in and personal tokens
+- [docs/polling.md](docs/polling.md): Push builds without webhooks: polling branches
+- [docs/forges.md](docs/forges.md): Setting up GitHub, Gitea, Forgejo, GitLab and Bitbucket, repository names and private repositories
+- [docs/commit-status.md](docs/commit-status.md): Showing job results on the forges as commit statuses
+- [docs/webhook.md](docs/webhook.md): Webhook setup and behavior
+- [docs/runner.md](docs/runner.md): Docker runner usage and lifecycle
+- [docs/server.md](docs/server.md): Server configuration, endpoints and migrations
+- [docs/agent.md](docs/agent.md): Agent configuration, WebSocket protocol and reconnection
+- [docs/hub.md](docs/hub.md): Job dispatch on the server side, ownership rules and graceful shutdown
+- [docs/deployment.md](docs/deployment.md): Installing with Docker images, docker compose and Kubernetes
+- [docs/release.md](docs/release.md): Publishing a release: images and the chart go to ghcr.io through GitHub Actions
 - [deployments/helm/cisid](deployments/helm/cisid/README.md): Helm chart
-- [docs/security.md](docs/security.md): Güven sınırları, güvenlik önlemleri ve production kontrol listesi
-- [docs/adr/](docs/adr/): Mimari karar kayıtları (ör. agent protokolü neden gRPC değil)
+- [docs/security.md](docs/security.md): Trust boundaries, security measures and a production checklist
+- [docs/adr/](docs/adr): Architecture decision records (e.g. why the agent protocol is not gRPC)
 
-## Mimari
+## Architecture
 
 ```
    ┌──────────────┐        ┌──────────────┐
@@ -47,7 +49,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
         └──────┬─────────────▲──────┘
                │             │
        SQL     │             │  job_assigned ▼ / ▲ job_log, job_result
-               ▼             │  (WebSocket, bkz. docs/adr/001)
+               ▼             │  (WebSocket, see docs/adr/001)
       ┌────────────────┐     │
       │   PostgreSQL   │     │
       │ pipelines,     │     │
@@ -69,65 +71,65 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
         │  └───────┘ └───────┘      │
         └───────────────────────────┘
 
-        pkg/models: server ve agent arasında paylaşılan tipler
+        pkg/models: types shared by the server and the agent
 ```
 
-**Akış**
+**Flow**
 
-1. Sağlayıcının (GitHub, Gitea, Forgejo, GitLab, Bitbucket) push webhook'u `server`'a ulaşır, job PostgreSQL'e `pending` olarak yazılır.
-2. `agent` süreçleri bekleyen job'ları `server`'dan alır.
-3. `runner`, her adımı ayrı bir Docker container'ında çalıştırır.
-4. Loglar ve sonuçlar `server` üzerinden veritabanına geri yazılır.
+1. The forge's (GitHub, Gitea, Forgejo, GitLab, Bitbucket) push webhook reaches the `server`, and the job is written to PostgreSQL as `pending`.
+2. `agent` processes take pending jobs from the `server`.
+3. The `runner` runs each step in its own Docker container.
+4. Logs and results are written back to the database through the `server`.
 
-## Dizin yapısı
+## Directory layout
 
 ```
 .
 ├── cmd/
-│   ├── server/      # API sunucusu (main)
+│   ├── server/      # API server (main)
 │   └── agent/       # Worker binary (main)
 ├── internal/
-│   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
-│   ├── api/         # HTTP router, handler'lar, middleware, erişim
-│   ├── auth/        # Roller, şifreler, oturum ve token sırları
-│   │   └── testdata/    # Örnek GitHub webhook payload'ları
-│   ├── config/      # Ortam değişkenlerinden server yapılandırması
-│   ├── events/      # PostgreSQL LISTEN/NOTIFY ile job değişikliği bildirimleri
-│   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
-│   ├── metrics/     # Prometheus metrikleri
-│   ├── forge/       # Sağlayıcılardan bağımsız arayüz, repo anahtarları
-│   ├── github/      # GitHub API istemcisi
-│   ├── gitea/       # Gitea ve Forgejo API istemcisi
-│   ├── gitlab/      # GitLab API istemcisi
-│   ├── bitbucket/   # Bitbucket Cloud API istemcisi
-│   ├── pipeline/    # .cisid.yml ayrıştırma, job → adımlar
-│   ├── secrets/     # AES-256-GCM ile şifreli secret'lar
-│   ├── status/      # Commit status raporlama
-│   ├── telemetry/   # OpenTelemetry trace kurulumu ve trace bağlamı taşıma
-│   ├── trigger/     # Elle, zamanlanmış ve yoklanan (polling) build'ler
-│   ├── web/         # Gömülü web arayüzü
-│   ├── runner/      # Docker entegrasyonu
-│   └── db/          # PostgreSQL erişimi (pgx)
-│       ├── dbtest/      # Testler için geçici veritabanları
-│       └── migrations/  # SQL şema dosyaları
+│   ├── agent/       # Agent: WebSocket connection, job execution
+│   ├── api/         # HTTP router, handlers, middleware, access
+│   ├── auth/        # Roles, passwords, session and token secrets
+│   │   └── testdata/    # Sample GitHub webhook payloads
+│   ├── config/      # Server configuration from environment variables
+│   ├── events/      # Job change notifications over PostgreSQL LISTEN/NOTIFY
+│   ├── hub/         # Agent connections and job dispatch (server side)
+│   ├── metrics/     # Prometheus metrics
+│   ├── forge/       # Forge-independent interface, repository keys
+│   ├── github/      # GitHub API client
+│   ├── gitea/       # Gitea and Forgejo API client
+│   ├── gitlab/      # GitLab API client
+│   ├── bitbucket/   # Bitbucket Cloud API client
+│   ├── pipeline/    # .cisid.yml parsing, job → steps
+│   ├── secrets/     # Secrets encrypted with AES-256-GCM
+│   ├── status/      # Commit status reporting
+│   ├── telemetry/   # OpenTelemetry trace setup and trace context propagation
+│   ├── trigger/     # Manual, scheduled and polled builds
+│   ├── web/         # Embedded web UI
+│   ├── runner/      # Docker integration
+│   └── db/          # PostgreSQL access (pgx)
+│       ├── dbtest/      # Temporary databases for tests
+│       └── migrations/  # SQL schema files
 ├── pkg/
-│   └── models/      # Paylaşılan tipler
+│   └── models/      # Shared types
 ├── api/
-│   └── proto/       # gRPC tanımları (ileride)
+│   └── proto/       # gRPC definitions (future)
 ├── deployments/
 │   └── helm/
 │       ├── cisid/       # Helm chart
-│       └── charttest/   # Chart testleri (ayrı Go modülü)
-└── docs/            # Modül dokümanları
+│       └── charttest/   # Chart tests (separate Go module)
+└── docs/            # Module documentation
 ```
 
-## Gereksinimler
+## Requirements
 
 - Go 1.25+
 - PostgreSQL 14+
-- Docker (runner ve agent için)
+- Docker (for the runner and the agent)
 
-## Yerelde çalıştırma
+## Running locally
 
 ```bash
 docker compose up -d --wait postgres
@@ -141,21 +143,21 @@ CISID_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable'
 go run ./cmd/agent
 ```
 
-Agent `ws://localhost:8080/agent/ws` adresine bağlanır. Bir push geldiğinde job'u alır, repoyu clone'lar ve [`.cisid.yml`](docs/pipeline.md) adımlarını Docker'da çalıştırır.
+The agent connects to `ws://localhost:8080/agent/ws`. When a push arrives, it takes the job, clones the repository and runs the [`.cisid.yml`](docs/pipeline.md) steps in Docker.
 
-Ayrıntılar: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
+Details: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
 
-## Docker ile çalıştırma
+## Running with Docker
 
-PostgreSQL, server ve bir agent'tan oluşan stack'i kaynak koddan derleyip başlatır (`.env` içinde en az `CISID_GITHUB_WEBHOOK_SECRET` ve `CISID_AGENT_TOKEN` gerekir):
+This builds the stack of PostgreSQL, the server and one agent from source and starts it (`.env` needs at least `CISID_GITHUB_WEBHOOK_SECRET` and `CISID_AGENT_TOKEN`):
 
 ```bash
 docker compose -f compose.stack.yaml up -d --build --wait
 ```
 
-Ayrıntılar: [docs/deployment.md](docs/deployment.md).
+Details: [docs/deployment.md](docs/deployment.md).
 
-## Derleme ve test
+## Build and test
 
 ```bash
 go build ./...
@@ -169,36 +171,36 @@ go vet ./...
 go test ./...
 ```
 
-Race detector cgo gerektirir. Linux/macOS'ta doğrudan çalışır:
+The race detector needs cgo. On Linux/macOS it runs directly:
 
 ```bash
 go test -race ./...
 ```
 
-C derleyicisi olmayan Windows'ta Docker ile çalıştırılabilir (PowerShell, proje kökünden):
+On Windows without a C compiler, you can run it with Docker (PowerShell, from the project root):
 
 ```bash
 docker run --rm -v "${PWD}:/src" -v cisid-gomod:/go/pkg/mod -w /src golang:1.27 go test -race ./...
 ```
 
-PostgreSQL gerektiren testler (`docker compose up -d postgres` sonrası):
+Tests that need PostgreSQL (after `docker compose up -d postgres`):
 
 ```bash
 CISID_TEST_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' go test ./internal/db/ ./internal/hub/ ./cmd/server/
 ```
 
-Gerçek Docker'a karşı entegrasyon testleri (alpine image'ını çeker):
+Integration tests against real Docker (they pull the alpine image):
 
 ```bash
 CISID_DOCKER_TESTS=1 go test ./internal/runner/ ./internal/agent/ ./internal/pipeline/ -run Integration -v
 ```
 
-Helm chart testleri ayrı bir Go modülündedir (Helm SDK'sı ana modüle bağımlılık eklemesin diye):
+The Helm chart tests live in a separate Go module (so the Helm SDK adds no dependencies to the main module):
 
 ```bash
 cd deployments/helm/charttest && go test ./...
 ```
 
-## Lisans
+## License
 
 [MIT](LICENSE)

@@ -1,95 +1,97 @@
-# Git sağlayıcıları
+# Forges
 
-cisid beş sağlayıcıdaki repoları derler: **GitHub**, **Gitea**, **Forgejo**, **GitLab** (GitLab.com ya da kendi kurulumunuz) ve **Bitbucket Cloud**. Her sağlayıcının istemcisi kendi paketindedir (`internal/github`, `internal/gitea`, `internal/gitlab`, `internal/bitbucket`). Ortak arayüz `internal/forge`'dadır.
+**English** · [Türkçe](tr/forges.md)
 
-Her sağlayıcı için üç şey ayarlanabilir, hepsi isteğe bağlıdır (bir dördüncüsü, sağlayıcıyla giriş, [accounts.md](accounts.md#sağlayıcıyla-giriş)'dedir):
+cisid builds repositories on five forges: **GitHub**, **Gitea**, **Forgejo**, **GitLab** (GitLab.com or your own installation) and **Bitbucket Cloud**. Each forge's client lives in its own package (`internal/github`, `internal/gitea`, `internal/gitlab`, `internal/bitbucket`). The common interface is in `internal/forge`.
 
-| Ayar | Ne işe yarar |
+You can configure three things for each forge, all optional (a fourth, signing in through the forge, is in [accounts.md](accounts.md#signing-in-through-a-forge)):
+
+| Setting | What it does |
 |---|---|
-| Adres | Gitea ve Forgejo'nun adresi verilince açılırlar. GitHub, GitLab.com ve Bitbucket Cloud her zaman açıktır. |
-| Token | Özel repoları okumak ve clone'lamak, rate limit'i yükseltmek ve commit status yazmak için. |
-| Webhook secret | Verilirse o sağlayıcının webhook adresi açılır: `/webhooks/<sağlayıcı>`. Verilmezse push'lar [polling](polling.md) ile, ya da elle ve zamanlanmış build'lerle derlenir. |
+| URL | Gitea and Forgejo are enabled when their URL is set. GitHub, GitLab.com and Bitbucket Cloud are always enabled. |
+| Token | Reads and clones private repositories, raises the rate limit and writes commit statuses. |
+| Webhook secret | If set, it enables that forge's webhook URL: `/webhooks/<forge>`. If not, pushes are built through [polling](polling.md), or with manual and scheduled builds. |
 
-## Repo adları
+## Repository names
 
-Bir repo cisid'de **repo anahtarı** ile anılır: GitHub'da `owner/name`, diğerlerinde başına sağlayıcının adı gelir.
+cisid refers to a repository by its **repository key**: `owner/name` on GitHub; on the other forges the forge's name comes first.
 
-| Sağlayıcı | Örnek anahtar |
+| Forge | Example key |
 |---|---|
 | GitHub | `sidumandr/cisid` |
 | Gitea | `gitea:office/app` |
 | Forgejo | `forgejo:office/app` |
-| GitLab | `gitlab:group/subgroup/project` (en fazla 20 seviye) |
+| GitLab | `gitlab:group/subgroup/project` (at most 20 levels) |
 | Bitbucket | `bitbucket:workspace/repo` |
 
-Anahtar job'larda (`repo`), adımlarda (`CISID_REPO`), secret'larda, zamanlamalarda ve önbellekte aynıdır. API ve arayüz adreslerinde son parça `{repo}`, geri kalanı `{owner}` olur; `{owner}` içindeki `:` ve `/` URL'de kodlanır:
+The key is the same in jobs (`repo`), steps (`CISID_REPO`), secrets, schedules and the cache. In API and UI URLs, the last segment is `{repo}` and the rest is `{owner}`; `:` and `/` inside `{owner}` are encoded in the URL:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' \
   "http://localhost:8080/api/repos/gitlab:group%2Fsubgroup/project/builds"
 ```
 
-GitHub anahtarları önekli değildir, bu yüzden cisid'in eski sürümlerinde oluşturulan job'lar, secret'lar ve zamanlamalar olduğu gibi çalışmaya devam eder.
+GitHub keys have no prefix, so jobs, secrets and schedules created by older versions of cisid keep working as they are.
 
 ## GitHub
 
-| Değişken | Açıklama |
+| Variable | Description |
 |---|---|
-| `CISID_GITHUB_TOKEN` | Fine-grained token: **Contents: Read-only** ve **Commit statuses: Read and write** |
-| `CISID_GITHUB_WEBHOOK_SECRET` | `/webhooks/github`'ı açar |
-| `CISID_GITHUB_API_URL` | GitHub Enterprise Server için, ör. `https://ghe.example.com/api/v3` |
+| `CISID_GITHUB_TOKEN` | Fine-grained token: **Contents: Read-only** and **Commit statuses: Read and write** |
+| `CISID_GITHUB_WEBHOOK_SECRET` | Enables `/webhooks/github` |
+| `CISID_GITHUB_API_URL` | For GitHub Enterprise Server, e.g. `https://ghe.example.com/api/v3` |
 
-Webhook: Repo → **Settings → Webhooks → Add webhook**, içerik tipi `application/json`, olaylar *Pushes* ve *Pull requests*. Ayrıntılar: [webhook.md](webhook.md).
+Webhook: Repository → **Settings → Webhooks → Add webhook**, content type `application/json`, events *Pushes* and *Pull requests*. Details: [webhook.md](webhook.md).
 
-## Gitea ve Forgejo
+## Gitea and Forgejo
 
-Forgejo, Gitea'nın API'sini kullanır; ikisi için aynı istemci çalışır. İkisi aynı anda da kullanılabilir.
+Forgejo uses Gitea's API, so the same client works for both. You can also use both at the same time.
 
-| Değişken | Açıklama |
+| Variable | Description |
 |---|---|
-| `CISID_GITEA_URL` / `CISID_FORGEJO_URL` | Sunucunun web adresi, ör. `https://git.example.com`. Verilmezse sağlayıcı kapalıdır. |
-| `CISID_GITEA_TOKEN` / `CISID_FORGEJO_TOKEN` | Erişim token'ı: `read:repository`, commit status için `write:repository` |
-| `CISID_GITEA_WEBHOOK_SECRET` / `CISID_FORGEJO_WEBHOOK_SECRET` | `/webhooks/gitea` ya da `/webhooks/forgejo`'yu açar |
+| `CISID_GITEA_URL` / `CISID_FORGEJO_URL` | The server's web address, e.g. `https://git.example.com`. If not set, the forge is disabled. |
+| `CISID_GITEA_TOKEN` / `CISID_FORGEJO_TOKEN` | Access token: `read:repository`, and `write:repository` for commit statuses |
+| `CISID_GITEA_WEBHOOK_SECRET` / `CISID_FORGEJO_WEBHOOK_SECRET` | Enables `/webhooks/gitea` or `/webhooks/forgejo` |
 
-Webhook: Repo → **Settings → Webhooks → Add webhook → Gitea** (Forgejo'da *Forgejo*). Target URL `https://<cisid>/webhooks/gitea`, HTTP method `POST`, içerik tipi `application/json`, secret yukarıdaki değer. Tetikleyiciler: *Push* ve *Pull request* olayları (*Custom events* altında *Push*, *Pull Request* ve *Pull Request Synchronized*). İmza `X-Gitea-Signature` (Forgejo'da `X-Forgejo-Signature`) başlığında gövdenin HMAC-SHA256'sıdır.
+Webhook: Repository → **Settings → Webhooks → Add webhook → Gitea** (*Forgejo* on Forgejo). Target URL `https://<cisid>/webhooks/gitea`, HTTP method `POST`, content type `application/json`, secret the value above. Triggers: *Push* and *Pull request* events (under *Custom events*: *Push*, *Pull Request* and *Pull Request Synchronized*). The signature is the HMAC-SHA256 of the body, in the `X-Gitea-Signature` header (`X-Forgejo-Signature` on Forgejo).
 
 ## GitLab
 
-| Değişken | Açıklama |
+| Variable | Description |
 |---|---|
-| `CISID_GITLAB_URL` | Kendi GitLab kurulumunuzun adresi. Verilmezse `https://gitlab.com`. |
-| `CISID_GITLAB_TOKEN` | Personal, group ya da project access token, `api` kapsamıyla (yalnızca okuma için `read_api` ve `read_repository` yeter, ama commit status `api` ister) |
-| `CISID_GITLAB_WEBHOOK_SECRET` | `/webhooks/gitlab`'ı açar |
+| `CISID_GITLAB_URL` | The URL of your own GitLab installation. If not set, `https://gitlab.com`. |
+| `CISID_GITLAB_TOKEN` | Personal, group or project access token with the `api` scope (`read_api` and `read_repository` are enough for reading only, but commit statuses require `api`) |
+| `CISID_GITLAB_WEBHOOK_SECRET` | Enables `/webhooks/gitlab` |
 
-Webhook: Proje → **Settings → Webhooks → Add new webhook**. URL `https://<cisid>/webhooks/gitlab`, *Secret token* yukarıdaki değer, tetikleyiciler *Push events* ve *Merge request events*.
+Webhook: Project → **Settings → Webhooks → Add new webhook**. URL `https://<cisid>/webhooks/gitlab`, *Secret token* the value above, triggers *Push events* and *Merge request events*.
 
-- GitLab webhook'ları imzalamaz; secret'ı `X-Gitlab-Token` başlığında olduğu gibi gönderir. Bu yüzden webhook adresine **HTTPS** üzerinden ulaşılmalıdır, yoksa secret yolda okunabilir.
-- Merge request'ler açılınca, yeniden açılınca ve yeni commit gelince derlenir; başlık gibi değişiklikler derleme başlatmaz. Kapanınca ya da merge edilince bitmemiş job'ları iptal edilir.
-- Fork'tan gelen merge request'ler `CISID_BUILD_FORKS=true` ile derlenir. Commit, hedef projenin `refs/merge-requests/<iid>/head` ref'inden çekilir.
+- GitLab does not sign webhooks; it sends the secret as is in the `X-Gitlab-Token` header. So the webhook URL must be reached over **HTTPS**, or the secret can be read in transit.
+- Merge requests are built when they are opened, when they are reopened and when new commits arrive; changes such as the title do not start a build. When a merge request is closed or merged, its unfinished jobs are canceled.
+- Merge requests from forks are built with `CISID_BUILD_FORKS=true`. The commit is fetched from the target project's `refs/merge-requests/<iid>/head` ref.
 
 ## Bitbucket Cloud
 
-| Değişken | Açıklama |
+| Variable | Description |
 |---|---|
-| `CISID_BITBUCKET_TOKEN` | Repository, project ya da workspace **access token**'ı: *Repositories: Read*, commit status için *Repositories: Write* |
-| `CISID_BITBUCKET_WEBHOOK_SECRET` | `/webhooks/bitbucket`'ı açar |
+| `CISID_BITBUCKET_TOKEN` | Repository, project or workspace **access token**: *Repositories: Read*, and *Repositories: Write* for commit statuses |
+| `CISID_BITBUCKET_WEBHOOK_SECRET` | Enables `/webhooks/bitbucket` |
 
-Webhook: Repo → **Repository settings → Webhooks → Add webhook**. URL `https://<cisid>/webhooks/bitbucket`, *Secret* yukarıdaki değer, tetikleyiciler *Repository: Push* ve *Pull request: Created, Updated, Merged, Declined*.
+Webhook: Repository → **Repository settings → Webhooks → Add webhook**. URL `https://<cisid>/webhooks/bitbucket`, *Secret* the value above, triggers *Repository: Push* and *Pull request: Created, Updated, Merged, Declined*.
 
-- İmza `X-Hub-Signature` başlığında (`sha256=<hex>`) gelir.
-- Bir push birden fazla branch'i güncellediyse her branch için ayrı bir job açılır. Yanıtta hepsi `job_ids` olarak listelenir.
-- Bitbucket pull request olaylarında commit'i kısaltılmış hash ile yazar; cisid tam hash'i API'den alır. Bitbucket o an erişilemezse webhook `503` döner ve Bitbucket teslimi daha sonra tekrar deneyebilir.
-- Fork'tan gelen pull request'ler Bitbucket'ta derlenmez: fork'un commit'leri ana repoda bulunmaz.
-- Commit status bir bağlantı ister. `CISID_PUBLIC_URL` verilmezse status repo sayfasına bağlanır.
-- Bitbucket Data Center (kendi sunucunuza kurulan Bitbucket) desteklenmez.
+- The signature arrives in the `X-Hub-Signature` header (`sha256=<hex>`).
+- If a push updated more than one branch, cisid opens a separate job for each branch. The response lists all of them as `job_ids`.
+- In pull request events Bitbucket writes the commit as an abbreviated hash; cisid gets the full hash from the API. If Bitbucket is unreachable at that moment, the webhook returns `503`, and Bitbucket can retry the delivery later.
+- Pull requests from forks are not built on Bitbucket: the fork's commits are not in the main repository.
+- A commit status requires a link. If `CISID_PUBLIC_URL` is not set, the status links to the repository page.
+- Bitbucket Data Center (Bitbucket installed on your own server) is not supported.
 
-## Özel repolar
+## Private repositories
 
-Token verilmiş bir sağlayıcının repoları clone adımında o token'la çekilir. Token yalnızca clone adımına secret olarak verilir, çıktıda `***` ile maskelenir ve `.git/config`'e yazılmaz: git kimlik bilgilerini ortam değişkenlerinden okuyan bir yardımcıyla (`GIT_CONFIG_*`) alır. Kullanıcı adımları token'ı görmez. Ayrıntılar: [pipeline.md](pipeline.md#çalışma-şekli).
+For a forge that has a token, the clone step fetches its repositories with that token. The token is given only to the clone step, as a secret. It is masked as `***` in output and is not written to `.git/config`: git gets the credentials through a helper that reads them from environment variables (`GIT_CONFIG_*`). User steps do not see the token. Details: [pipeline.md](pipeline.md#how-it-runs).
 
-## Commit status
+## Commit statuses
 
-Token'ı olan her sağlayıcıya job'ların durumu commit status olarak yazılır, token'ı olmayanlar atlanır. Her sağlayıcının durum adları farklıdır:
+Job statuses are written as commit statuses to every forge that has a token; forges without a token are skipped. Each forge uses different status names:
 
 | Job | GitHub | Gitea / Forgejo | GitLab | Bitbucket |
 |---|---|---|---|---|
@@ -99,4 +101,4 @@ Token'ı olan her sağlayıcıya job'ların durumu commit status olarak yazılı
 | `failed` | `failure` | `failure` | `failed` | `FAILED` |
 | `canceled` | `error` | `error` | `canceled` | `STOPPED` |
 
-Ayrıntılar: [commit-status.md](commit-status.md).
+Details: [commit-status.md](commit-status.md).

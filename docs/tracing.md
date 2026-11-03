@@ -1,46 +1,48 @@
-# Trace'ler (OpenTelemetry)
+# Traces (OpenTelemetry)
 
-Server ve agent, bir job'un yolculuğunu OpenTelemetry trace'i olarak dışa aktarabilir: webhook'un gelişi, job'un dağıtılması, `.cisid.yml`'ın GitHub'dan okunması, agent'ta servisler ve adımlar, commit status'un raporlanması. Hepsi tek bir trace'te, iki ayrı süreçten gelse de birbirine bağlı görünür. Kod `internal/telemetry` paketindedir.
+**English** · [Türkçe](tr/tracing.md)
 
-Varsayılan olarak kapalıdır. Kapalıyken hiçbir span oluşturulmaz ve HTTP katmanına sarmalayıcı eklenmez.
+The server and the agent can export a job's journey as an OpenTelemetry trace: the webhook arriving, the job being dispatched, `.cisid.yml` being read from GitHub, the services and steps on the agent, and the commit status being reported. All of it shows up in a single trace, linked together even though it comes from two separate processes. The code is in the `internal/telemetry` package.
 
-## Açmak
+Tracing is off by default. While it is off, no spans are created and no wrapper is added to the HTTP layer.
 
-Server'a ve agent'lara bir OTLP/HTTP collector adresi verin:
+## Turning it on
+
+Give the server and the agents the address of an OTLP/HTTP collector:
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 go run ./cmd/server
 ```
 
-| Değişken | Açıklama |
+| Variable | Description |
 |---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector'ın temel adresi. Trace'ler `<adres>/v1/traces` yoluna gönderilir. |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Trace'lerin gönderileceği tam adres. Verilirse yukarıdakinin yerine geçer. |
-| `OTEL_SDK_DISABLED` | `true` ise adres verilmiş olsa bile trace kapalıdır. |
-| `OTEL_SERVICE_NAME` | Servis adı. Varsayılan `cisid-server` ve `cisid-agent`. |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Collector'a gönderilecek başlıklar, ör. `authorization=Bearer ...`. |
-| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | Örnekleme. Varsayılan `parentbased_always_on`. |
-| `OTEL_RESOURCE_ATTRIBUTES` | Ek resource öznitelikleri, ör. `deployment.environment=prod`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Base address of the collector. Traces are sent to `<address>/v1/traces`. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Full address to send traces to. If set, it replaces the one above. |
+| `OTEL_SDK_DISABLED` | If `true`, tracing is off even when an address is set. |
+| `OTEL_SERVICE_NAME` | Service name. Defaults to `cisid-server` and `cisid-agent`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Headers to send to the collector, e.g. `authorization=Bearer ...`. |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | Sampling. Defaults to `parentbased_always_on`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, e.g. `deployment.environment=prod`. |
 
-Bunlar OpenTelemetry'nin standart değişkenleridir. Sertifika ve zaman aşımı gibi diğer `OTEL_EXPORTER_OTLP_*` ayarları da çalışır. Yalnızca OTLP/HTTP (`http/protobuf`) desteklenir. `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` verilirse süreç başlamaz ve nedenini yazar ([ADR 001](adr/001-agent-protokolu-websocket.md)).
+These are the standard OpenTelemetry variables. Other `OTEL_EXPORTER_OTLP_*` settings, such as certificates and timeouts, work too. Only OTLP/HTTP (`http/protobuf`) is supported. If you set `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`, the process does not start and prints the reason ([ADR 001](adr/001-agent-protocol-websocket.md)).
 
-Collector'a ulaşılamazsa job'lar etkilenmez, yalnızca span'lar kaybolur. Kapanışta bekleyen span'lar en fazla 5 saniye içinde gönderilir.
+If the collector is unreachable, jobs are not affected: only the spans are lost. On shutdown, pending spans are sent within at most 5 seconds.
 
-Resmi OTLP exporter'ı, yalnızca HTTP kullanılsa da gRPC paketlerini binary'ye ekler. Bu yüzden server ve agent binary'leri yaklaşık 7 MB büyüdü (strip edilmiş: server 14,8 → 22,2 MB, agent 8,4 → 15,5 MB). Kendi exporter'ımızı yazmak yerine bu bedeli kabul ettik.
+The official OTLP exporter adds the gRPC packages to the binary even when only HTTP is used. As a result, the server and agent binaries grew by about 7 MB (stripped: server 14.8 → 22.2 MB, agent 8.4 → 15.5 MB). We accepted this cost instead of writing our own exporter.
 
-### Yerelde Jaeger ile denemek
+### Trying it locally with Jaeger
 
-Jaeger, OTLP/HTTP'yi `4318` portunda kabul eder ve arayüzünü `16686` portunda sunar:
+Jaeger accepts OTLP/HTTP on port `4318` and serves its UI on port `16686`:
 
 ```bash
 docker run -d --name jaeger -p 16686:16686 -p 4318:4318 jaegertracing/jaeger:2.11.0
 ```
 
-Server ve agent'ı `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` ile başlatın, bir push gönderin ve `http://localhost:16686` adresinde `cisid-server` servisini açın. Belirli bir job'u bulmak için `cisid.job.id=42` etiketiyle arayın.
+Start the server and the agent with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`, send a push and open the `cisid-server` service at `http://localhost:16686`. To find a specific job, search for the tag `cisid.job.id=42`.
 
-Compose stack'te değişken server ve agent'a aktarılır. Collector host'ta çalışıyorsa container'ların içinden `http://host.docker.internal:4318` adresiyle erişilir ([deployment.md](deployment.md)).
+The Compose stack passes the variable to the server and the agent. If the collector runs on the host, the containers reach it at `http://host.docker.internal:4318` ([deployment.md](deployment.md)).
 
-## Bir job'un trace'i
+## A job's trace
 
 ```
 POST /webhooks/github                         cisid-server
@@ -50,59 +52,59 @@ POST /webhooks/github                         cisid-server
 │       ├── service postgres
 │       ├── step clone
 │       └── step test
-└── report commit status   (her durum değişikliğinde)   cisid-server
+└── report commit status   (on every status change)     cisid-server
     └── HTTP POST  (GitHub: statuses)
 ```
 
-Webhook span'ı job kuyruğa girer girmez biter. Altındaki span'lar dakikalar sonra gelebilir, collector arayüzleri bunları yine aynı ağaçta gösterir.
+The webhook span ends as soon as the job enters the queue. The spans under it can arrive minutes later, and collector UIs still show them in the same tree.
 
-| Span | Süreç | Öznitelikler |
+| Span | Process | Attributes |
 |---|---|---|
 | `POST /webhooks/github` | server | `cisid.repo`, `cisid.branch`, `cisid.commit`, `cisid.job.id`, `github.delivery_id` |
-| `GET /api/jobs/{id}` vb. | server | `http.route` ve standart HTTP öznitelikleri |
+| `GET /api/jobs/{id}` etc. | server | `http.route` and the standard HTTP attributes |
 | `dispatch job` | server | `cisid.job.id`, `cisid.repo`, `cisid.commit`, `cisid.agent`, `cisid.matrix` |
-| `HTTP GET`, `HTTP POST` (GitHub) | server | Standart HTTP istemci öznitelikleri |
+| `HTTP GET`, `HTTP POST` (GitHub) | server | Standard HTTP client attributes |
 | `run job` | agent | `cisid.job.id`, `cisid.agent`, `cisid.job.status` |
-| `service <ad>` | agent | `cisid.service.name`, `cisid.step.image` |
-| `step <ad>` | agent | `cisid.step.index`, `cisid.step.name`, `cisid.step.image`, `cisid.step.exit_code` |
+| `service <name>` | agent | `cisid.service.name`, `cisid.step.image` |
+| `step <name>` | agent | `cisid.step.index`, `cisid.step.name`, `cisid.step.image`, `cisid.step.exit_code` |
 | `report commit status` | server | `cisid.job.id`, `cisid.job.status` |
 
-Başarısız adımlar, planlanamayan job'lar ve GitHub hataları span durumunu `Error` yapar. Başarısız olan job'un `run job` span'ı da `Error` olur. İptal edilen job'lar hata sayılmaz, durumları `cisid.job.status` özniteliğinde görünür.
+Failed steps, jobs that cannot be planned and GitHub errors set the span status to `Error`. The `run job` span of a failed job is `Error` too. Canceled jobs do not count as errors: their status shows in the `cisid.job.status` attribute.
 
-## Trace bağlamı nasıl taşınır
+## How the trace context is carried
 
-Bir job, onu kuyruğa koyan isteğin span'ını W3C `traceparent` biçiminde `jobs.trace_parent` sütununda saklar (migration `010_job_trace.sql`). Job dakikalar sonra, belki başka bir server kopyasında dağıtılsa bile `dispatch job` span'ı bu değeri ebeveyn olarak kullanır. Server, agent'a gönderdiği `job_assigned` mesajına `trace_parent` alanını ekler ([agent.md](agent.md#protokol)). Agent'ın span'ları da böylece aynı trace'e bağlanır.
+A job stores the span of the request that queued it, in W3C `traceparent` format, in the `jobs.trace_parent` column (migration `010_job_trace.sql`). Even if the job is dispatched minutes later, maybe on another server replica, the `dispatch job` span uses this value as its parent. The server adds a `trace_parent` field to the `job_assigned` message it sends to the agent ([agent.md](agent.md#protocol)). This way the agent's spans join the same trace too.
 
-- Matrix job'larının hepsi ilk job'un trace'ini paylaşır.
-- Yeniden çalıştırılan bir job, `rerun` isteğinin trace'ine bağlanır.
-- Webhook ve API istekleri, gelen bir W3C `traceparent` başlığını sürdürür. GitHub'a yapılan isteklere trace başlığı eklenmez.
-- Trace kapalı bir server'dan job alan bir agent, her job için yeni bir trace başlatır.
+- All jobs of a matrix share the first job's trace.
+- A rerun job is linked to the trace of the `rerun` request.
+- Webhook and API requests continue an incoming W3C `traceparent` header. Requests to GitHub carry no trace header.
+- An agent that gets a job from a server with tracing off starts a new trace for each job.
 
-## Log'larla eşleştirme
+## Correlating with logs
 
-Bir span içinde yazılan log satırları `trace_id` ve `span_id` alanlarını taşır:
+Log lines written inside a span carry the `trace_id` and `span_id` fields:
 
 ```
 level=INFO msg="job queued" delivery=... job_id=42 ... trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7
 ```
 
-## Trace edilmeyenler
+## What is not traced
 
-- Veritabanı sorguları ve Docker API çağrıları.
-- Agent WebSocket bağlantıları, canlı log akışları (SSE), web arayüzü, `/metrics` ve health check'ler. Bu bağlantılar dakikalarca açık kalır ya da çok sık çağrılır, trace'e bir şey katmaz.
-- Adım çıktısı ve ortam değişkenleri. Span'larda secret değeri yer almaz.
+- Database queries and Docker API calls.
+- Agent WebSocket connections, live log streams (SSE), the web UI, `/metrics` and health checks. These connections stay open for minutes or are called very often, so they add nothing to a trace.
+- Step output and environment variables. Spans never contain secret values.
 
-## Testler
+## Tests
 
-| Test | Ne doğrulanıyor |
+| Test | What it verifies |
 |---|---|
-| `internal/telemetry` | Adres yokken kapalı olması, hatalı yapılandırmanın reddi, gerçek bir OTLP/HTTP collector'a dışa aktarım, `traceparent` taşıma, log'lara trace ID eklenmesi |
-| `TestRouterTraces` | Hangi isteklerin span aldığı, route'a göre adlandırma, gelen `traceparent`'ın sürdürülmesi |
-| `TestWebhookStoresRequestTrace` | Webhook'un trace bağlamını job'a yazması |
-| `TestStoreKeepsTraceParent` | Kuyruk, matrix ve rerun'da `trace_parent` |
-| `TestHubTracesDispatch` | Dağıtım span'ının job'un trace'ini sürdürmesi, planner'ın span'ı görmesi, agent'a gönderilen `trace_parent` |
-| `TestAgentTracesJob` | `run job`, servis ve adım span'ları, başarısız adımın işaretlenmesi |
-| `TestReporterTracesReports` | Commit status span'ı |
-| `TestRunEndToEnd` | Gerçek server ve agent: tüm span'ların collector'a ulaşması ve tek bir trace oluşturması |
+| `internal/telemetry` | Off when there is no address, bad configuration is rejected, export to a real OTLP/HTTP collector, `traceparent` propagation, trace IDs added to logs |
+| `TestRouterTraces` | Which requests get a span, naming by route, an incoming `traceparent` is continued |
+| `TestWebhookStoresRequestTrace` | The webhook writes the trace context to the job |
+| `TestStoreKeepsTraceParent` | `trace_parent` in the queue, matrix and rerun |
+| `TestHubTracesDispatch` | The dispatch span continues the job's trace, the planner sees the span, the `trace_parent` sent to the agent |
+| `TestAgentTracesJob` | `run job`, service and step spans, the failed step is marked |
+| `TestReporterTracesReports` | Commit status span |
+| `TestRunEndToEnd` | Real server and agent: all spans reach the collector and form a single trace |
 
-`internal/telemetry/telemetrytest` paketi testler için süreç içinde çalışan bir OTLP/HTTP collector sağlar.
+The `internal/telemetry/telemetrytest` package provides an in-process OTLP/HTTP collector for tests.

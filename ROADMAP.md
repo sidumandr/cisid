@@ -1,71 +1,73 @@
-# Yol Haritası
+# Roadmap
 
-Her faz bir öncekinin üzerine kurulur. Her madde kendi testleriyle birlikte tamamlanmış sayılır (TDD, bkz. [CLAUDE.md](CLAUDE.md)).
+**English** · [Türkçe](ROADMAP.tr.md)
 
-Referanslar: Woodpecker CI (pipeline/runner), Drone CI (agent ↔ server), Tekton (step/workspace modeli).
+Each phase builds on the previous one. An item counts as done together with its own tests (TDD, see [CLAUDE.md](CLAUDE.md)).
 
-## Faz 1 — MVP
+References: Woodpecker CI (pipeline/runner), Drone CI (agent ↔ server), Tekton (step/workspace model).
 
-Hedef: GitHub'a push → container'da komut çalışır → sonuç veritabanında görünür.
+## Phase 1 — MVP
 
-- [x] **Webhook handler** — `internal/api/webhook.go`: HMAC-SHA256 doğrulama, push payload'ından repo/branch/SHA, `jobs` tablosuna `pending` kayıt, `202 Accepted`.
-- [x] **Server iskeleti** — `cmd/server`: config (env), pgx pool, migration'lar, HTTP router, graceful shutdown.
-- [x] **Agent hub + job dağıtımı** — server'da `/agent/ws` endpoint'i, bekleyen job'ları agent'lara atama (`FOR UPDATE SKIP LOCKED`), `job_log` ve `job_result` mesajlarını kaydetme.
-- [x] **Docker runner** — `internal/runner/docker.go` (`github.com/moby/moby/client`): image pull (progress callback), container create (env, workdir, mount), start, stdout/stderr `io.Reader`, exit code, timeout, context cancellation. `testify/mock` ile mock Docker client testleri.
-- [x] **Pipeline tanımı** — repodaki `.cisid.yml` dosyasını GitHub'dan oku ve parse et (image + komut listesi), clone adımından sonra çalıştır.
-- [x] **Agent (temel)** — `cmd/agent`: server'a WebSocket ile bağlan, `job_assigned` dinle, runner'ı çağır, sonucu raporla.
+Goal: push to GitHub → a command runs in a container → the result shows up in the database.
 
-## Faz 2 — Streaming
+- [x] **Webhook handler.** `internal/api/webhook.go`: HMAC-SHA256 verification, repository/branch/SHA from the push payload, a `pending` row in the `jobs` table, `202 Accepted`.
+- [x] **Server skeleton.** `cmd/server`: config (env), pgx pool, migrations, HTTP router, graceful shutdown.
+- [x] **Agent hub + job dispatch.** The `/agent/ws` endpoint on the server, assigning pending jobs to agents (`FOR UPDATE SKIP LOCKED`), storing `job_log` and `job_result` messages.
+- [x] **Docker runner.** `internal/runner/docker.go` (`github.com/moby/moby/client`): image pull (progress callback), container create (env, workdir, mount), start, stdout/stderr `io.Reader`, exit code, timeout, context cancellation. Mock Docker client tests with `testify/mock`.
+- [x] **Pipeline definition.** Read the `.cisid.yml` file in the repository from GitHub and parse it (image + command list), run it after the clone step.
+- [x] **Agent (basic).** `cmd/agent`: connect to the server over WebSocket, listen for `job_assigned`, call the runner, report the result.
 
-Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
+## Phase 2 — Streaming
 
-- [x] Agent → server canlı log akışı (WebSocket, tek writer goroutine), logların veritabanına yazılması.
-- [x] Server → istemci canlı log yayını ve log okuma API'si. WebSocket yerine SSE kullanıldı, çünkü akış tek yönlü ve SSE `Last-Event-ID` ile kaldığı yerden devam ediyor. PostgreSQL `LISTEN/NOTIFY` ile server'lar arası çalışıyor.
+Goal: logs stream live, and dropped connections lose no work.
+
+- [x] Live log streaming from agent to server (WebSocket, a single writer goroutine), and writing the logs to the database.
+- [x] Live log broadcast from server to clients and a log read API. SSE is used instead of WebSocket, because the stream is one-way and SSE resumes where it left off with `Last-Event-ID`. It works across servers through PostgreSQL `LISTEN/NOTIFY`.
 - [x] Agent reconnect: exponential backoff + jitter.
-- [x] Job lease + heartbeat: hiç geri dönmeyen agent'ın işi lease dolunca tekrar kuyruğa döner, geri dönen agent işini geri alır.
-- [x] Mesajların onaylı (ack) teslimi: kopan bağlantıda onaylanmamış mesajlar tekrar gönderilir, server tekrarlara karşı güvenlidir.
-- [x] Mesaj protokolü tipleri `pkg/models` altında.
+- [x] Job lease + heartbeat: the job of an agent that never comes back returns to the queue when the lease expires, and an agent that comes back takes its job back.
+- [x] Acknowledged (ack) delivery of messages: on a dropped connection, unacknowledged messages are sent again, and the server is safe against duplicates.
+- [x] Message protocol types live under `pkg/models`.
 
-## Faz 3 — Features
+## Phase 3 — Features
 
-- [x] Çok adımlı pipeline'lar, adımlar arası paylaşılan workspace volume.
-- [x] Service container'ları (ör. test için PostgreSQL), job başına ayrı Docker ağında.
-- [x] Secret yönetimi: şifreli saklama, env olarak enjekte, loglarda maskeleme ([docs/secrets.md](docs/secrets.md)).
-- [x] Branch filtreleri (`when.branch`).
-- [x] Matrix build: her kombinasyon ayrı, paralel koşabilen bir job ([docs/pipeline.md](docs/pipeline.md#matrix)).
-- [x] GitHub commit status raporlama ([docs/commit-status.md](docs/commit-status.md)).
-- [x] Job iptal / yeniden çalıştırma API'si (token korumalı).
-- [x] Basit web arayüzü: job listesi ve canlı loglu job sayfası ([docs/ui.md](docs/ui.md)).
+- [x] Multi-step pipelines, a workspace volume shared between steps.
+- [x] Service containers (e.g. PostgreSQL for tests), on a separate Docker network per job.
+- [x] Secret management: encrypted storage, injection as env, masking in logs ([docs/secrets.md](docs/secrets.md)).
+- [x] Branch filters (`when.branch`).
+- [x] Matrix build: each combination is a separate job that can run in parallel ([docs/pipeline.md](docs/pipeline.md#matrix)).
+- [x] GitHub commit status reporting ([docs/commit-status.md](docs/commit-status.md)).
+- [x] Job cancel / rerun API (token protected).
+- [x] Simple web UI: job list and a job page with live logs ([docs/ui.md](docs/ui.md)).
 
-## Faz 4 — Production
+## Phase 4 — Production
 
-- [ ] ~~Agent ↔ server iletişimini gRPC'ye taşı (`api/proto`).~~ Ertelendi, protokol WebSocket'te kalıyor: [ADR 001](docs/adr/001-agent-protokolu-websocket.md).
-- [x] Agent kimlik doğrulama (ortak token) ve TLS (`CISID_TLS_*`, agent'ta `wss://` ve özel CA).
-- [x] Gözlemlenebilirlik: `slog` yapılandırılmış log ve Prometheus metrikleri ([docs/metrics.md](docs/metrics.md)).
-- [x] OpenTelemetry trace: webhook, dağıtım, GitHub istekleri, agent'ta servisler ve adımlar, commit status tek bir trace'te; OTLP/HTTP ile dışa aktarım ([docs/tracing.md](docs/tracing.md)).
-- [x] Container izolasyonu ve kaynak limitleri: bellek, CPU, süreç sayısı, `no-new-privileges`, job başına ağ, OOM tespiti.
-- [x] Rate limiting (IP başına token bucket) ve webhook replay koruması (imzalı gövdeye göre tekilleştirme ve 7 günden eski payload'ları reddetme).
-- [x] Dağıtım: Docker image'ları ve docker compose stack'i ([docs/deployment.md](docs/deployment.md)).
-- [x] Helm chart: server, Docker-in-Docker sidecar'lı agent'lar, isteğe bağlı PostgreSQL, TLS, ingress; testleri Helm SDK ile ([deployments/helm/cisid](deployments/helm/cisid/README.md)).
-- [x] cisid'in kendi CI'ını cisid üzerinde çalıştırmak (`.cisid.yml`).
+- [ ] ~~Move agent ↔ server communication to gRPC (`api/proto`).~~ Postponed, the protocol stays on WebSocket: [ADR 001](docs/adr/001-agent-protocol-websocket.md).
+- [x] Agent authentication (shared token) and TLS (`CISID_TLS_*`, `wss://` and a custom CA on the agent).
+- [x] Observability: `slog` structured logs and Prometheus metrics ([docs/metrics.md](docs/metrics.md)).
+- [x] OpenTelemetry traces: webhook, dispatch, GitHub requests, services and steps on the agent, and commit status in a single trace; export over OTLP/HTTP ([docs/tracing.md](docs/tracing.md)).
+- [x] Container isolation and resource limits: memory, CPU, process count, `no-new-privileges`, a network per job, OOM detection.
+- [x] Rate limiting (token bucket per IP) and webhook replay protection (deduplication by signed body, and rejecting payloads older than 7 days).
+- [x] Deployment: Docker images and a docker compose stack ([docs/deployment.md](docs/deployment.md)).
+- [x] Helm chart: server, agents with a Docker-in-Docker sidecar, optional PostgreSQL, TLS, ingress; tests with the Helm SDK ([deployments/helm/cisid](deployments/helm/cisid/README.md)).
+- [x] Running cisid's own CI on cisid (`.cisid.yml`).
 
-## Faz 5 — Kullanıma hazırlık
+## Phase 5 — Ready for use
 
-- [x] MIT lisansı.
-- [x] Log saklama süresi: biten job'ların logları `CISID_LOG_RETENTION` sonunda silinir ([docs/server.md](docs/server.md)).
-- [x] Pull request build'leri: PR'a yeni commit gelince eski build'ler iptal edilir; fork'lar isteğe bağlıdır ve secret almaz ([docs/webhook.md](docs/webhook.md#pull-requestler)).
-- [x] Secret'ları server tarafında branch'lere sınırlama; sınırlı secret'lar pull request'lere verilmez ([docs/secrets.md](docs/secrets.md)).
-- [x] Okuma erişimi için token (`CISID_READ_TOKEN`, arayüz için oturum cookie'si) ve agent token'ı rotasyonu ([docs/api.md](docs/api.md#okuma-erişimi)).
-- [x] Job'lar arası önbellek: `.cisid.yml`'de `cache`, repo başına Docker volume'ları; fork PR'larına salt okunur ([docs/pipeline.md](docs/pipeline.md#önbellek)).
-- [x] Elle ve zamanlanmış build'ler: API ve arayüzden branch build'i, veritabanında cron zamanlamaları; birden fazla server kopyası aynı çalışmayı iki kez başlatmaz ([docs/api.md](docs/api.md#elle-ve-zamanlanmış-buildler)).
-- [x] Birden fazla server kopyasının uçtan uca testi: aynı veritabanında iki server, kopyalar arası dağıtım, canlı log ve iptal (`TestRunTwoServers`).
-- [x] Sürüm yayımlama: `v*` etiketinde GitHub Actions testleri çalıştırır, image'ları (amd64, arm64) ve chart'ı ghcr.io'ya gönderir, release oluşturur ([docs/release.md](docs/release.md)).
+- [x] MIT license.
+- [x] Log retention: logs of finished jobs are deleted after `CISID_LOG_RETENTION` ([docs/server.md](docs/server.md)).
+- [x] Pull request builds: a new commit on a pull request cancels its older builds; forks are optional and get no secrets ([docs/webhook.md](docs/webhook.md#pull-requests)).
+- [x] Limiting secrets to branches on the server side; limited secrets are not given to pull requests ([docs/secrets.md](docs/secrets.md)).
+- [x] A token for read access (`CISID_READ_TOKEN`, a session cookie for the UI) and agent token rotation ([docs/api.md](docs/api.md#read-access)).
+- [x] Cache between jobs: `cache` in `.cisid.yml`, Docker volumes per repository; read-only for fork pull requests ([docs/pipeline.md](docs/pipeline.md#cache)).
+- [x] Manual and scheduled builds: branch builds from the API and the UI, cron schedules in the database; multiple server replicas do not start the same run twice ([docs/api.md](docs/api.md#manual-and-scheduled-builds)).
+- [x] End-to-end test of multiple server replicas: two servers on the same database, dispatch across replicas, live logs and cancel (`TestRunTwoServers`).
+- [x] Publishing releases: on a `v*` tag, GitHub Actions runs the tests, pushes the images (amd64, arm64) and the chart to ghcr.io, and creates a release ([docs/release.md](docs/release.md)).
 
-## Faz 6 — Herkes için
+## Phase 6 — For everyone
 
-- [x] İlk sürüm: v0.1.0, image'lar ve Helm chart ghcr.io'da ([docs/release.md](docs/release.md)).
-- [x] Birden fazla git sağlayıcısı: GitHub, Gitea, Forgejo, GitLab ve Bitbucket Cloud; webhook'lar, commit status, özel repoları clone'lama ([docs/forges.md](docs/forges.md)).
-- [x] Webhook'suz push build'leri: branch'leri yoklama; birden fazla server kopyası aynı commit'i iki kez derlemez ([docs/polling.md](docs/polling.md)).
-- [x] Kullanıcı hesapları ve roller (viewer, maintainer, admin), şifreyle giriş, kişisel API token'ları, CSRF koruması ([docs/accounts.md](docs/accounts.md)).
-- [x] Sağlayıcılarla (OAuth) giriş: GitHub, Gitea, Forgejo, GitLab, Bitbucket; hesaplar sağlayıcının değişmeyen kullanıcı numarasıyla eşleşir, isteğe bağlı otomatik hesap açma ([docs/accounts.md](docs/accounts.md#sağlayıcıyla-giriş)).
-- [ ] Dokümanlar İngilizce ve Türkçe.
+- [x] First release: v0.1.0, images and the Helm chart on ghcr.io ([docs/release.md](docs/release.md)).
+- [x] Multiple git forges: GitHub, Gitea, Forgejo, GitLab and Bitbucket Cloud; webhooks, commit status, cloning private repositories ([docs/forges.md](docs/forges.md)).
+- [x] Push builds without webhooks: polling branches; multiple server replicas do not build the same commit twice ([docs/polling.md](docs/polling.md)).
+- [x] User accounts and roles (viewer, maintainer, admin), password sign-in, personal API tokens, CSRF protection ([docs/accounts.md](docs/accounts.md)).
+- [x] Sign-in through forges (OAuth): GitHub, Gitea, Forgejo, GitLab, Bitbucket; accounts match on the forge's immutable user ID, with optional automatic account creation ([docs/accounts.md](docs/accounts.md#signing-in-through-a-forge)).
+- [x] Documentation in English and Turkish: English at the usual paths, Turkish in `docs/tr/` and the `.tr.md` files.

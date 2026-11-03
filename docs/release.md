@@ -1,13 +1,15 @@
-# Sürüm yayımlama
+# Publishing a release
 
-Bir `vX.Y.Z` etiketi push'landığında [`.github/workflows/release.yml`](../.github/workflows/release.yml) GitHub Actions'ta çalışır. Adımlar sırayla ilerler; biri başarısız olursa sonrakiler çalışmaz:
+**English** · [Türkçe](tr/release.md)
 
-1. **test:** `go vet`, PostgreSQL servisiyle bütün testler `-race` ile, gerçek Docker'a karşı entegrasyon testleri (`CISID_DOCKER_TESTS=1`) ve chart testleri. Testler geçmezse hiçbir şey yayımlanmaz.
-2. **images:** Server ve agent image'ları `linux/amd64` ve `linux/arm64` için derlenir. `ghcr.io/sidumandr/cisid-server` ve `ghcr.io/sidumandr/cisid-agent` adresine `X.Y.Z` ve `X.Y` etiketleriyle gönderilir.
-3. **chart:** Helm chart'ı, sürümü ve `appVersion`'ı etiketten alınarak paketlenir ve `oci://ghcr.io/sidumandr/charts/cisid` adresine gönderilir. Chart'ın varsayılan image etiketi böylece o sürümün image'ları olur.
-4. **release:** GitHub release'i, commit'lerden üretilen notlarla ve chart paketiyle oluşturulur.
+When a `vX.Y.Z` tag is pushed, [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs in GitHub Actions. The steps run in order; if one fails, the later ones do not run:
 
-## Sürüm çıkarmak
+1. **test:** `go vet`, all tests with `-race` against a PostgreSQL service, integration tests against real Docker (`CISID_DOCKER_TESTS=1`) and the chart tests. If the tests fail, nothing is published.
+2. **images:** The server and agent images are built for `linux/amd64` and `linux/arm64`. They are pushed to `ghcr.io/sidumandr/cisid-server` and `ghcr.io/sidumandr/cisid-agent` with the `X.Y.Z` and `X.Y` tags.
+3. **chart:** The Helm chart is packaged with its version and `appVersion` taken from the tag, and pushed to `oci://ghcr.io/sidumandr/charts/cisid`. This makes the chart's default image tag point at that release's images.
+4. **release:** The GitHub release is created with notes generated from the commits and with the chart package.
+
+## Cutting a release
 
 ```bash
 git tag -a v0.1.0 -m "cisid 0.1.0"
@@ -17,9 +19,9 @@ git tag -a v0.1.0 -m "cisid 0.1.0"
 git push origin v0.1.0
 ```
 
-İlerleme repo'nun **Actions** sekmesinde görünür. Yeni paketler GitHub'da varsayılan olarak özel olabilir. İlk yayımdan sonra **Packages** altında `cisid-server`, `cisid-agent` ve `charts/cisid` için görünürlüğü **Public** yapın; yoksa yalnızca sizin hesabınız çekebilir.
+Progress shows in the repository's **Actions** tab. New packages on GitHub can be private by default. After the first release, set the visibility of `cisid-server`, `cisid-agent` and `charts/cisid` to **Public** under **Packages**; otherwise only your account can pull them.
 
-## Yayımlanan chart'ı kurmak
+## Installing the published chart
 
 ```bash
 helm install ci oci://ghcr.io/sidumandr/charts/cisid --version 0.1.0 --namespace ci \
@@ -28,4 +30,4 @@ helm install ci oci://ghcr.io/sidumandr/charts/cisid --version 0.1.0 --namespace
   --set-string postgresql.auth.password=$(openssl rand -hex 16)
 ```
 
-Değerlerin tamamı ve kurulum notları [chart README'sinde](../deployments/helm/cisid/README.md).
+All values and the installation notes are in the [chart README](../deployments/helm/cisid/README.md).

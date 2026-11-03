@@ -1,53 +1,55 @@
-# Web arayüzü
+# Web UI
 
-Server, job'ları izlemek ve yönetmek için bir web arayüzü sunar (`internal/web`). Arayüz binary'nin içine gömülüdür. Dışarıdan hiçbir CDN, kütüphane ya da font yüklemez; bütün verisini [Job API](api.md)'sinden alır.
+**English** · [Türkçe](tr/ui.md)
 
-## Ekranlar
+The server serves a web UI for watching and managing jobs (`internal/web`). The UI is embedded in the binary. It loads no CDN, library or font from outside; it gets all its data from the [Job API](api.md).
 
-| Sayfa | İçerik |
+## Screens
+
+| Page | Content |
 |---|---|
-| `/` | Son 200 job. Üstte durumu özetleyen tek cümle: kaç job çalışıyor, son 24 saatte kaçı kırıldı, en sonuncusu hangi adımda. Sekmeler (Tümü, Çalışanlar, Kırılanlar, Pull request'ler) sayılarıyla birlikte; repo, branch ya da commit ile filtre. 5 saniyede bir yenilenir. |
-| `/jobs/{id}` | Job'un durumu tek cümlede ("Failed at test with exit code 1 after 1m 48s."), tetikleyen olay, commit, agent, başlama zamanı ve süre. Altında adım şeridi ve seçilen adımın canlı logu. |
-| `/repos` | Son job'larda görünen repolar: son build'leri, durumları, build sayıları. |
-| `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları, yoklanan branch'leri ([polling](polling.md)) ve secret'ları, sekmelerde. Diğer sağlayıcıların repoları önekiyle açılır, ör. `/repos/gitea:office/app` ya da iç içe GitLab grupları için `/repos/gitlab:group%2Fsub/project`. |
+| `/` | The last 200 jobs. At the top, one sentence sums up the state: how many jobs are running, how many failed in the last 24 hours, and at which step the latest one failed. Tabs (All, Running, Failed, Pull requests) with their counts; filter by repository, branch or commit. Refreshes every 5 seconds. |
+| `/jobs/{id}` | The job's status in one sentence ("Failed at test with exit code 1 after 1m 48s."), the triggering event, commit, agent, start time and duration. Below that, the step strip and the live log of the selected step. |
+| `/repos` | The repositories that appear in recent jobs: their latest builds, statuses and build counts. |
+| `/repos/{owner}/{repo}` | A repository's builds, schedules, polled branches ([polling](polling.md)) and secrets, in tabs. Repositories on other forges open with their prefix, e.g. `/repos/gitea:office/app`, or `/repos/gitlab:group%2Fsub/project` for nested GitLab groups. |
 
-Diyaloglar: **Run build** (repo ve branch), API token'ı, okuma için oturum açma, yeni zamanlama, yeni secret ve silme onayları.
+Dialogs: **Run build** (repository and branch), API token, sign-in for reading, new schedule, new secret and delete confirmations.
 
-## Adım şeridi
+## Step strip
 
-Her job'un adımları (clone, test, chart…) yan yana segmentler olarak çizilir. Segmentin rengi adımın durumunu söyler: geçti (yeşil), kırıldı (kırmızı), çalışıyor (turuncu, yavaşça yanıp söner), iptal edildi (gri), çalışmadı ya da sırası gelmedi (koyu gri).
+A job's steps (clone, test, chart…) are drawn as segments side by side. A segment's color shows the step's status: passed (green), failed (red), running (orange, blinks slowly), canceled (gray), did not run or not reached yet (dark gray).
 
-- Listede her satırda küçük bir şerit vardır; hangi job'un nerede kırıldığı tek bakışta görülür.
-- Job sayfasında şerit büyüktür ve tıklanır. Tıklanan adımın logu gösterilir. Sayfa açılınca çalışan adım, yoksa kırılan adım, o da yoksa son adım seçilir. Job çalışırken seçim, siz bir adıma tıklayana kadar o an çalışan adımı izler.
-- Çalışan bir job'un hangi adımda olduğunu API, logu en son akan adımdan bilir (`current_step`, [api.md](api.md)).
+- In the list, every row has a small strip, so you see at a glance which job failed where.
+- On the job page the strip is large and clickable. The UI shows the log of the step you click. When the page opens, it selects the running step; if there is none, the failed step; if there is none either, the last step. While the job runs, the selection follows the currently running step until you click a step.
+- The API knows which step a running job is on from the step whose log arrived last (`current_step`, [api.md](api.md)).
 
-## Loglar
+## Logs
 
-- Loglar SSE akışıyla gelir ([api.md](api.md#canlı-akış)). ANSI renk kodları temizlenir, stderr satırları daha soluk gösterilir.
-- Log paneli çıktıyla büyür, ekranı doldurunca kendi içinde kayar. En alttayken yeni satırlar geldikçe otomatik kayar; yukarı kaydırmışsanız yerinde kalır.
-- Saklama süresi dolan logların yerinde ne zaman silindikleri yazar.
+- Logs arrive through an SSE stream ([api.md](api.md#live-stream)). ANSI color codes are stripped, and stderr lines are shown dimmer.
+- The log panel grows with the output and scrolls on its own once it fills the screen. When you are at the bottom, it scrolls automatically as new lines arrive; if you have scrolled up, it stays where it is.
+- For logs past their retention period, the UI shows when they were deleted.
 
-## Görünüm
+## Appearance
 
-- **Renkler:** Koyu temada siyah zemin üzerinde turuncu, açık temada beyaz zemin. Tema işletim sisteminin ayarına uyar; kenar çubuğunun altındaki düğmeyle değiştirilir ve tarayıcıda hatırlanır.
-- **Renk yalnızca veride:** Turuncu; birincil düğmede, çalışan adımda ve seçili olanı gösteren 1px çizgide (sekme, kenar çubuğu, adım) kullanılır. Durumlar soluk zemin üzerinde aynı tonda yazıyla gösterilir.
-- **Yazı:** Metinler [Authentic Sans](https://authentic.website/sans), rakamlar, commit SHA'ları, süreler ve loglar sistemin monospace fontuyla yazılır; böylece sütunlardaki rakamlar hizalı durur. Font dosyaları `internal/web/static/fonts/` altındadır; lisans notu [LICENSE.md](../internal/web/static/fonts/LICENSE.md) dosyasında.
-- **Telefon:** Kenar çubuğu alta, etiketli bir çubuğa dönüşür. Satırlar iki ya da üç satırlık kartlara, job sayfasındaki bilgiler bir listeye dönüşür.
-- Arayüz metinlerinde uzun tire (em dash, U+2014) kullanılmaz; `internal/web` testi bunu denetler.
+- **Colors:** Orange on a black background in the dark theme, a white background in the light theme. The theme follows the operating system's setting; the button at the bottom of the sidebar changes it, and the browser remembers the choice.
+- **Color only on data:** Orange appears on the primary button, on the running step and on the 1px line that marks the selected item (tab, sidebar, step). Statuses are shown as text in the same hue on a faint background.
+- **Type:** Text is set in [Authentic Sans](https://authentic.website/sans). Numbers, commit SHAs, durations and logs use the system's monospace font, so numbers in columns stay aligned. The font files are under `internal/web/static/fonts/`; the license note is in [LICENSE.md](../internal/web/static/fonts/LICENSE.md).
+- **Phone:** The sidebar turns into a labeled bar at the bottom. Rows turn into cards of two or three lines, and the details on the job page turn into a list.
+- The UI text never uses the em dash (U+2014); a test in `internal/web` checks this.
 
-Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yapıldı (data terminal stili, seed 1222882761): ölçümleri 1440, 768 ve 390 piksel genişlikte bir tarayıcıda alındı.
+The design follows the app-screen rules of the `design-taste-frontend` skill (data terminal style, seed 1222882761): measurements were taken in a browser at 1440, 768 and 390 pixels wide.
 
-## Eylemler ve token'lar
+## Actions and tokens
 
-- **Run build**, **Cancel**, **Rerun**, zamanlama, polling ve secret işlemleri `maintainer` ister ([accounts.md](accounts.md)). Giriş yapılmamışsa ilk kullanımda bir giriş diyaloğu açılır: kullanıcı adı ve şifre, ya da bir token. Server'ın API token'ı yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur; kişisel token ve şifre tarayıcıda bir oturum açar.
-- Kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını açar: rol, şifre değiştirme, kişisel token'lar, çıkış. Admin'ler **Kullanıcılar** sayfasında kullanıcı ekler, rollerini ve sağlayıcı hesaplarını değiştirir, devre dışı bırakır ve siler.
-- Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir.
-- `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.
+- **Run build**, **Cancel**, **Rerun**, schedule, polling and secret actions require `maintainer` ([accounts.md](accounts.md)). If you are not signed in, a sign-in dialog opens on first use: a username and password, or a token. The UI keeps the server's API token only in that tab's session (`sessionStorage`); a personal token or a password opens a session in the browser.
+- The person icon at the bottom of the sidebar opens the **Account** page: role, password change, personal tokens, sign-out. On the **Users** page, admins add users, change their roles and forge logins, disable them and delete them.
+- A running job shows only **Cancel**, and a finished job shows only **Rerun**.
+- If `CISID_PUBLIC_URL` is set, GitHub commit status links go to the job page (`/jobs/{id}`).
 
-## Güvenlik
+## Security
 
-- Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script yoktur, fontlar dahil başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
-- API'den gelen her değer (log satırları dahil) sayfaya `textContent` ile eklenir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür.
-- Okuma giriş istiyorsa (`CISID_READ_ACCESS=signed-in`) arayüz ilk okumada giriş ister. Kullanıcı oturumu `CISID_SESSION_TTL` kadar, okuma token'ıyla açılan oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Değilse sayfalar herkese açıktır.
-- Cookie ile yapılan her değişiklik `X-Cisid-Request` başlığını taşır; başka bir sitenin formu bunu ekleyemez (CSRF koruması).
-- Secret değerleri arayüzde hiçbir zaman gösterilmez; yalnızca adları, hangi build'lere verildikleri ve ne zaman güncellendikleri listelenir.
+- Pages are served with `Content-Security-Policy: default-src 'self'`: there are no inline scripts, and nothing is loaded from another origin, fonts included. The server also sends `frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`.
+- Every value from the API (log lines included) is inserted into the page with `textContent` and is never interpreted as HTML. A `<script>` in a step's output shows up as text.
+- If reading requires sign-in (`CISID_READ_ACCESS=signed-in`), the UI asks you to sign in on the first read. A user session lasts `CISID_SESSION_TTL`; a session opened with a read token lasts until the browser closes ([api.md](api.md#read-access)). Otherwise the pages are public.
+- Every change made with a cookie carries the `X-Cisid-Request` header; another site's form cannot add it (CSRF protection).
+- The UI never shows secret values. It lists only their names, which builds get them and when they were updated.

@@ -1,8 +1,10 @@
 # Docker Runner
 
-`internal/runner/docker.go` bir pipeline adımını (`Step`) Docker container'ında çalıştırır. SDK olarak `github.com/moby/moby/client` kullanılır (bkz. [CLAUDE.md](../CLAUDE.md)).
+**English** · [Türkçe](tr/runner.md)
 
-## Kullanım
+`internal/runner/docker.go` runs a pipeline step (`Step`) in a Docker container. It uses `github.com/moby/moby/client` as the SDK (see [CLAUDE.md](../CLAUDE.md)).
+
+## Usage
 
 ```go
 cli, err := client.New(client.FromEnv)
@@ -26,19 +28,19 @@ code, err := r.Run(ctx, runner.Step{
 }, stdoutWriter, stderrWriter)
 ```
 
-Logları kendin okumak istersen (ör. WebSocket'e aktarmak için) `Start` kullan:
+To read the logs yourself (e.g. to forward them over WebSocket), use `Start`:
 
 ```go
 exec, err := r.Start(ctx, step)
 if err != nil {
 	return err
 }
-go stream(exec.Stdout) // Stdout ve Stderr aynı anda okunmalı
+go stream(exec.Stdout) // Stdout and Stderr must be read concurrently
 go stream(exec.Stderr)
 code, err := exec.Wait(ctx)
 ```
 
-## Yaşam döngüsü
+## Lifecycle
 
 ```
 Start ─► ImagePull ─► ContainerCreate ─► ContainerStart ─► ContainerLogs (follow)
@@ -46,50 +48,50 @@ Start ─► ImagePull ─► ContainerCreate ─► ContainerStart ─► Conta
                       supervise goroutine ◄──────────────────┘
                         │
                         ├─ ContainerWait (not-running)
-                        │     ├─ çıktı             → exit code
-                        │     ├─ Step.Timeout doldu → ContainerStop → ErrTimeout
-                        │     └─ ctx iptal edildi   → ContainerStop → context.Canceled
+                        │     ├─ exited               → exit code
+                        │     ├─ Step.Timeout expired → ContainerStop → ErrTimeout
+                        │     └─ ctx canceled         → ContainerStop → context.Canceled
                         │
-                        ├─ logların bitmesini bekle (ctx iptal edildiyse kes)
-                        └─ ContainerRemove (force, volumes)  → Wait() döner
+                        ├─ wait for the logs to end (cut them off if ctx is canceled)
+                        └─ ContainerRemove (force, volumes)  → Wait() returns
 ```
 
-- **Pull:** Her pull'da registry'ye gidilir. Her ilerleme mesajı `OnPullProgress`'e iletilir.
-- **Loglar:** Docker'ın multiplexed stream'i `stdcopy` ile ayrılır, iki `io.Pipe` üzerinden `Stdout` ve `Stderr` olarak verilir.
-- **Exit code:** Sıfırdan farklı bir exit code hata değildir; `(code, nil)` döner. Hata sadece runner'ın kendisi başarısız olduğunda döner. Bu durumda exit code `-1` olur.
-- **Timeout:** Container'a `SIGTERM` gönderilir, grace period (varsayılan 10 sn, `WithStopGracePeriod`) dolunca `SIGKILL` gönderilir. Kapanış sırasında yazılan loglar korunur.
-- **İptal:** Stop ve remove çağrıları `context.WithoutCancel` ile türetilmiş bir context kullanır. Böylece iptalden sonra da temizlik yapılır. Okunmayan loglar kesilir, okuyucular hata alır ve takılı kalmaz.
-- **Temizlik:** Her container `io.cisid.managed=true` label'ı taşır ve iş bitince silinir.
+- **Pull:** Every pull goes to the registry. Each progress message is passed to `OnPullProgress`.
+- **Logs:** Docker's multiplexed stream is split with `stdcopy` and exposed as `Stdout` and `Stderr` through two `io.Pipe`s.
+- **Exit code:** A non-zero exit code is not an error: the call returns `(code, nil)`. An error is returned only when the runner itself fails. In that case the exit code is `-1`.
+- **Timeout:** The container gets `SIGTERM`, then `SIGKILL` when the grace period (10 s by default, `WithStopGracePeriod`) runs out. Logs written during shutdown are kept.
+- **Cancellation:** The stop and remove calls use a context derived with `context.WithoutCancel`. So cleanup still happens after cancellation. Unread logs are cut off, and readers get an error instead of hanging.
+- **Cleanup:** Every container carries the `io.cisid.managed=true` label and is removed when the work is done.
 
-## Hatalar
+## Errors
 
-| Hata | Ne zaman |
+| Error | When |
 |---|---|
-| `ErrInvalidStep` | `Step.Image` boş |
-| `ErrImagePull` | Pull isteği ya da pull stream'i hata verdi |
-| `ErrTimeout` | `Step.Timeout` doldu |
-| `context.Canceled` | `Start`'a verilen context iptal edildi |
-| `ErrContainerWait` | Docker exit durumunu raporlayamadı |
+| `ErrInvalidStep` | `Step.Image` is empty |
+| `ErrImagePull` | The pull request or the pull stream returned an error |
+| `ErrTimeout` | `Step.Timeout` expired |
+| `context.Canceled` | The context passed to `Start` was canceled |
+| `ErrContainerWait` | Docker could not report the exit status |
 
-Hepsi `errors.Is` ile kontrol edilir. Alttaki Docker hatası da zincirde korunur.
+Check all of them with `errors.Is`. The underlying Docker error stays in the chain too.
 
-## Testler
+## Tests
 
-`docker_test.go`, `DockerClient` arayüzünü `testify/mock` ile mock'lar:
+`docker_test.go` mocks the `DockerClient` interface with `testify/mock`:
 
-| Test | Senaryo |
+| Test | Scenario |
 |---|---|
-| `TestRunHappyPath` | Pull ilerlemesi, create ayarları (env, workdir, mount), stdout/stderr, exit 0, temizlik |
+| `TestRunHappyPath` | Pull progress, create settings (env, workdir, mount), stdout/stderr, exit 0, cleanup |
 | `TestRunStartReturnsReadersAndExitCode` | `Start` + `io.Reader` + `Wait` |
-| `TestRunNonZeroExitCode` | Exit 2, hata dönmez |
-| `TestRunImagePullFailure` | İstek hatası, stream'de `errorDetail`, kopan stream |
-| `TestRunTimeout` | Graceful stop, kapanış logları korunur |
-| `TestRunContextCancellation` | İptal → stop + remove, okuyucular kapanır |
-| `TestWaitHonorsCallerContext` | `Wait`'ten vazgeçmek container'ı durdurmaz |
-| `TestStartFailures` | Boş image, create/start/logs hataları ve temizlik |
-| `TestRunWaitError` | Daemon'un wait hatası |
+| `TestRunNonZeroExitCode` | Exit 2, no error returned |
+| `TestRunImagePullFailure` | Request error, `errorDetail` in the stream, broken stream |
+| `TestRunTimeout` | Graceful stop, shutdown logs are kept |
+| `TestRunContextCancellation` | Cancellation → stop + remove, readers close |
+| `TestWaitHonorsCallerContext` | Giving up on `Wait` does not stop the container |
+| `TestStartFailures` | Empty image, create/start/logs errors and cleanup |
+| `TestRunWaitError` | The daemon's wait error |
 
-Gerçek Docker'a karşı entegrasyon testleri (alpine image'ını çeker):
+Integration tests against real Docker (they pull the alpine image):
 
 ```bash
 CISID_DOCKER_TESTS=1 go test ./internal/runner/ -run Integration -v

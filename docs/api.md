@@ -1,21 +1,23 @@
 # Job API
 
-Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jobs.go`). Job'lar okunabilir, iptal edilebilir ve yeniden çalıştırılabilir. Bütün yanıtlar JSON'dur, canlı log akışı ise [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) ile gelir.
+**English** · [Türkçe](tr/api.md)
 
-> Okuma uç noktaları herkese açık ya da giriş isteyen olabilir ([Okuma erişimi](#okuma-erişimi)). Değişiklik yapan uç noktalar `maintainer` rolü ister: API token'ı, bir kullanıcının kişisel token'ı ya da oturumu ([accounts.md](accounts.md)).
+The server exposes jobs and their logs over an HTTP API (`internal/api/jobs.go`). Jobs can be read, canceled and rerun. All responses are JSON, and the live log stream uses [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html).
 
-## Endpoint'ler
+> Read endpoints can be public or require sign-in ([Read access](#read-access)). Endpoints that make changes require the `maintainer` role: the API token, a user's personal token, or a session ([accounts.md](accounts.md)).
 
-| Yol | Açıklama |
+## Endpoints
+
+| Path | Description |
 |---|---|
-| `GET /api/jobs?limit=50` | Son job'lar, en yenisi önce. `limit` en fazla 200. |
-| `GET /api/jobs/{id}` | Tek job |
-| `GET /api/jobs/{id}/logs?after=0` | `seq` > `after` olan log parçaları, istek başına en fazla 1000 |
-| `GET /api/jobs/{id}/logs/stream` | Canlı log akışı (SSE) |
-| `POST /api/jobs/{id}/cancel` | Job'u iptal et (maintainer) |
-| `POST /api/jobs/{id}/rerun` | Aynı commit için yeni job oluştur (maintainer) |
+| `GET /api/jobs?limit=50` | Recent jobs, newest first. `limit` is at most 200. |
+| `GET /api/jobs/{id}` | A single job |
+| `GET /api/jobs/{id}/logs?after=0` | Log chunks with `seq` > `after`, at most 1000 per request |
+| `GET /api/jobs/{id}/logs/stream` | Live log stream (SSE) |
+| `POST /api/jobs/{id}/cancel` | Cancel the job (maintainer) |
+| `POST /api/jobs/{id}/rerun` | Create a new job for the same commit (maintainer) |
 
-Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate limit aşıldıysa `429` (`Retry-After: 1`, bkz. `CISID_RATE_LIMIT`). Gövde `{"status":"error","reason":"..."}` biçimindedir.
+Errors: `400` for an invalid parameter, `404` for a job that does not exist, `429` when a client exceeds the rate limit (`Retry-After: 1`, see `CISID_RATE_LIMIT`). The body has the form `{"status":"error","reason":"..."}`.
 
 ### Job
 
@@ -45,25 +47,25 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
 }
 ```
 
-`status`: `pending`, `running`, `success`, `failed`, `canceled`. `event` job'u başlatan olaydır: `push`, `pull_request`, `manual` ya da `schedule`. Pull request job'larında `pull_request` PR numarası, `target_branch` birleştirileceği branch, `branch` PR'ın kendi branch'i, `fork` ise değişikliğin bir fork'tan geldiğidir. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)). `current_step` yalnızca çalışan job'larda bulunur: logu en son akan adımın sırasıdır. `logs_expired_at` varsa job'un logları saklama süresi dolduğu için o tarihte silinmiştir (`CISID_LOG_RETENTION`, [server.md](server.md)); log uç noktaları boş döner.
+`status`: `pending`, `running`, `success`, `failed`, `canceled`. `event` is the event that started the job: `push`, `pull_request`, `manual` or `schedule`. In pull request jobs, `pull_request` is the PR number, `target_branch` is the branch it merges into, `branch` is the PR's own branch, and `fork` means the change comes from a fork. `steps` holds the names of the steps planned for the job and fills in when the job is given to an agent. `failed_step` and the `step` in log chunks give the position in this list (`0` is always clone). Steps skipped by `when` are not in the list. `matrix` is the combination the job runs, and `parent_id` is the first matrix job that created it ([pipeline.md](pipeline.md#matrix)). `current_step` appears only on running jobs: it is the position of the step whose log arrived last. If `logs_expired_at` is set, the job's logs were deleted on that date because their retention period ran out (`CISID_LOG_RETENTION`, [server.md](server.md)); the log endpoints return nothing.
 
-### Log parçası
+### Log chunk
 
 ```json
 {"job_id": 42, "step": 1, "stream": "stderr", "seq": 17, "data": "+ go test ./...\n"}
 ```
 
-`seq` job içinde 1'den başlar ve sırayı belirler. Parçalar satır sınırına denk gelmeyebilir. İstemci aynı `stream`'deki parçaları uç uca ekleyerek gösterir.
+`seq` starts at 1 within a job and sets the order. Chunks may not end on a line boundary. A client shows them by joining the chunks of the same `stream` end to end.
 
-## Okuma erişimi
+## Read access
 
-Okuma `CISID_READ_ACCESS=signed-in` ise (`CISID_READ_TOKEN` tanımlıyken varsayılan budur) job, log ve canlı akış uç noktaları ile `/metrics` şunlardan birini ister:
+When read access is `CISID_READ_ACCESS=signed-in` (the default when `CISID_READ_TOKEN` is set), the job, log and live stream endpoints and `/metrics` require one of these:
 
-- `Authorization: Bearer <token>` başlığı: okuma token'ı, API token'ı ya da bir kullanıcının kişisel token'ı.
-- Bir kullanıcının oturum cookie'si ([accounts.md](accounts.md#giriş-ve-oturumlar)).
-- `POST /api/login` gövdesi `{"token":"..."}` ile alınan okuma cookie'si. Token doğruysa `204` döner ve server HttpOnly, `SameSite=Strict` bir cookie koyar. Web arayüzü cookie'leri kullanır, çünkü tarayıcının canlı log akışı (EventSource) başlık gönderemez. Bu cookie token'ın kendisini değil özetini taşır ve yalnızca okumaya izin verir; API token'ıyla girilse bile değişiklik yapamaz. `POST /api/logout` cookie'leri siler.
+- An `Authorization: Bearer <token>` header: the read token, the API token, or a user's personal token.
+- A user's session cookie ([accounts.md](accounts.md#sign-in-and-sessions)).
+- A read cookie obtained from `POST /api/login` with the body `{"token":"..."}`. If the token is correct, it returns `204` and the server sets an HttpOnly, `SameSite=Strict` cookie. The web UI uses cookies because the browser's live log stream (EventSource) cannot send headers. This cookie carries a digest of the token, not the token itself, and only allows reading: it cannot make changes even when you sign in with the API token. `POST /api/logout` deletes the cookies.
 
-Kimlik yoksa ya da yanlışsa `401` döner. Health check'ler (`/healthz`, `/readyz`) ve webhook her zaman açıktır.
+Missing or wrong credentials return `401`. Health checks (`/healthz`, `/readyz`) and the webhook are always open.
 
 ```bash
 curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
@@ -71,18 +73,18 @@ curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 
 ## Polling
 
-Webhook'u server'a ulaşamayan sağlayıcılar için branch'ler yoklanabilir: `GET`, `POST /api/repos/{owner}/{repo}/watches` ve `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Ayrıntılar: [polling.md](polling.md).
+For forges whose webhooks cannot reach the server, branches can be polled: `GET`, `POST /api/repos/{owner}/{repo}/watches` and `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Details: [polling.md](polling.md).
 
-## Elle ve zamanlanmış build'ler
+## Manual and scheduled builds
 
-Bir branch'in son commit'i push beklemeden derlenebilir. Server commit'i ve clone adresini reponun sağlayıcısının API'sinden alır (özel repolar için sağlayıcının token'ı gerekir). Diğer sağlayıcıların repoları adreste önekiyle yazılır, ör. `/api/repos/gitea:office/app/builds` ya da `/api/repos/gitlab:group%2Fsub/project/builds` ([forges.md](forges.md#repo-adları)). Bu uç noktalar API token'ı ister; zamanlamaları listelemek okuma erişimi ister.
+You can build the latest commit of a branch without waiting for a push. The server gets the commit and the clone URL from the API of the repository's forge (private repositories need the forge's token). Repositories on other forges carry their prefix in the path, e.g. `/api/repos/gitea:office/app/builds` or `/api/repos/gitlab:group%2Fsub/project/builds` ([forges.md](forges.md#repository-names)). These endpoints require a maintainer; listing schedules requires read access.
 
-| Yol | Açıklama |
+| Path | Description |
 |---|---|
-| `POST /api/repos/{owner}/{repo}/builds` | `{"branch":"main"}` ile branch'in son commit'ini hemen derler; `branch` verilmezse varsayılan branch. `201` ve job döner. Repo ya da branch yoksa ya da server o sağlayıcı için yapılandırılmamışsa `404`, sağlayıcıya ulaşılamazsa `503`. |
-| `GET /api/repos/{owner}/{repo}/schedules` | Repo'nun zamanlamaları: ad, cron, branch, `next_run_at`, `last_run_at`, `last_job_id` |
-| `PUT /api/repos/{owner}/{repo}/schedules/{name}` | `{"cron":"0 3 * * *","branch":"main"}` ile zamanlamayı oluşturur ya da değiştirir. Sonraki çalışma zamanıyla birlikte zamanlamayı döner. |
-| `DELETE /api/repos/{owner}/{repo}/schedules/{name}` | `204`, yoksa `404` |
+| `POST /api/repos/{owner}/{repo}/builds` | Builds the latest commit of the branch right away, with `{"branch":"main"}`; without `branch`, the default branch. Returns `201` and the job. `404` if the repository or branch does not exist or the server is not configured for that forge, `503` if the forge cannot be reached. |
+| `GET /api/repos/{owner}/{repo}/schedules` | The repository's schedules: name, cron, branch, `next_run_at`, `last_run_at`, `last_job_id` |
+| `PUT /api/repos/{owner}/{repo}/schedules/{name}` | Creates or replaces a schedule with `{"cron":"0 3 * * *","branch":"main"}`. Returns the schedule with its next run time. |
+| `DELETE /api/repos/{owner}/{repo}/schedules/{name}` | `204`, or `404` if it does not exist |
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' http://localhost:8080/api/repos/sidumandr/cisid/builds
@@ -92,13 +94,13 @@ curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' 
 curl -X PUT -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"cron":"CRON_TZ=Europe/Istanbul 0 3 * * *"}' http://localhost:8080/api/repos/sidumandr/cisid/schedules/nightly
 ```
 
-- **Cron:** Beş alanlı standart biçim (`dakika saat gün ay haftanın-günü`, ör. `0 3 * * 1-5`) ya da `@hourly`, `@daily`, `@weekly`, `@monthly`. Saatler UTC'dir; başka bir saat dilimi için başa `CRON_TZ=Europe/Istanbul ` ekleyin. Zamanlama adı küçük harf, rakam, `.`, `_` ve `-` içerebilir.
-- **Çalışma:** Server her 30 saniyede vakti gelen zamanlamaları alır ve branch'in son commit'i için bir job açar. Birden fazla server kopyası aynı zamanlamayı iki kez çalıştırmaz: zamanlama, veritabanında kilitlenerek tek bir kopyaya verilir. Server kapalıyken kaçırılan çalışmalar açılınca bir kez yapılır, her kaçırılan zaman için ayrı ayrı değil. Sağlayıcıya ulaşılamazsa o çalışma atlanır, zamanlama sonraki zamanında devam eder.
-- **Job'lar:** `event` elle başlatılanlarda `manual`, zamanlananlarda `schedule` olur. `when.event` ile bunlara özel adımlar yazılabilir. Branch'e sınırlı secret'lar bu job'lara push'taki gibi verilir. Commit status'ları ayrı bağlamlarda görünür: `cisid/manual`, `cisid/schedule` ([commit-status.md](commit-status.md)).
+- **Cron:** The standard five-field format (`minute hour day month day-of-week`, e.g. `0 3 * * 1-5`) or `@hourly`, `@daily`, `@weekly`, `@monthly`. Times are in UTC; for another time zone, add `CRON_TZ=Europe/Istanbul ` at the start. A schedule name can contain lowercase letters, digits, `.`, `_` and `-`.
+- **Runs:** Every 30 seconds the server picks up the schedules that are due and opens a job for the latest commit of the branch. Several server replicas do not run the same schedule twice: the schedule is locked in the database and given to a single replica. Runs missed while the server was down happen once when it comes back up, not once for each missed time. If the forge cannot be reached, that run is skipped and the schedule continues at its next time.
+- **Jobs:** `event` is `manual` for manually started jobs and `schedule` for scheduled ones. You can write steps just for these with `when.event`. Secrets limited to branches are given to these jobs as they are on a push. Commit statuses appear under separate contexts: `cisid/manual`, `cisid/schedule` ([commit-status.md](commit-status.md)).
 
-## İptal ve yeniden çalıştırma
+## Cancel and rerun
 
-Bu uç noktalar `maintainer` rolü ister: `CISID_API_TOKEN`, bir maintainer'ın kişisel token'ı (`Authorization: Bearer`) ya da oturumu. Ne API token'ı ne de kullanıcı varsa `403`, kimlik eksik ya da yanlışsa `401`, rol yetmiyorsa `403` döner.
+These endpoints require the `maintainer` role: `CISID_API_TOKEN`, a maintainer's personal token (`Authorization: Bearer`), or a maintainer's session. They return `403` if there is neither an API token nor any user, `401` if credentials are missing or wrong, and `403` if the role is not enough.
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080/api/jobs/42/cancel
@@ -108,19 +110,19 @@ curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080/a
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080/api/jobs/42/rerun
 ```
 
-**İptal:**
+**Cancel:**
 
-| Job durumu | Sonuç |
+| Job status | Result |
 |---|---|
-| `pending` | Hemen `canceled` olur, yanıt `200` |
-| `running` | İptal isteği kaydedilir, yanıt `202`. Agent'ın bağlı olduğu server agent'a `job_cancel` gönderir (en geç 2 sn), agent container'ı durdurur ve job `canceled` olur. |
-| Bitmiş | `409` |
+| `pending` | Becomes `canceled` at once, response `200` |
+| `running` | The cancel request is recorded, response `202`. The server the agent is connected to sends `job_cancel` to the agent (within 2 s), the agent stops the container, and the job becomes `canceled`. |
+| Finished | `409` |
 
-Her iki durumda da job'un `error` alanı `canceled by request` olur. İstek hangi server'a gelirse gelsin çalışır. Agent bir daha hiç bağlanmazsa iptal isteği olan job, lease dolunca tekrar kuyruğa alınmaz, `canceled` olur.
+In both cases the job's `error` field becomes `canceled by request`. This works whichever server receives the request. If the agent never connects again, a job with a cancel request is not requeued when its lease expires; it becomes `canceled`.
 
-**Yeniden çalıştırma:** Aynı repo, branch ve commit için yeni bir `pending` job oluşturur. Yanıt `201` olur, `Location` başlığı yeni job'u gösterir.
+**Rerun:** Creates a new `pending` job for the same repository, branch and commit. The response is `201`, and the `Location` header points to the new job.
 
-## Canlı akış
+## Live stream
 
 ```bash
 curl -N http://localhost:8080/api/jobs/42/logs/stream
@@ -142,11 +144,11 @@ event: status
 data: {"id":42,"status":"success",...}
 ```
 
-- İlk olay, job'un o anki durumunu taşıyan `status` olayıdır. Ardından birikmiş loglar, sonra yeni loglar gelir.
-- Job bittiğinde son bir `status` gönderilir ve server akışı kapatır. Bitmiş bir job için akış, logların tamamını oynatıp hemen kapanır.
-- Her `log` olayının `id` alanı `seq` değeridir. Bağlantı koparsa tarayıcıdaki `EventSource` `Last-Event-ID` başlığıyla kaldığı yerden devam eder. Elle devam etmek için `?after=<seq>` kullanılabilir.
-- Akış 5 sn'de bir `: keepalive` yorumu gönderir, böylece proxy'ler boşta kalan bağlantıyı kapatmaz.
-- Server kapanırken açık akışlar kapatılır. Bu yüzden shutdown'ı bekletmezler.
+- The first event is a `status` event with the job's current state. Then come the logs stored so far, then new logs.
+- When the job finishes, the server sends a final `status` and closes the stream. For a finished job, the stream replays all the logs and closes right away.
+- The `id` of each `log` event is its `seq` value. If the connection drops, the browser's `EventSource` resumes where it left off with the `Last-Event-ID` header. To resume manually, use `?after=<seq>`.
+- The stream sends a `: keepalive` comment every 5 s, so proxies do not close the idle connection.
+- When the server shuts down, it closes open streams. So they do not hold up the shutdown.
 
 ```js
 const es = new EventSource("/api/jobs/42/logs/stream");
@@ -157,14 +159,14 @@ es.addEventListener("status", (e) => {
 });
 ```
 
-## Nasıl canlı?
+## How is it live?
 
-Log parçası yazıldığında ve job bittiğinde veritabanı `cisid_job_events` kanalına job numarasını `NOTIFY` eder (`internal/db`). Her server bu kanalı tek bir bağlantıyla `LISTEN` eder (`internal/events`) ve ilgili job'un açık akışlarını uyandırır. Akış uyanınca yeni logları veritabanından okur. Sonuç olarak:
+When a log chunk is written and when a job finishes, the database sends the job number on the `cisid_job_events` channel with `NOTIFY` (`internal/db`). Each server runs `LISTEN` on this channel over a single connection (`internal/events`) and wakes the open streams of that job. A stream that wakes up reads the new logs from the database. As a result:
 
-- Agent server A'ya, istemci server B'ye bağlı olsa da loglar canlı akar.
-- Bildirim dinleyicisi koparsa yeniden bağlanır ve bütün akışları uyandırır. Akışlar ayrıca 5 sn'de bir kendisi de kontrol eder. Bildirim kaçsa bile hiçbir log kaybolmaz, en fazla gecikir.
-- Aynı log parçası iki kez gelirse (ack ile yeniden gönderim) sadece ilki yazılır ve sadece ilki bildirilir.
+- Logs stream live even when the agent is connected to server A and the client to server B.
+- If the notification listener disconnects, it reconnects and wakes all streams. Streams also check on their own every 5 s. Even if a notification is missed, no log is lost; at worst it is late.
+- If the same log chunk arrives twice (a resend under acknowledged delivery), only the first one is written and only the first one is notified.
 
-## Neden WebSocket değil?
+## Why not WebSocket?
 
-Akış tek yönlü, server'dan istemciye doğru. SSE bunu düz HTTP ile yapar: `curl` ile izlenebilir, tarayıcıda ek kütüphane gerektirmez ve kopan bağlantıyı `Last-Event-ID` ile otomatik sürdürür. WebSocket agent ↔ server gibi çift yönlü kanallar için kullanılıyor.
+The stream is one-way, from the server to the client. SSE does this over plain HTTP: you can watch it with `curl`, it needs no extra library in the browser, and it resumes a dropped connection automatically with `Last-Event-ID`. WebSocket is used for two-way channels such as agent ↔ server.

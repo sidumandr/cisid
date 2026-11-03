@@ -1,86 +1,88 @@
-# Güvenlik
+# Security
 
-Bu belge cisid'in güvenlik önlemlerini tek yerde toplar. Ayrıntılar ilgili belgelerdedir.
+**English** · [Türkçe](tr/security.md)
 
-## Güven sınırları
+This document collects cisid's security measures in one place. The details are in the related documents.
 
-| Taraf | Güven | Nasıl doğrulanır |
+## Trust boundaries
+
+| Party | Trust | How it is verified |
 |---|---|---|
-| GitHub, Gitea, Forgejo, Bitbucket (webhook) | Secret'ı bilen gönderici | Gövdenin HMAC-SHA256 imzası |
-| GitLab (webhook) | Secret'ı bilen gönderici | `X-Gitlab-Token` başlığı, sabit zamanlı karşılaştırma. GitLab imzalamaz: adres HTTPS olmalı. |
-| Agent | Agent token'ını bilen süreç | `Authorization: Bearer`, isteğe bağlı TLS |
-| API istemcisi (yazma) | API token'ını bilen ya da maintainer/admin rolündeki kullanıcı | `Authorization: Bearer` (server ya da kişisel token), ya da oturum cookie'si ve `X-Cisid-Request` |
-| API istemcisi (okuma), web arayüzü | `CISID_READ_ACCESS=signed-in` ise giriş yapanlar ve token sahipleri, `public` ise herkes | `Authorization: Bearer` ya da cookie |
-| Repodaki kod (`.cisid.yml` adımları) | Push yetkisi olan herkes | Container sınırları, ama agent makinesine erişebilir |
+| GitHub, Gitea, Forgejo, Bitbucket (webhook) | A sender that knows the secret | HMAC-SHA256 signature of the body |
+| GitLab (webhook) | A sender that knows the secret | `X-Gitlab-Token` header, constant-time comparison. GitLab does not sign: the URL must be HTTPS. |
+| Agent | A process that knows the agent token | `Authorization: Bearer`, optional TLS |
+| API client (write) | Someone who knows the API token, or a user with the maintainer or admin role | `Authorization: Bearer` (server or personal token), or the session cookie and `X-Cisid-Request` |
+| API client (read), web UI | Signed-in users and token holders if `CISID_READ_ACCESS=signed-in`, everyone if `public` | `Authorization: Bearer` or a cookie |
+| Code in the repository (`.cisid.yml` steps) | Anyone with push access | Container boundaries, but it can reach the agent machine |
 
-Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve agent makinesinde kod çalıştırabilir. cisid bunu engellemez, etkisini sınırlar.
+Someone who can push to a repository can read the secrets defined for that repository and run code on the agent machine. cisid does not prevent this; it limits the impact.
 
-## Webhook
+## Webhooks
 
-- İmza sabit zamanlı karşılaştırılır (`hmac.Equal`): GitHub'da `X-Hub-Signature-256`, Gitea'da `X-Gitea-Signature`, Forgejo'da `X-Forgejo-Signature`, Bitbucket'ta `X-Hub-Signature`. GitLab secret'ı `X-Gitlab-Token` başlığında açık gönderir. Bir sağlayıcının webhook adresi yalnızca secret'ı verilince açılır.
-- `repository.pushed_at` yalnızca GitHub push'larında vardır; diğer sağlayıcıların push'larında 7 günlük tekrar penceresi uygulanmaz, imzalı gövdenin tekilleştirmesi uygulanır.
-- Gövde en fazla 25 MB okunur.
-- Aynı imzalı gövde bir kez job oluşturur. Tekilleştirme anahtarı gövdenin SHA-256 özetidir, kayıt job ile aynı transaction'da yazılır. `repository.pushed_at` 7 günden eskiyse istek reddedilir. Kayıtlar 8 gün sonra silinir ([webhook.md](webhook.md#tekrar-replay-koruması)).
-- Tüm repolar tek bir webhook secret'ı kullanır.
-- Pull request'ler de derlenir. Fork'tan gelenler varsayılan olarak derlenmez; `CISID_BUILD_FORKS=true` ile derlenir ama hiçbir secret almaz ([webhook.md](webhook.md#pull-requestler)).
+- The signature is compared in constant time (`hmac.Equal`): `X-Hub-Signature-256` on GitHub, `X-Gitea-Signature` on Gitea, `X-Forgejo-Signature` on Forgejo, `X-Hub-Signature` on Bitbucket. GitLab sends the secret in plain text in the `X-Gitlab-Token` header. A forge's webhook URL is enabled only when its secret is set.
+- Only GitHub pushes have `repository.pushed_at`. Pushes from other forges do not get the 7-day replay window; they get the deduplication of the signed body.
+- At most 25 MB of the body is read.
+- The same signed body creates a job only once. The deduplication key is the SHA-256 hash of the body, and the record is written in the same transaction as the job. If `repository.pushed_at` is older than 7 days, the request is rejected. Records are deleted after 8 days ([webhook.md](webhook.md#replay-protection)).
+- All repositories use a single webhook secret.
+- Pull requests are built too. Pull requests from forks are not built by default; with `CISID_BUILD_FORKS=true` they are built but get no secrets ([webhook.md](webhook.md#pull-requests)).
 
-## Agent bağlantısı
+## Agent connection
 
-- `CISID_AGENT_TOKEN` tanımlıysa token'sız ya da yanlış token'lı agent `401` alır. Karşılaştırma sabit zamanlıdır. Token en az 16 karakter olmalıdır. Tanımlı değilse server bir uyarı yazar ve her agent'ı kabul eder.
-- Server `CISID_TLS_CERT_FILE` ve `CISID_TLS_KEY_FILE` ile TLS 1.2+ sunar. Agent `wss://` ile bağlanır, özel bir CA için `CISID_SERVER_CA_FILE` kullanılır. Agent token'ı yerel olmayan bir adrese `ws://` ile gönderiyorsa uyarır.
-- Tüm agent'lar ortak bir token kullanır, agent başına kimlik yoktur. `CISID_AGENT_TOKEN` virgülle birden fazla token alır; böylece token, agent'lar kesilmeden değiştirilir ve eskisi listeden çıkarılarak iptal edilir ([agent.md](agent.md#kimlik-doğrulama-ve-tls)).
+- If `CISID_AGENT_TOKEN` is set, an agent with no token or a wrong token gets `401`. The comparison is constant-time. The token must be at least 16 characters. If it is not set, the server logs a warning and accepts every agent.
+- The server serves TLS 1.2+ with `CISID_TLS_CERT_FILE` and `CISID_TLS_KEY_FILE`. The agent connects with `wss://`; for a private CA, use `CISID_SERVER_CA_FILE`. The agent warns if it sends the token to a non-local address over `ws://`.
+- All agents share one token; there is no per-agent identity. `CISID_AGENT_TOKEN` takes several comma-separated tokens. This way you can rotate the token without disconnecting agents, and revoke the old one by removing it from the list ([agent.md](agent.md#authentication-and-tls)).
 
-## API ve web arayüzü
+## API and web UI
 
-- Değişiklik yapan uç noktalar (build, iptal, yeniden çalıştırma, zamanlama, polling, secret'lar) `maintainer`, kullanıcı yönetimi `admin` ister ([accounts.md](accounts.md)). Ne `CISID_API_TOKEN` ne kullanıcı varsa bu uç noktalar kapalıdır (`403`).
-- Şifreler PBKDF2-HMAC-SHA256 ile (600.000 tur, tuzlu) saklanır; oturumlar ve kişisel token'lar yalnızca SHA-256 özetleriyle. Bilinmeyen kullanıcıyla yanlış şifre aynı yanıtı aynı sürede alır.
-- Sağlayıcıyla giriş (OAuth) `state` ile bağlanır, dönüş adresi yalnızca site içi bir yol olabilir, sağlayıcının erişim token'ı saklanmaz. Hesaplar sağlayıcının değişmeyen kullanıcı numarasıyla eşleşir; `CISID_OAUTH_SIGNUP_ROLE` herkese açık sağlayıcılarda açılmamalıdır ([accounts.md](accounts.md#sağlayıcıyla-giriş)).
-- Oturum cookie'si HttpOnly ve `SameSite=Lax`'tır; cookie ile gelen değişiklikler ayrıca `X-Cisid-Request` başlığını ister (CSRF).
-- Okuma uç noktaları (`/api/jobs`, loglar, canlı akış) ve `/metrics`, `CISID_READ_TOKEN` tanımlıysa okuma ya da API token'ı ister; tanımlı değilse herkese açıktır. Job listesi repo adlarını, commit'leri ve logları gösterir. Tarayıcı `POST /api/login` ile HttpOnly, `SameSite=Strict` bir cookie alır; cookie token'ın özetini taşır ve yalnızca okumaya izin verir ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` her zaman açıktır.
-- `/webhooks/` ve `/api/` IP başına token bucket ile sınırlıdır (`CISID_RATE_LIMIT`, varsayılan 10 istek/sn). Reverse proxy arkasında `CISID_TRUST_PROXY=true` ile istemci adresi `X-Forwarded-For`'dan alınır. Proxy yoksa bu ayarı açmayın, başlık sahte olabilir.
-- Web arayüzü `Content-Security-Policy: default-src 'self'` ile sunulur, inline script yoktur. API'den gelen her değer `textContent` ile eklenir. API token'ı tarayıcıda yalnızca `sessionStorage`'da tutulur ([ui.md](ui.md#güvenlik)).
+- Endpoints that make changes (build, cancel, rerun, schedules, polling, secrets) require `maintainer`, and user management requires `admin` ([accounts.md](accounts.md)). If there is neither a `CISID_API_TOKEN` nor any user, these endpoints are closed (`403`).
+- Passwords are stored with PBKDF2-HMAC-SHA256 (600,000 iterations, salted); sessions and personal tokens only as SHA-256 hashes. An unknown user and a wrong password get the same response in the same time.
+- Signing in through a forge (OAuth) is bound by `state`, the return address can only be a path on the site, and the forge's access token is not stored. Accounts match on the forge's immutable user ID. Do not enable `CISID_OAUTH_SIGNUP_ROLE` on public forges ([accounts.md](accounts.md#signing-in-through-a-forge)).
+- The session cookie is HttpOnly and `SameSite=Lax`. Changes that arrive with a cookie also require the `X-Cisid-Request` header (CSRF).
+- With `CISID_READ_ACCESS=signed-in` (the default when `CISID_READ_TOKEN` is set), the read endpoints (`/api/jobs`, logs, the live stream) and `/metrics` require a sign-in or a token; with `public`, anyone can read them. The job list shows repository names, commits and logs. A browser that signs in with the read token gets an HttpOnly, `SameSite=Strict` cookie through `POST /api/login`; the cookie carries a hash of the token and allows only reading ([api.md](api.md#read-access)). `/healthz` and `/readyz` are always open.
+- `/webhooks/` and `/api/` are rate-limited per IP with a token bucket (`CISID_RATE_LIMIT`, default 10 requests/s). Behind a reverse proxy, `CISID_TRUST_PROXY=true` takes the client address from `X-Forwarded-For`. Do not enable this setting without a proxy, because the header can be forged.
+- The web UI is served with `Content-Security-Policy: default-src 'self'` and has no inline scripts. Every value from the API is inserted with `textContent`. The browser keeps the API token only in `sessionStorage` ([ui.md](ui.md#security)).
 
-## Secret'lar
+## Secrets
 
-- AES-256-GCM ile şifrelenir. Şifreli veri `repo/ad` bilgisine bağlıdır (AAD), başka bir satıra kopyalanan değer çözülemez. Anahtar `CISID_SECRET_KEY`'dir, veritabanında tutulmaz.
-- API secret değerlerini hiçbir zaman geri döndürmez, yalnızca adlarını listeler.
-- Değerler yalnızca `secrets:` ile isteyen adımlara ortam değişkeni olarak verilir. Bir secret, server tarafında `branches` ile korumalı branch'lere sınırlanabilir; o zaman pull request'lere de verilmez ([secrets.md](secrets.md#secretı-branchlere-sınırlamak)). `when.branch` bir güvenlik sınırı değildir, çünkü `.cisid.yml` derlenen commit'ten okunur.
-- Agent, adımların çıktısında secret değerlerini `***` ile maskeler, parçalara bölünmüş değerler dahil. 3 karakterden kısa değerler maskelenmez. Maskeleme bir güvenlik sınırı değildir: değeri dönüştürüp (ör. base64) yazdıran bir adımı durdurmaz ([secrets.md](secrets.md)).
+- Secrets are encrypted with AES-256-GCM. The ciphertext is bound to `repo/name` (AAD), so a value copied to another row cannot be decrypted. The key is `CISID_SECRET_KEY`, and it is not stored in the database.
+- The API never returns secret values; it only lists their names.
+- Values are given as environment variables only to steps that request them with `secrets:`. On the server side, `branches` can limit a secret to protected branches; then pull requests do not get it either ([secrets.md](secrets.md#limiting-a-secret-to-branches)). `when.branch` is not a security boundary, because `.cisid.yml` is read from the commit being built.
+- The agent masks secret values in step output with `***`, including values split across chunks. Values shorter than 3 characters are not masked. Masking is not a security boundary: it does not stop a step that transforms the value (e.g. base64) and prints it ([secrets.md](secrets.md)).
 
-## Clone token'ları
+## Clone tokens
 
-- Sağlayıcının token'ı özel repoları clone'lamak için yalnızca clone adımına secret olarak verilir. Çıktıda maskelenir, `.git/config`'e yazılmaz (git onu `GIT_CONFIG_*` ortam değişkenleriyle tanımlanan bir yardımcıdan okur) ve kullanıcı adımlarına verilmez.
-- Token'ı olabildiğince dar yetkiyle oluşturun: okuma ve commit status. Bir sağlayıcının token'ı o sağlayıcıdaki bütün repolar için kullanılır.
+- The forge's token for cloning private repositories is given as a secret only to the clone step. It is masked in output, it is not written to `.git/config` (git reads it from a helper defined through `GIT_CONFIG_*` environment variables), and user steps do not get it.
+- Create the token with the narrowest permissions possible: read and commit status. A forge's token is used for all repositories on that forge.
 
-## Step container'ları
+## Step containers
 
-- Her adım ve servis ayrı bir container'da, `no-new-privileges` ile çalışır. `--privileged` kullanılmaz.
-- Bellek (swap dahil), CPU ve süreç sayısı sınırlanabilir. Süreç sınırı varsayılan olarak 4096'dır. Bellek aşımı `out of memory` olarak raporlanır ([runner.md](runner.md)).
-- Servisli job'lar kendi Docker ağında çalışır. Workspace volume'u, ağ ve container'lar job bitince silinir.
-- Önbellek volume'ları repo başınadır ve job'lar arasında kalır. Repo'ya push edebilen biri önbelleğe dosya bırakabilir; fork PR'ları önbelleği yalnızca okuyabilir ([pipeline.md](pipeline.md#önbellek)).
-- Clone adımı repo adresini ve commit'i ortam değişkeni olarak alır, kabuk komutuna gömmez.
-- Agent host'un Docker daemon'ına tam erişimle çalışır. Bu root eşdeğeridir: kötü niyetli bir adım Docker API'sine ulaşamasa da container kaçışı ya da çekirdek açığı host'u etkiler. Agent'ları CI'a ayrılmış, yalıtılmış makinelerde ya da VM'lerde çalıştırın ([deployment.md](deployment.md#agent-ve-docker-socket)).
-- Kubernetes'te her agent pod'u privileged bir Docker-in-Docker sidecar'ı çalıştırır. Docker yalnızca pod içinde paylaşılan bir Unix socket'i dinler. Agent container'ının kendisi salt okunur dosya sistemiyle ve bütün capability'ler kapalı çalışır. Dahili PostgreSQL'e yalnızca server'ın bağlanmasına izin veren bir NetworkPolicy kurulur ([Helm chart](../deployments/helm/cisid/README.md)).
+- Each step and service runs in its own container with `no-new-privileges`. `--privileged` is not used.
+- Memory (including swap), CPU and the number of processes can be limited. The process limit is 4096 by default. Running out of memory is reported as `out of memory` ([runner.md](runner.md)).
+- Jobs with services run in their own Docker network. The workspace volume, the network and the containers are deleted when the job ends.
+- Cache volumes are per repository and persist between jobs. Someone who can push to the repository can leave files in the cache; fork PRs can only read the cache ([pipeline.md](pipeline.md#cache)).
+- The clone step gets the repository URL and the commit as environment variables; it does not embed them in a shell command.
+- The agent runs with full access to the host's Docker daemon. This is equivalent to root: even though a malicious step cannot reach the Docker API, a container escape or a kernel vulnerability affects the host. Run agents on isolated machines or VMs dedicated to CI ([deployment.md](deployment.md#agents-and-the-docker-socket)).
+- On Kubernetes each agent pod runs a privileged Docker-in-Docker sidecar. Docker listens only on a Unix socket shared inside the pod. The agent container itself runs with a read-only file system and all capabilities dropped. The chart installs a NetworkPolicy that lets only the server connect to the bundled PostgreSQL ([Helm chart](../deployments/helm/cisid/README.md)).
 
-## Veritabanı ve loglar
+## Database and logs
 
-- SQL metni hiçbir zaman istek verisiyle birleştirilmez, tüm değerler sorgu parametresi olarak gönderilir.
-- Secret değerleri, token'lar ve veritabanı şifresi server ve agent loglarına yazılmaz. Başlangıçta yazılan yapılandırmada veritabanı adresinin şifresi `xxxxx` ile gizlenir, token'lar için yalnızca tanımlı olup olmadıkları yazılır.
-- Job logları veritabanında açık metin olarak saklanır (maskelenmiş hâliyle).
-- Trace'ler repo, branch, commit, adım adı ve image bilgisi taşır. Secret değerleri, ortam değişkenleri ve adım çıktısı span'lara yazılmaz. Collector adresindeki kullanıcı bilgisi loglarda gizlenir ([tracing.md](tracing.md)).
+- SQL text is never concatenated with request data; all values are sent as query parameters.
+- Secret values, tokens and the database password are not written to the server and agent logs. In the configuration logged at startup, the password in the database URL is hidden as `xxxxx`, and for tokens only whether they are set is logged.
+- Job logs are stored in the database as plain text (in their masked form).
+- Traces carry the repository, branch, commit, step name and image. Secret values, environment variables and step output are not written to spans. User info in the collector address is hidden in logs ([tracing.md](tracing.md)).
 
-## Production kontrol listesi
+## Production checklist
 
-- [ ] `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` ve `CISID_API_TOKEN` için uzun, rastgele değerler.
-- [ ] Server TLS ile ya da TLS sonlandıran bir reverse proxy arkasında. Agent'lar `wss://` ile bağlanıyor.
-- [ ] `CISID_READ_ACCESS=signed-in` (ya da `CISID_READ_TOKEN` tanımlı), veya server erişim kontrolü olan bir reverse proxy arkasında.
-- [ ] İlk admin oluşturulduysa `CISID_ADMIN_PASSWORD` ortamdan kaldırıldı ve şifre arayüzden değiştirildi.
-- [ ] `CISID_SECRET_KEY` veritabanı yedeklerinden ayrı saklanıyor.
-- [ ] Agent'lar ayrı makinelerde, `CISID_STEP_MEMORY` ve `CISID_STEP_CPUS` tanımlı.
-- [ ] Hassas secret'lar `branches` ile korumalı branch'lere sınırlı.
+- [ ] Long, random values for `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` and `CISID_API_TOKEN`.
+- [ ] The server runs with TLS or behind a reverse proxy that terminates TLS. Agents connect with `wss://`.
+- [ ] `CISID_READ_ACCESS=signed-in` (or `CISID_READ_TOKEN` set), or the server is behind a reverse proxy with access control.
+- [ ] If the first admin was created, `CISID_ADMIN_PASSWORD` is removed from the environment and the password is changed in the UI.
+- [ ] `CISID_SECRET_KEY` is stored separately from database backups.
+- [ ] Agents run on separate machines, with `CISID_STEP_MEMORY` and `CISID_STEP_CPUS` set.
+- [ ] Sensitive secrets are limited to protected branches with `branches`.
 
-## Bilinen eksikler
+## Known gaps
 
-- Roller server geneli içindir; repoya göre yetki yoktur. Bir maintainer bütün repoların build'lerini ve secret'larını yönetir.
-- Giriş denemeleri için hesaba özel kilitleme yoktur; IP başına rate limit (`CISID_RATE_LIMIT`) uygulanır.
-- Agent başına kimlik yok; token değişikliği server'ın yeniden başlatılmasını gerektirir (rotasyon listesi kesintiyi önler).
+- Roles apply to the whole server; there are no per-repository permissions. A maintainer manages the builds and secrets of all repositories.
+- There is no per-account lockout for sign-in attempts; a per-IP rate limit (`CISID_RATE_LIMIT`) applies.
+- There is no per-agent identity. Changing the token requires restarting the server (the rotation list avoids downtime).

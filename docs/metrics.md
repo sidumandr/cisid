@@ -1,22 +1,24 @@
-# Metrikler
+# Metrics
 
-Server, Prometheus metriklerini `GET /metrics` adresinde sunar (`internal/metrics`). Etiketlerde repo adı ya da job numarası gibi sınırsız değerler yer almaz.
+**English** · [Türkçe](tr/metrics.md)
 
-| Metrik | Tür | Etiketler | Açıklama |
+The server serves Prometheus metrics at `GET /metrics` (`internal/metrics`). Labels never contain unbounded values such as repository names or job numbers.
+
+| Metric | Type | Labels | Description |
 |---|---|---|---|
-| `cisid_http_requests_total` | counter | `route`, `method`, `code` | HTTP istekleri. `route` eşleşen desendir (ör. `GET /api/jobs/{id}`). |
-| `cisid_http_request_duration_seconds` | histogram | `route` | İstek süresi. Uzun süre açık kalan agent ve log akışı bağlantıları hariçtir. |
-| `cisid_jobs` | gauge | `status` | Veritabanındaki job sayıları, her scrape'te okunur |
-| `cisid_jobs_finished_total` | counter | `status` | Bu server'da biten job'lar |
-| `cisid_agents_connected` | gauge | — | Bu server'a bağlı agent'lar |
-| `cisid_log_chunks_total` | counter | — | Agent'lardan gelen log parçaları |
-| `cisid_webhook_deliveries_total` | counter | `result` | `queued`, `ignored`, `duplicate`, `canceled` (kapanan PR), `invalid_signature`, `invalid_payload`, `error` |
-| `cisid_commit_statuses_total` | counter | `result` | `sent`, `retry` (sağlayıcı erişilemedi), `failed`, `skipped` (sağlayıcının token'ı yok) |
-| `go_*`, `process_*` | | | Go runtime ve süreç metrikleri |
+| `cisid_http_requests_total` | counter | `route`, `method`, `code` | HTTP requests. `route` is the matched pattern (e.g. `GET /api/jobs/{id}`). |
+| `cisid_http_request_duration_seconds` | histogram | `route` | Request duration. Long-lived agent and log stream connections are excluded. |
+| `cisid_jobs` | gauge | `status` | Job counts in the database, read on every scrape |
+| `cisid_jobs_finished_total` | counter | `status` | Jobs finished on this server |
+| `cisid_agents_connected` | gauge | — | Agents connected to this server |
+| `cisid_log_chunks_total` | counter | — | Log chunks received from agents |
+| `cisid_webhook_deliveries_total` | counter | `result` | `queued`, `ignored`, `duplicate`, `canceled` (closed pull request), `invalid_signature`, `invalid_payload`, `error` |
+| `cisid_commit_statuses_total` | counter | `result` | `sent`, `retry` (forge unreachable), `failed`, `skipped` (no token for the forge) |
+| `go_*`, `process_*` | | | Go runtime and process metrics |
 
-Veritabanına ulaşılamazsa `cisid_jobs` o scrape'te atlanır. Diğer metrikler sunulmaya devam eder.
+If the database is unreachable, `cisid_jobs` is skipped in that scrape. The other metrics are still served.
 
-## Örnek uyarılar
+## Example alerts
 
 ```yaml
 - alert: CisidQueueBacklog
@@ -29,11 +31,11 @@ Veritabanına ulaşılamazsa `cisid_jobs` o scrape'te atlanır. Diğer metrikler
   expr: rate(cisid_commit_statuses_total{result="failed"}[15m]) > 0
 ```
 
-## Loglar
+## Logs
 
-Server ve agent yapılandırılmış log yazar (`log/slog`, `key=value` biçiminde). Seviye `CISID_LOG_LEVEL` ile ayarlanır. Secret değerleri, token'lar ve veritabanı şifresi loglara yazılmaz. Trace açıksa bir span içinde yazılan satırlar `trace_id` ve `span_id` taşır ([tracing.md](tracing.md)).
+The server and the agent write structured logs (`log/slog`, in `key=value` format). Set the level with `CISID_LOG_LEVEL`. Secret values, tokens and the database password are never written to the logs. When tracing is on, lines written inside a span carry `trace_id` and `span_id` ([tracing.md](tracing.md)).
 
-> `CISID_READ_TOKEN` tanımlıysa `/metrics` de bu token'ı ister ([api.md](api.md#okuma-erişimi)). Prometheus'ta:
+> If `CISID_READ_TOKEN` is set, `/metrics` also requires this token ([api.md](api.md#read-access)). In Prometheus:
 >
 > ```yaml
 > scrape_configs:
@@ -44,4 +46,4 @@ Server ve agent yapılandırılmış log yazar (`log/slog`, `key=value` biçimin
 >       - targets: ["cisid:8080"]
 > ```
 >
-> Tanımlı değilse `/metrics` herkese açıktır; server'ı güvenilmeyen bir ağa açıyorsanız bu yolu reverse proxy'de kısıtlayın.
+> If it is not set, `/metrics` is public. If you expose the server to an untrusted network, restrict this path in the reverse proxy.
