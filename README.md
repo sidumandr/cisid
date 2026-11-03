@@ -10,6 +10,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
 - [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
+- [docs/server.md](docs/server.md): Server yapılandırması, endpoint'ler ve migration'lar
 - [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
 
 ## Mimari
@@ -70,7 +71,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   └── agent/       # Worker binary (main)
 ├── internal/
 │   ├── agent/       # Agent: WebSocket bağlantısı, job yürütme
-│   ├── api/         # HTTP handler'ları
+│   ├── api/         # HTTP router, handler'lar, middleware
+│   ├── config/      # Ortam değişkenlerinden server yapılandırması
 │   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)
@@ -87,6 +89,20 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - Go 1.25+
 - PostgreSQL 14+
 - Docker (runner ve agent için)
+
+## Yerelde çalıştırma
+
+```bash
+docker compose up -d --wait postgres
+```
+
+```bash
+CISID_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' CISID_GITHUB_WEBHOOK_SECRET=dev-secret go run ./cmd/server
+```
+
+Agent hub (`/agent/ws`) henüz server'da yok. Agent şimdilik bağlanamaz ve backoff ile tekrar dener (bkz. [ROADMAP.md](ROADMAP.md)).
+
+Ayrıntılar: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
 
 ## Derleme ve test
 
@@ -112,6 +128,12 @@ C derleyicisi olmayan Windows'ta Docker ile çalıştırılabilir (PowerShell, p
 
 ```bash
 docker run --rm -v "${PWD}:/src" -v cisid-gomod:/go/pkg/mod -w /src golang:1.27 go test -race ./...
+```
+
+PostgreSQL gerektiren testler (`docker compose up -d postgres` sonrası):
+
+```bash
+CISID_TEST_DATABASE_URL='postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable' go test ./internal/db/ ./cmd/server/
 ```
 
 Gerçek Docker'a karşı entegrasyon testleri (alpine image'ını çeker):

@@ -59,7 +59,7 @@ curl -i -X POST http://localhost:8080/webhooks/github \
   --data-binary @"$BODY"
 ```
 
-> Not: Server henüz handler'ı bir route'a bağlamıyor; bu, yol haritasındaki "Server iskeleti" adımında yapılacak.
+Sunucuyu yerelde çalıştırmak için bkz. [server.md](server.md).
 
 ## Testler
 
