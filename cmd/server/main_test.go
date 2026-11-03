@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -136,8 +137,20 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 type stepRunner struct{}
 
 func (stepRunner) Run(_ context.Context, step runner.Step, stdout, _ io.Writer) (int, error) {
-	_, err := io.WriteString(stdout, "checked out "+step.Env["CISID_COMMIT_SHA"]+"\n")
+	_, err := io.WriteString(stdout, step.Env["CISID_STEP"]+" in "+step.Image+" at "+step.Env["CISID_COMMIT_SHA"]+"\n")
 	return 0, err
+}
+
+// fakeGitHub serves .cisid.yml for any repository and ref.
+func fakeGitHub(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repos/sidumandr/cisid/contents/.cisid.yml", r.URL.Path)
+		assert.Equal(t, "6113728f27ae82c7b1a177c8d03f9e96e0adf246", r.URL.Query().Get("ref"))
+		_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n")
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }
 
 func (stepRunner) RemoveVolume(context.Context, string) error { return nil }
@@ -158,6 +171,7 @@ func TestRunEndToEnd(t *testing.T) {
 		"CISID_DATABASE_URL":          dbURL,
 		"CISID_GITHUB_WEBHOOK_SECRET": secret,
 		"CISID_SHUTDOWN_TIMEOUT":      "5s",
+		"CISID_GITHUB_API_URL":        fakeGitHub(t),
 	}
 	var logs syncBuffer
 	ctx, cancel := context.WithCancel(t.Context())
@@ -222,8 +236,15 @@ func TestRunEndToEnd(t *testing.T) {
 
 	jobLogs, err := store.JobLogs(t.Context(), queued.JobID)
 	require.NoError(t, err)
-	require.Len(t, jobLogs, 1)
-	assert.Equal(t, "checked out 6113728f27ae82c7b1a177c8d03f9e96e0adf246\n", jobLogs[0].Data)
+	const sha = "6113728f27ae82c7b1a177c8d03f9e96e0adf246"
+	var lines []string
+	for _, l := range jobLogs {
+		lines = append(lines, l.Data)
+	}
+	assert.Equal(t, []string{
+		"clone in alpine/git:2.52.0 at " + sha + "\n",
+		"test in golang:1.27 at " + sha + "\n",
+	}, lines, "the clone step runs first, then the steps of .cisid.yml")
 
 	// Stop the server first: it asks the agent to close, then exits.
 	cancel()

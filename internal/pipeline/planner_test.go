@@ -2,6 +2,9 @@ package pipeline
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/runner"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -49,6 +53,88 @@ func TestPlanClonesTheCommit(t *testing.T) {
 		},
 		TimeoutSeconds: 600,
 	}, steps[0])
+}
+
+// fakeConfigs serves a fixed .cisid.yml or error.
+type fakeConfigs struct {
+	data []byte
+	err  error
+	got  []string
+}
+
+func (f *fakeConfigs) FileContent(_ context.Context, repo, ref, path string) ([]byte, error) {
+	f.got = append(f.got, repo, ref, path)
+	return f.data, f.err
+}
+
+func TestPlanAppendsConfigSteps(t *testing.T) {
+	configs := &fakeConfigs{data: []byte(`
+steps:
+  - name: test
+    image: golang:1.27
+    commands: [go vet ./..., go test ./...]
+    environment:
+      CGO_ENABLED: 0
+    timeout: 15m
+`)}
+	job := testJob()
+
+	steps, err := Planner{Configs: configs}.Plan(t.Context(), job)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"sidumandr/cisid", job.CommitSHA, ".cisid.yml"}, configs.got,
+		"the config is read at the pushed commit")
+	require.Len(t, steps, 2)
+	assert.Equal(t, "clone", steps[0].Name)
+	assert.Equal(t, models.StepSpec{
+		Name:     "test",
+		Image:    "golang:1.27",
+		Commands: []string{"go vet ./...", "go test ./..."},
+		Env: map[string]string{
+			"CGO_ENABLED":      "0",
+			"CISID_REPO":       "sidumandr/cisid",
+			"CISID_BRANCH":     "feature/webhook",
+			"CISID_COMMIT_SHA": job.CommitSHA,
+		},
+		TimeoutSeconds: 900,
+	}, steps[1])
+}
+
+func TestPlanConfigErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		configs *fakeConfigs
+		want    error
+		notWant error
+	}{
+		{name: "no config file", configs: &fakeConfigs{err: fmt.Errorf("get: %w", github.ErrNotFound)}, want: ErrNoConfig, notWant: ErrTemporary},
+		{name: "GitHub down", configs: &fakeConfigs{err: fmt.Errorf("get: %w", github.ErrTemporary)}, want: ErrTemporary},
+		{name: "permanent GitHub error", configs: &fakeConfigs{err: errors.New("unexpected response 401")}, notWant: ErrTemporary},
+		{name: "invalid config", configs: &fakeConfigs{data: []byte("steps: []")}, want: ErrInvalidConfig, notWant: ErrTemporary},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Planner{Configs: tt.configs}.Plan(t.Context(), testJob())
+
+			require.Error(t, err)
+			if tt.want != nil {
+				assert.ErrorIs(t, err, tt.want)
+			}
+			if tt.notWant != nil {
+				assert.NotErrorIs(t, err, tt.notWant)
+			}
+		})
+	}
+}
+
+func TestPlanCanceledFetchIsTemporary(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := Planner{Configs: &fakeConfigs{err: context.Canceled}}.Plan(ctx, testJob())
+
+	assert.ErrorIs(t, err, ErrTemporary, "shutting down must not fail the job")
 }
 
 func TestPlanUsesConfiguredCloneImage(t *testing.T) {

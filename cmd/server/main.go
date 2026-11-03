@@ -22,6 +22,7 @@ import (
 	"github.com/sidumandr/cisid/internal/api"
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/hub"
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/pkg/models"
@@ -67,7 +68,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	log.InfoContext(ctx, "database ready", "migrations_applied", applied)
 
-	agents := hub.New(store, pipeline.Planner{}, hub.WithLogger(log))
+	planner := pipeline.Planner{Configs: &github.Client{APIURL: cfg.GitHubAPIURL, Token: cfg.GitHubToken}}
+	agents := hub.New(store, planner, hub.WithLogger(log))
 	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, agents}, log)
 	if err != nil {
 		return fmt.Errorf("create webhook handler: %w", err)

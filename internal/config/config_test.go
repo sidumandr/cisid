@@ -40,6 +40,7 @@ func TestLoadDefaults(t *testing.T) {
 		WebhookSecret:   "hook-secret",
 		ShutdownTimeout: 15 * time.Second,
 		LogLevel:        slog.LevelInfo,
+		GitHubAPIURL:    "https://api.github.com",
 	}, cfg)
 }
 
@@ -48,12 +49,16 @@ func TestLoadOverrides(t *testing.T) {
 		"CISID_HTTP_ADDR":        "127.0.0.1:9000",
 		"CISID_SHUTDOWN_TIMEOUT": "45s",
 		"CISID_LOG_LEVEL":        "debug",
+		"CISID_GITHUB_API_URL":   "https://ghe.example.com/api/v3",
+		"CISID_GITHUB_TOKEN":     "ghp_secret",
 	})))
 
 	require.NoError(t, err)
 	assert.Equal(t, "127.0.0.1:9000", cfg.HTTPAddr)
 	assert.Equal(t, 45*time.Second, cfg.ShutdownTimeout)
 	assert.Equal(t, slog.LevelDebug, cfg.LogLevel)
+	assert.Equal(t, "https://ghe.example.com/api/v3", cfg.GitHubAPIURL)
+	assert.Equal(t, "ghp_secret", cfg.GitHubToken)
 }
 
 func TestLoadErrors(t *testing.T) {
@@ -83,6 +88,11 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"CISID_LOG_LEVEL"},
 		},
 		{
+			name: "GitHub API URL is not http",
+			vars: with(map[string]string{"CISID_GITHUB_API_URL": "ftp://github.example.com"}),
+			want: []string{"CISID_GITHUB_API_URL must be an http(s) URL"},
+		},
+		{
 			name: "database URL is not postgres",
 			vars: with(map[string]string{"CISID_DATABASE_URL": "mysql://localhost/cisid"}),
 			want: []string{"CISID_DATABASE_URL must be a postgres:// URL"},
@@ -102,7 +112,7 @@ func TestLoadErrors(t *testing.T) {
 }
 
 func TestConfigLogValueRedactsSecrets(t *testing.T) {
-	cfg, err := Load(env(required))
+	cfg, err := Load(env(with(map[string]string{"CISID_GITHUB_TOKEN": "ghp_secret"})))
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -111,6 +121,8 @@ func TestConfigLogValueRedactsSecrets(t *testing.T) {
 	out := buf.String()
 	assert.NotContains(t, out, "s3cret")
 	assert.NotContains(t, out, "hook-secret")
+	assert.NotContains(t, out, "ghp_secret")
+	assert.Contains(t, out, "config.github_token_set=true")
 	assert.Contains(t, out, "localhost:5432/cisid")
 	assert.Contains(t, out, "config.http_addr=:8080")
 }

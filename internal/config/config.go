@@ -19,6 +19,8 @@ type Config struct {
 	WebhookSecret   string        // CISID_GITHUB_WEBHOOK_SECRET, required
 	ShutdownTimeout time.Duration // CISID_SHUTDOWN_TIMEOUT, default 15s
 	LogLevel        slog.Level    // CISID_LOG_LEVEL, default info
+	GitHubAPIURL    string        // CISID_GITHUB_API_URL, default https://api.github.com
+	GitHubToken     string        // CISID_GITHUB_TOKEN, optional (private repos, rate limits)
 }
 
 // Load reads the configuration through getenv (normally os.Getenv) and
@@ -28,6 +30,8 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPAddr:      getenv("CISID_HTTP_ADDR"),
 		DatabaseURL:   getenv("CISID_DATABASE_URL"),
 		WebhookSecret: getenv("CISID_GITHUB_WEBHOOK_SECRET"),
+		GitHubAPIURL:  getenv("CISID_GITHUB_API_URL"),
+		GitHubToken:   getenv("CISID_GITHUB_TOKEN"),
 	}
 	var problems []error
 
@@ -43,6 +47,12 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if cfg.WebhookSecret == "" {
 		problems = append(problems, fmt.Errorf("CISID_GITHUB_WEBHOOK_SECRET is required"))
+	}
+
+	if cfg.GitHubAPIURL == "" {
+		cfg.GitHubAPIURL = "https://api.github.com"
+	} else if u, err := url.Parse(cfg.GitHubAPIURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		problems = append(problems, fmt.Errorf("CISID_GITHUB_API_URL must be an http(s) URL"))
 	}
 
 	cfg.ShutdownTimeout = 15 * time.Second
@@ -81,5 +91,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("database_url", dbURL),
 		slog.Duration("shutdown_timeout", c.ShutdownTimeout),
 		slog.String("log_level", c.LogLevel.String()),
+		slog.String("github_api_url", c.GitHubAPIURL),
+		slog.Bool("github_token_set", c.GitHubToken != ""),
 	)
 }

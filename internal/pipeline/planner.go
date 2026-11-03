@@ -1,32 +1,53 @@
-// Package pipeline turns a job into the steps an agent runs.
+// Package pipeline turns a job into the steps an agent runs: a clone step
+// followed by the steps of the repository's .cisid.yml.
 package pipeline
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
+	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
 // DefaultCloneImage runs the clone step. It needs /bin/sh and git.
 const DefaultCloneImage = "alpine/git:2.52.0"
 
-const cloneTimeoutSeconds = 600
+const (
+	cloneStepName       = "clone"
+	cloneTimeoutSeconds = 600
+)
 
-// ErrInvalidJob is returned for a job that lacks what planning needs.
-var ErrInvalidJob = errors.New("invalid job")
+var (
+	// ErrInvalidJob is returned for a job that lacks what planning needs.
+	ErrInvalidJob = errors.New("invalid job")
+	// ErrNoConfig is returned when the commit has no .cisid.yml.
+	ErrNoConfig = errors.New("no " + ConfigFile + " in repository")
+	// ErrTemporary marks planning failures worth retrying later, such as
+	// GitHub being unreachable or rate limited.
+	ErrTemporary = errors.New("temporary planning failure")
+)
+
+// ConfigSource reads a file from a repository at a commit.
+// *github.Client satisfies it.
+type ConfigSource interface {
+	FileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
+}
+
+var _ ConfigSource = (*github.Client)(nil)
 
 // Planner builds the steps of a job.
-//
-// For now every job consists of a single clone step; reading the
-// repository's .cisid.yml and appending its steps comes next.
 type Planner struct {
 	// CloneImage overrides DefaultCloneImage when set.
 	CloneImage string
+	// Configs reads .cisid.yml. When nil, a job only clones the repository.
+	Configs ConfigSource
 }
 
-// Plan returns the steps for job.
+// Plan returns the steps for job: the clone step, then the steps of the
+// .cisid.yml at the pushed commit.
 func (p Planner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, error) {
 	switch {
 	case job.CloneURL == "":
@@ -36,7 +57,30 @@ func (p Planner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, e
 	case job.Branch == "":
 		return nil, fmt.Errorf("%w %d: branch is empty", ErrInvalidJob, job.ID)
 	}
-	return []models.StepSpec{p.cloneStep(job)}, nil
+
+	steps := []models.StepSpec{p.cloneStep(job)}
+	if p.Configs == nil {
+		return steps, nil
+	}
+
+	data, err := p.Configs.FileContent(ctx, job.Repo, job.CommitSHA, ConfigFile)
+	switch {
+	case errors.Is(err, github.ErrNotFound):
+		return nil, fmt.Errorf("%w (%s@%s)", ErrNoConfig, job.Repo, job.CommitSHA)
+	case errors.Is(err, github.ErrTemporary), err != nil && ctx.Err() != nil:
+		return nil, fmt.Errorf("%w: %w", ErrTemporary, err)
+	case err != nil:
+		return nil, fmt.Errorf("read %s: %w", ConfigFile, err)
+	}
+
+	cfg, err := ParseConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range cfg.Steps {
+		steps = append(steps, userStep(job, s))
+	}
+	return steps, nil
 }
 
 // cloneStep fetches exactly the pushed commit into the workspace. Values
@@ -47,8 +91,11 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 	if image == "" {
 		image = DefaultCloneImage
 	}
+	env := jobEnv(job)
+	env["CISID_CLONE_URL"] = job.CloneURL
+	env["GIT_TERMINAL_PROMPT"] = "0"
 	return models.StepSpec{
-		Name:  "clone",
+		Name:  cloneStepName,
 		Image: image,
 		Commands: []string{
 			"git init -q .",
@@ -57,13 +104,31 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 			`git checkout -q -B "$CISID_BRANCH" FETCH_HEAD`,
 			"git log -1 --format='%H %s'",
 		},
-		Env: map[string]string{
-			"CISID_REPO":          job.Repo,
-			"CISID_CLONE_URL":     job.CloneURL,
-			"CISID_BRANCH":        job.Branch,
-			"CISID_COMMIT_SHA":    job.CommitSHA,
-			"GIT_TERMINAL_PROMPT": "0",
-		},
+		Env:            env,
 		TimeoutSeconds: cloneTimeoutSeconds,
+	}
+}
+
+func userStep(job models.Job, s Step) models.StepSpec {
+	env := maps.Clone(s.Environment)
+	if env == nil {
+		env = map[string]string{}
+	}
+	maps.Copy(env, jobEnv(job)) // ParseConfig rejects CISID_* keys anyway
+	return models.StepSpec{
+		Name:           s.Name,
+		Image:          s.Image,
+		Commands:       s.Commands,
+		Env:            env,
+		TimeoutSeconds: int(s.Timeout.Seconds()),
+	}
+}
+
+// jobEnv describes the pushed commit to every step.
+func jobEnv(job models.Job) map[string]string {
+	return map[string]string{
+		"CISID_REPO":       job.Repo,
+		"CISID_BRANCH":     job.Branch,
+		"CISID_COMMIT_SHA": job.CommitSHA,
 	}
 }

@@ -1,0 +1,8 @@
+# cisid builds itself. Tests that need PostgreSQL or Docker skip themselves here.
+steps:
+  - name: test
+    image: golang:1.27
+    commands:
+      - go vet ./...
+      - go test ./...
+    timeout: 15m

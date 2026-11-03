@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -348,6 +350,26 @@ func TestHubFailsJobThatCannotBePlanned(t *testing.T) {
 	a := f.connect(t, "agent-1", 0)
 	waitFor(t, failed, "unplannable job to be failed")
 	assert.Equal(t, int64(2), a.expectAssignment(t).JobID, "the agent moves on to the next job")
+}
+
+func TestHubRequeuesJobWhenPlanningFailsTemporarily(t *testing.T) {
+	requeued := make(chan struct{}, 1)
+	claims := make(chan struct{}, 10)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(3), nil).Run(signal(claims)).Once()
+		p.On("Plan", mock.Anything, job(3)).
+			Return(nil, fmt.Errorf("%w: GitHub temporarily unavailable", pipeline.ErrTemporary)).Once()
+		s.On("RequeueJob", mock.Anything, int64(3), "agent-1").Return(nil).Run(signal(requeued)).Once()
+	})
+
+	a := f.connect(t, "agent-1", 0)
+	waitFor(t, claims, "claim")
+	waitFor(t, requeued, "job to be requeued")
+
+	// The round stops instead of claiming the same job again right away.
+	expectNone(t, claims, "immediate re-claim")
+	a.expectNoMessage(t)
+	f.store.AssertNotCalled(t, "FinishJob", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestHubDispatchesToEveryIdleAgent(t *testing.T) {

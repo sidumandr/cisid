@@ -172,6 +172,12 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 		}
 
 		steps, err := h.planner.Plan(ctx, job)
+		if errors.Is(err, pipeline.ErrTemporary) {
+			// Retry on a later round; continuing now would claim the same job again.
+			h.log.WarnContext(ctx, "planning failed, job requeued", "job_id", job.ID, "error", err)
+			h.requeue(ctx, job.ID, a.name)
+			return false
+		}
 		if err != nil {
 			h.failJob(ctx, a.name, job.ID, "plan job: "+err.Error())
 			continue
@@ -182,10 +188,18 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 			return true
 		}
 		// The agent went away or became busy since idleAgents.
-		if err := h.store.RequeueJob(ctx, job.ID, a.name); err != nil {
-			h.log.ErrorContext(ctx, "requeue unassigned job", "job_id", job.ID, "error", err)
-		}
+		h.requeue(ctx, job.ID, a.name)
 		return true
+	}
+}
+
+// requeue gives a claimed job back. It runs even when ctx is canceled, so
+// a job claimed during shutdown is not left running on nobody.
+func (h *Hub) requeue(ctx context.Context, jobID int64, agent string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := h.store.RequeueJob(ctx, jobID, agent); err != nil {
+		h.log.ErrorContext(ctx, "requeue job", "job_id", jobID, "error", err)
 	}
 }
 
