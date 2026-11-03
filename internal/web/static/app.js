@@ -172,10 +172,12 @@ function renderJob(id) {
       j.started_at ? el("span", {}, "duration " + duration(j)) : null,
       el("span", {}, "created " + ago(j.created_at)));
 
-    summary.replaceChildren(
+    // replaceChildren would print a null child as "null", so drop it.
+    summary.replaceChildren(...[
       el("div", { class: "title" }, `#${j.id}`, badge(j.status), `${j.repo} @ ${j.branch}`, actions),
       meta,
-      j.error ? el("div", { class: "error" }, j.error) : null);
+      j.error ? el("div", { class: "error" }, j.error) : null,
+    ].filter(Boolean));
     for (const index of sections.keys()) labelSection(index);
   }
 
