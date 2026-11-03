@@ -52,13 +52,22 @@ WebSocket kütüphanesinin `Close` metodu, kapanış el sıkışmasını beklerk
 3. Hub, agent'ın kapanış çerçevesine kadar gelen her mesajı işler. Gönderilmemiş mesajlar agent'ın outbox'ında kalır ve yeni server'a iletilir.
 4. Bunu yapmayan (eski) bir agent'ın bağlantısı 5 sn sonra zorla kapatılır (`WithDrainTimeout`).
 
-## Canlılık
+## Canlılık ve lease
 
-Hub her bağlantıya 30 sn'de bir WebSocket ping gönderir. Pong 10 sn içinde gelmezse bağlantı kapatılır ve ölü bağlantılar fark edilir. Bağlantısı kopan agent'ın job'u `running` kalır, çünkü agent geri dönüp sonucu teslim edebilir.
+Hub her bağlantıya 30 sn'de bir WebSocket ping gönderir. Pong 10 sn içinde gelmezse bağlantı kapatılır ve ölü bağlantılar fark edilir.
+
+Her `running` job'un bir **lease** süresi vardır (`jobs.lease_expires_at`, varsayılan 5 dk, `WithLease`):
+
+- `ClaimJob` job'u lease ile birlikte verir.
+- Hub her lease/3 sürede kendisine bağlı agent'ların job'larının lease'ini uzatır (`RenewLeases`).
+- Aynı turda lease'i dolmuş job'ları kuyruğa geri alır (`RequeueExpired`) ve hemen dağıtır. Lease'i dolan bir job'un agent'ı bu süre boyunca hiçbir server'a bağlı olmamıştır.
+- Bağlantısı kopan agent'ın job'u lease dolana kadar beklenir. Böylece kısa kopmalar ve server yeniden başlatmaları job'u yeniden çalıştırmaz.
+- Geri dönen agent hello'da job'unu bildirirse job ona geri bağlanır (`AdoptJob`), lease süresi dolmuş olsa bile. Tek koşul, job'un bu arada başka bir agent'a verilmemiş olmasıdır. Verilmişse eski agent'ın sonucu atılır.
+
+Bütün zamanlar veritabanının saatine göre hesaplanır (`now()`). Server'ların saatleri arasındaki farklar sonucu etkilemez.
 
 ## Bilinen sınırlamalar (Faz 2)
 
-- **Lease yok.** Agent bir daha hiç bağlanmazsa job sonsuza kadar `running` kalır. Bunun için süreli lease ve heartbeat gerekiyor.
 - **Ack yok.** Ağ aniden koparsa, gönderilmekte olan bir mesaj kaybolabilir. Graceful shutdown bu durumu kapsamaz, onaylı teslim (ack) gerekir.
 - Her log parçası ayrı bir `INSERT` ile yazılır. Yoğun log üreten job'larda toplu yazma (batch) gerekebilir.
 
@@ -67,7 +76,7 @@ Hub her bağlantıya 30 sn'de bir WebSocket ping gönderir. Pong 10 sn içinde g
 | Test | Kapsam |
 |---|---|
 | `hub_test.go` | Mock store ve planner, ham WebSocket istemcisi: job yaşam döngüsü, hello zorunluluğu, yeniden bağlanma, reddetme, sahiplik, plan hatası, çoklu agent, bağlantı değişimi, drain ile ve drain olmadan kapanış |
-| `hub_integration_test.go` | Gerçek PostgreSQL ve gerçek agent: başarılı ve başarısız job'lar, job sürerken server'ın yeniden başlaması |
+| `hub_integration_test.go` | Gerçek PostgreSQL ve gerçek agent: başarılı ve başarısız job'lar, job sürerken server'ın yeniden başlaması, kaybolan agent'ın job'unun lease dolunca başka agent'a geçmesi |
 | `cmd/server` `TestRunEndToEnd` | Gerçek server, gerçek agent ve imzalı webhook, sonuç ve loglar veritabanında |
 
 ```bash

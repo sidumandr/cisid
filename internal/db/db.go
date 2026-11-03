@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,7 +29,14 @@ var (
 
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
-	COALESCE(agent, ''), started_at, exit_code, failed_step, COALESCE(error, ''), finished_at`
+	COALESCE(agent, ''), started_at, lease_expires_at,
+	exit_code, failed_step, COALESCE(error, ''), finished_at`
+
+// leaseUntil is the SQL expression for a lease of $N seconds from now,
+// measured on the database clock so servers need not agree on the time.
+func leaseUntil(param int) string {
+	return fmt.Sprintf("now() + make_interval(secs => $%d)", param)
+}
 
 // Store is the PostgreSQL-backed persistence layer.
 type Store struct {
@@ -74,12 +83,14 @@ func (s *Store) GetJob(ctx context.Context, id int64) (models.Job, error) {
 	return job, nil
 }
 
-// ClaimJob marks the oldest pending job as running on agent and returns it.
-// Concurrent callers never receive the same job (FOR UPDATE SKIP LOCKED).
-func (s *Store) ClaimJob(ctx context.Context, agent string) (models.Job, error) {
+// ClaimJob marks the oldest pending job as running on agent, with a lease
+// that expires after lease unless renewed, and returns it. Concurrent
+// callers never receive the same job (FOR UPDATE SKIP LOCKED).
+func (s *Store) ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error) {
 	q := `
 		UPDATE jobs
-		SET status = 'running', agent = $1, started_at = now(), updated_at = now()
+		SET status = 'running', agent = $1, started_at = now(), updated_at = now(),
+		    lease_expires_at = ` + leaseUntil(2) + `
 		WHERE id = (
 			SELECT id FROM jobs
 			WHERE status = 'pending'
@@ -89,7 +100,7 @@ func (s *Store) ClaimJob(ctx context.Context, agent string) (models.Job, error) 
 		)
 		RETURNING ` + jobColumns
 
-	job, err := scanJob(s.pool.QueryRow(ctx, q, agent))
+	job, err := scanJob(s.pool.QueryRow(ctx, q, agent, lease.Seconds()))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.Job{}, ErrNoPendingJob
 	}
@@ -103,7 +114,7 @@ func (s *Store) ClaimJob(ctx context.Context, agent string) (models.Job, error) 
 func (s *Store) RequeueJob(ctx context.Context, id int64, agent string) error {
 	const q = `
 		UPDATE jobs
-		SET status = 'pending', agent = NULL, started_at = NULL, updated_at = now()
+		SET status = 'pending', agent = NULL, started_at = NULL, lease_expires_at = NULL, updated_at = now()
 		WHERE id = $1 AND status = 'running' AND agent = $2`
 
 	tag, err := s.pool.Exec(ctx, q, id, agent)
@@ -122,7 +133,7 @@ func (s *Store) RequeueJob(ctx context.Context, id int64, agent string) error {
 func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error) {
 	const q = `
 		UPDATE jobs
-		SET status = 'pending', agent = NULL, started_at = NULL, updated_at = now()
+		SET status = 'pending', agent = NULL, started_at = NULL, lease_expires_at = NULL, updated_at = now()
 		WHERE status = 'running' AND agent = $1 AND id <> $2`
 
 	tag, err := s.pool.Exec(ctx, q, agent, keep)
@@ -130,6 +141,66 @@ func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) 
 		return 0, fmt.Errorf("requeue jobs of %s: %w", agent, err)
 	}
 	return int(tag.RowsAffected()), nil
+}
+
+// RenewLeases extends the leases of all jobs running on the given agents,
+// which are known to be connected, and returns how many it renewed.
+func (s *Store) RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error) {
+	if len(agents) == 0 {
+		return 0, nil
+	}
+	q := `
+		UPDATE jobs SET lease_expires_at = ` + leaseUntil(2) + `
+		WHERE status = 'running' AND agent = ANY($1)`
+
+	tag, err := s.pool.Exec(ctx, q, agents, lease.Seconds())
+	if err != nil {
+		return 0, fmt.Errorf("renew leases of %d agents: %w", len(agents), err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// RequeueExpired puts every running job whose lease has expired back into
+// the queue and returns their IDs. Their agents are presumed gone.
+func (s *Store) RequeueExpired(ctx context.Context) ([]int64, error) {
+	const q = `
+		UPDATE jobs
+		SET status = 'pending', agent = NULL, started_at = NULL, lease_expires_at = NULL, updated_at = now()
+		WHERE status = 'running' AND lease_expires_at < now()
+		RETURNING id`
+
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("requeue expired jobs: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, fmt.Errorf("requeue expired jobs: %w", err)
+	}
+	slices.Sort(ids)
+	return ids, nil
+}
+
+// AdoptJob gives a job back to an agent that reconnects still running it:
+// the job keeps running on agent with a fresh lease, even if it had been
+// requeued meanwhile, as long as no other agent has claimed it.
+func (s *Store) AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error {
+	q := `
+		UPDATE jobs
+		SET status = 'running', agent = $2, started_at = COALESCE(started_at, now()),
+		    lease_expires_at = ` + leaseUntil(3) + `, updated_at = now()
+		WHERE id = $1 AND (
+			(status = 'running' AND agent = $2) OR (status = 'pending' AND agent IS NULL)
+		)`
+
+	tag, err := s.pool.Exec(ctx, q, id, agent, lease.Seconds())
+	if err != nil {
+		return fmt.Errorf("adopt job %d for %s: %w", id, agent, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: job %d is finished or running elsewhere", ErrJobConflict, id)
+	}
+	return nil
 }
 
 // FinishJob records the result of a job, which must be running on agent.
@@ -141,7 +212,7 @@ func (s *Store) FinishJob(ctx context.Context, agent string, res models.JobResul
 	const q = `
 		UPDATE jobs
 		SET status = $3, exit_code = $4, failed_step = $5, error = NULLIF($6, ''),
-		    finished_at = now(), updated_at = now()
+		    lease_expires_at = NULL, finished_at = now(), updated_at = now()
 		WHERE id = $1 AND status = 'running' AND agent = $2`
 
 	tag, err := s.pool.Exec(ctx, q, res.JobID, agent, res.Status, res.ExitCode, res.FailedStep, res.Error)
@@ -192,6 +263,6 @@ func (s *Store) JobLogs(ctx context.Context, jobID int64) ([]models.JobLog, erro
 func scanJob(row pgx.Row) (models.Job, error) {
 	var j models.Job
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
-		&j.Agent, &j.StartedAt, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt)
+		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt)
 	return j, err
 }

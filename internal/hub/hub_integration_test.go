@@ -209,3 +209,42 @@ func TestIntegrationJobSurvivesServerRestart(t *testing.T) {
 	assert.Equal(t, []string{"checked out " + sha + "\n", "done after restart\n"}, data,
 		"logs from before and after the restart are kept")
 }
+
+func TestIntegrationJobOfVanishedAgentIsRequeued(t *testing.T) {
+	pool := dbtest.New(t)
+	_, err := db.Migrate(t.Context(), pool)
+	require.NoError(t, err)
+	store := db.New(pool)
+
+	h := New(store, pipeline.Planner{}, WithLogger(slog.New(slog.DiscardHandler)),
+		WithPollInterval(time.Hour), WithLease(600*time.Millisecond))
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		assert.NoError(t, h.Run(ctx))
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	f := &fixture{url: "ws" + strings.TrimPrefix(srv.URL, "http")}
+
+	dead := f.connect(t, "dead-agent", 0)
+	id, err := store.CreateJob(t.Context(), models.Job{
+		Repo: "sidumandr/cisid", CloneURL: "https://github.com/sidumandr/cisid.git",
+		Branch: "main", CommitSHA: "4444444444444444444444444444444444444444", Status: models.JobStatusPending,
+	})
+	require.NoError(t, err)
+	h.Wake()
+	require.Equal(t, id, dead.expectAssignment(t).JobID)
+
+	// The agent disappears without a result and never comes back.
+	require.NoError(t, dead.conn.CloseNow())
+	live := f.connect(t, "live-agent", 0)
+
+	assert.Equal(t, id, live.expectAssignment(t).JobID, "the job moves on once its lease expires")
+	job, err := store.GetJob(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusRunning, job.Status)
+	assert.Equal(t, "live-agent", job.Agent)
+}

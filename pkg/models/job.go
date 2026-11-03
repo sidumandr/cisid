@@ -28,9 +28,11 @@ type Job struct {
 	Status    JobStatus `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 
-	// Set once the job has been claimed by an agent.
-	Agent     string     `json:"agent,omitempty"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
+	// Set once the job has been claimed by an agent. The job goes back to
+	// the queue if its lease expires without being renewed.
+	Agent          string     `json:"agent,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
 
 	// Set once the job has finished.
 	ExitCode   *int       `json:"exit_code,omitempty"`

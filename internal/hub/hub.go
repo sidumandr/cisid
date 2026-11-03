@@ -20,11 +20,15 @@ import (
 const (
 	defaultPollInterval = 5 * time.Second
 	defaultDrainTimeout = 5 * time.Second
+	defaultLease        = 5 * time.Minute
 )
 
 // Store is the persistence the hub needs. *db.Store satisfies it.
 type Store interface {
-	ClaimJob(ctx context.Context, agent string) (models.Job, error)
+	ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error)
+	RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error)
+	RequeueExpired(ctx context.Context) ([]int64, error)
+	AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error
 	RequeueJob(ctx context.Context, id int64, agent string) error
 	RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error)
 	FinishJob(ctx context.Context, agent string, res models.JobResult) error
@@ -60,6 +64,13 @@ func WithDrainTimeout(d time.Duration) Option {
 	return func(h *Hub) { h.drainTimeout = d }
 }
 
+// WithLease sets how long a job stays assigned to an agent that is no
+// longer connected before it goes back to the queue (default 5m). It should
+// comfortably exceed a server restart plus an agent's reconnect backoff.
+func WithLease(d time.Duration) Option {
+	return func(h *Hub) { h.lease = d }
+}
+
 // Hub dispatches jobs to connected agents. Serve agents with ServeHTTP and
 // run the dispatcher with Run.
 type Hub struct {
@@ -68,6 +79,7 @@ type Hub struct {
 	log          *slog.Logger
 	pollInterval time.Duration
 	drainTimeout time.Duration
+	lease        time.Duration
 	wake         chan struct{}
 
 	mu      sync.Mutex
@@ -100,6 +112,7 @@ func New(store Store, planner Planner, opts ...Option) *Hub {
 		log:          slog.Default(),
 		pollInterval: defaultPollInterval,
 		drainTimeout: defaultDrainTimeout,
+		lease:        defaultLease,
 		wake:         make(chan struct{}, 1),
 		agents:       map[string]*agentConn{},
 		closing:      make(chan struct{}),
@@ -126,6 +139,8 @@ func (h *Hub) Run(ctx context.Context) error {
 
 	tick := time.NewTicker(h.pollInterval)
 	defer tick.Stop()
+	leaseTick := time.NewTicker(h.lease / 3)
+	defer leaseTick.Stop()
 	for {
 		h.dispatch(ctx)
 		select {
@@ -133,7 +148,32 @@ func (h *Hub) Run(ctx context.Context) error {
 			return nil
 		case <-h.wake:
 		case <-tick.C:
+		case <-leaseTick.C:
+			h.maintainLeases(ctx)
 		}
+	}
+}
+
+// maintainLeases renews the leases of jobs on agents connected here and
+// requeues jobs whose lease expired, i.e. whose agent has been gone for a
+// whole lease on every server. Requeued jobs are dispatched right after.
+func (h *Hub) maintainLeases(ctx context.Context) {
+	h.mu.Lock()
+	names := make([]string, 0, len(h.agents))
+	for name := range h.agents {
+		names = append(names, name)
+	}
+	h.mu.Unlock()
+
+	if _, err := h.store.RenewLeases(ctx, names, h.lease); err != nil && ctx.Err() == nil {
+		h.log.ErrorContext(ctx, "renew job leases", "error", err)
+	}
+	ids, err := h.store.RequeueExpired(ctx)
+	if err != nil && ctx.Err() == nil {
+		h.log.ErrorContext(ctx, "requeue jobs with expired leases", "error", err)
+	}
+	if len(ids) > 0 {
+		h.log.WarnContext(ctx, "requeued jobs of agents that did not come back", "job_ids", ids)
 	}
 }
 
@@ -160,7 +200,7 @@ func (h *Hub) dispatch(ctx context.Context) {
 // are no more pending jobs (or the store failed), so dispatch can stop.
 func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 	for {
-		job, err := h.store.ClaimJob(ctx, a.name)
+		job, err := h.store.ClaimJob(ctx, a.name, h.lease)
 		if errors.Is(err, db.ErrNoPendingJob) {
 			return false
 		}

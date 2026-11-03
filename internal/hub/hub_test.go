@@ -33,9 +33,24 @@ type mockStore struct {
 	mock.Mock
 }
 
-func (m *mockStore) ClaimJob(ctx context.Context, agent string) (models.Job, error) {
-	args := m.Called(ctx, agent)
+func (m *mockStore) ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error) {
+	args := m.Called(ctx, agent, lease)
 	return args.Get(0).(models.Job), args.Error(1)
+}
+
+func (m *mockStore) RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error) {
+	args := m.Called(ctx, agents, lease)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *mockStore) RequeueExpired(ctx context.Context) ([]int64, error) {
+	args := m.Called(ctx)
+	ids, _ := args.Get(0).([]int64)
+	return ids, args.Error(1)
+}
+
+func (m *mockStore) AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error {
+	return m.Called(ctx, agent, id, lease).Error(0)
 }
 
 func (m *mockStore) RequeueJob(ctx context.Context, id int64, agent string) error {
@@ -102,18 +117,21 @@ type fixture struct {
 // newFixture starts a hub backed by mocks. setup registers the test's own
 // expectations; afterwards permissive defaults are added: no pending jobs,
 // nothing to requeue, every job plans to cloneSteps.
-func newFixture(t *testing.T, setup func(s *mockStore, p *mockPlanner)) *fixture {
+func newFixture(t *testing.T, setup func(s *mockStore, p *mockPlanner), opts ...Option) *fixture {
 	t.Helper()
 	f := &fixture{store: &mockStore{}, planner: &mockPlanner{}, done: make(chan struct{})}
 	if setup != nil {
 		setup(f.store, f.planner)
 	}
-	f.store.On("ClaimJob", mock.Anything, mock.Anything).Return(models.Job{}, db.ErrNoPendingJob).Maybe()
+	f.store.On("ClaimJob", mock.Anything, mock.Anything, mock.Anything).Return(models.Job{}, db.ErrNoPendingJob).Maybe()
 	f.store.On("RequeueAgentJobs", mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
+	f.store.On("RenewLeases", mock.Anything, mock.Anything, mock.Anything).Return(0, nil).Maybe()
+	f.store.On("RequeueExpired", mock.Anything).Return([]int64(nil), nil).Maybe()
+	f.store.On("AdoptJob", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	f.planner.On("Plan", mock.Anything, mock.Anything).Return(cloneSteps, nil).Maybe()
 
-	f.hub = New(f.store, f.planner, WithLogger(slog.New(slog.DiscardHandler)),
-		WithPollInterval(time.Hour), WithDrainTimeout(drainTimeout))
+	f.hub = New(f.store, f.planner, append([]Option{WithLogger(slog.New(slog.DiscardHandler)),
+		WithPollInterval(time.Hour), WithDrainTimeout(drainTimeout)}, opts...)...)
 	srv := httptest.NewServer(f.hub)
 	t.Cleanup(srv.Close)
 	f.url = "ws" + strings.TrimPrefix(srv.URL, "http")
@@ -237,8 +255,8 @@ func TestHubRunsJobLifecycle(t *testing.T) {
 	result := models.JobResult{JobID: 42, Status: models.JobStatusSuccess}
 
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(42), nil).Once()
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(models.Job{}, db.ErrNoPendingJob).
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(models.Job{}, db.ErrNoPendingJob).
 			Run(signal(claimedAgain))
 		p.On("Plan", mock.Anything, job(42)).Return(cloneSteps, nil).Once()
 		s.On("AppendJobLog", mock.Anything, logLine).Return(nil).Run(signal(logged)).Once()
@@ -276,8 +294,9 @@ func TestHubReconnectKeepsRunningJob(t *testing.T) {
 	result := models.JobResult{JobID: 7, Status: models.JobStatusFailed, ExitCode: 1, FailedStep: new(int)}
 
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("AdoptJob", mock.Anything, "agent-1", int64(7), defaultLease).Return(nil).Once()
 		s.On("RequeueAgentJobs", mock.Anything, "agent-1", int64(7)).Return(2, nil).Run(signal(requeued)).Once()
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(models.Job{}, db.ErrNoPendingJob).Run(signal(claimed))
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(models.Job{}, db.ErrNoPendingJob).Run(signal(claimed))
 		s.On("FinishJob", mock.Anything, "agent-1", result).Return(nil).Run(signal(finished)).Once()
 	})
 
@@ -303,8 +322,8 @@ func TestHubRejectedJobIsRequeued(t *testing.T) {
 	claimed := make(chan struct{}, 10)
 
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(5), nil).Once()
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(models.Job{}, db.ErrNoPendingJob).Run(signal(claimed))
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(5), nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(models.Job{}, db.ErrNoPendingJob).Run(signal(claimed))
 		s.On("RequeueJob", mock.Anything, int64(5), "agent-1").Return(nil).Run(signal(requeued)).Once()
 	})
 
@@ -321,7 +340,7 @@ func TestHubRejectedJobIsRequeued(t *testing.T) {
 
 func TestHubDropsLogsForJobsTheAgentDoesNotHold(t *testing.T) {
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(42), nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
 	})
 
 	a := f.connect(t, "agent-1", 0)
@@ -339,8 +358,8 @@ func TestHubFailsJobThatCannotBePlanned(t *testing.T) {
 	planErr := errors.New("clone URL is empty")
 
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(1), nil).Once()
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(2), nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(1), nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(2), nil).Once()
 		p.On("Plan", mock.Anything, job(1)).Return(nil, planErr).Once()
 		s.On("FinishJob", mock.Anything, "agent-1", models.JobResult{
 			JobID: 1, Status: models.JobStatusFailed, ExitCode: -1, Error: "plan job: clone URL is empty",
@@ -356,7 +375,7 @@ func TestHubRequeuesJobWhenPlanningFailsTemporarily(t *testing.T) {
 	requeued := make(chan struct{}, 1)
 	claims := make(chan struct{}, 10)
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(3), nil).Run(signal(claims)).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(3), nil).Run(signal(claims)).Once()
 		p.On("Plan", mock.Anything, job(3)).
 			Return(nil, fmt.Errorf("%w: GitHub temporarily unavailable", pipeline.ErrTemporary)).Once()
 		s.On("RequeueJob", mock.Anything, int64(3), "agent-1").Return(nil).Run(signal(requeued)).Once()
@@ -372,10 +391,52 @@ func TestHubRequeuesJobWhenPlanningFailsTemporarily(t *testing.T) {
 	f.store.AssertNotCalled(t, "FinishJob", mock.Anything, mock.Anything, mock.Anything)
 }
 
+func TestHubRenewsLeasesOfConnectedAgents(t *testing.T) {
+	renewed := make(chan struct{}, 100)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("RenewLeases", mock.Anything, []string{"agent-1"}, 300*time.Millisecond).
+			Return(1, nil).Run(signal(renewed))
+	}, WithLease(300*time.Millisecond))
+
+	f.connect(t, "agent-1", 0)
+	waitFor(t, renewed, "lease renewal")
+	waitFor(t, renewed, "a second lease renewal")
+}
+
+func TestHubDispatchesJobsWithExpiredLeases(t *testing.T) {
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("RequeueExpired", mock.Anything).Return([]int64{9}, nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(models.Job{}, db.ErrNoPendingJob).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(9), nil).Once()
+	}, WithLease(300*time.Millisecond))
+
+	a := f.connect(t, "agent-1", 0)
+
+	// Nothing is pending when the agent connects; the expired job is
+	// dispatched as soon as the lease check requeues it.
+	assert.Equal(t, int64(9), a.expectAssignment(t).JobID)
+}
+
+func TestHubReconnectWithJobTakenOver(t *testing.T) {
+	claimed := make(chan struct{}, 10)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("AdoptJob", mock.Anything, "agent-1", int64(7), mock.Anything).
+			Return(fmt.Errorf("adopt: %w", db.ErrJobConflict)).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).
+			Return(models.Job{}, db.ErrNoPendingJob).Run(signal(claimed))
+	})
+
+	f.connect(t, "agent-1", 7)
+
+	// The agent is still busy locally, so it gets no new work yet.
+	f.hub.Wake()
+	expectNone(t, claimed, "claim for an agent busy with a lost job")
+}
+
 func TestHubDispatchesToEveryIdleAgent(t *testing.T) {
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, mock.Anything).Return(job(1), nil).Once()
-		s.On("ClaimJob", mock.Anything, mock.Anything).Return(job(2), nil).Once()
+		s.On("ClaimJob", mock.Anything, mock.Anything, mock.Anything).Return(job(1), nil).Once()
+		s.On("ClaimJob", mock.Anything, mock.Anything, mock.Anything).Return(job(2), nil).Once()
 	})
 
 	a1 := f.connect(t, "agent-1", 0)
@@ -412,7 +473,7 @@ func TestHubShutdownDrainsAgentMessages(t *testing.T) {
 	logged := make(chan struct{}, 1)
 	finished := make(chan struct{}, 1)
 	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
-		s.On("ClaimJob", mock.Anything, "agent-1").Return(job(42), nil).Once()
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
 		s.On("AppendJobLog", mock.Anything, mock.Anything).Return(nil).Run(signal(logged)).Once()
 		s.On("FinishJob", mock.Anything, "agent-1", mock.Anything).Return(nil).Run(signal(finished)).Once()
 	})

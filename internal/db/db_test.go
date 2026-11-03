@@ -3,6 +3,7 @@ package db
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
@@ -79,18 +80,18 @@ func TestStoreClaimJobOldestFirst(t *testing.T) {
 	ctx := t.Context()
 	ids := createJobs(t, s, 2)
 
-	first, err := s.ClaimJob(ctx, "agent-1")
+	first, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, ids[0], first.ID)
 	assert.Equal(t, models.JobStatusRunning, first.Status)
 	assert.Equal(t, "agent-1", first.Agent)
 	assert.NotNil(t, first.StartedAt)
 
-	second, err := s.ClaimJob(ctx, "agent-2")
+	second, err := s.ClaimJob(ctx, "agent-2", time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, ids[1], second.ID)
 
-	_, err = s.ClaimJob(ctx, "agent-3")
+	_, err = s.ClaimJob(ctx, "agent-3", time.Minute)
 	assert.ErrorIs(t, err, ErrNoPendingJob)
 }
 
@@ -109,7 +110,7 @@ func TestStoreClaimJobConcurrently(t *testing.T) {
 		name := "agent-" + string(rune('a'+a))
 		wg.Go(func() {
 			for {
-				job, err := s.ClaimJob(t.Context(), name)
+				job, err := s.ClaimJob(t.Context(), name, time.Minute)
 				if err != nil {
 					assert.ErrorIs(t, err, ErrNoPendingJob)
 					return
@@ -133,7 +134,7 @@ func TestStoreRequeueJob(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	ids := createJobs(t, s, 1)
-	_, err := s.ClaimJob(ctx, "agent-1")
+	_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 	require.NoError(t, err)
 
 	assert.ErrorIs(t, s.RequeueJob(ctx, ids[0], "agent-2"), ErrJobConflict, "only the owner may requeue")
@@ -145,7 +146,7 @@ func TestStoreRequeueJob(t *testing.T) {
 	assert.Empty(t, got.Agent)
 	assert.Nil(t, got.StartedAt)
 
-	again, err := s.ClaimJob(ctx, "agent-2")
+	again, err := s.ClaimJob(ctx, "agent-2", time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, ids[0], again.ID)
 }
@@ -155,10 +156,10 @@ func TestStoreRequeueAgentJobs(t *testing.T) {
 	ctx := t.Context()
 	ids := createJobs(t, s, 3)
 	for range 2 {
-		_, err := s.ClaimJob(ctx, "agent-1")
+		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 		require.NoError(t, err)
 	}
-	_, err := s.ClaimJob(ctx, "agent-2")
+	_, err := s.ClaimJob(ctx, "agent-2", time.Minute)
 	require.NoError(t, err)
 
 	n, err := s.RequeueAgentJobs(ctx, "agent-1", ids[1])
@@ -191,7 +192,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1")
+		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 		require.NoError(t, err)
 
 		res := failed
@@ -213,7 +214,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1")
+		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 		require.NoError(t, err)
 
 		require.NoError(t, s.FinishJob(ctx, "agent-1",
@@ -231,7 +232,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1")
+		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 		require.NoError(t, err)
 
 		res := failed
@@ -243,7 +244,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1")
+		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
 		require.NoError(t, err)
 		require.NoError(t, s.RequeueJob(ctx, ids[0], "agent-1"))
 
@@ -289,4 +290,107 @@ func TestStoreJobLogs(t *testing.T) {
 
 	err = s.AppendJobLog(ctx, models.JobLog{JobID: id + 1000, Seq: 1, Stream: models.StreamStdout})
 	assert.Error(t, err, "logs for unknown jobs are rejected")
+}
+
+func TestStoreClaimJobSetsLease(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	createJobs(t, s, 1)
+
+	job, err := s.ClaimJob(ctx, "agent-1", 5*time.Minute)
+
+	require.NoError(t, err)
+	require.NotNil(t, job.LeaseExpiresAt)
+	assert.WithinDuration(t, job.StartedAt.Add(5*time.Minute), *job.LeaseExpiresAt, time.Second)
+}
+
+func TestStoreLeases(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	ids := createJobs(t, s, 3)
+	// agent-1 holds an expired lease, agent-2 and agent-3 valid ones.
+	_, err := s.ClaimJob(ctx, "agent-1", -time.Second)
+	require.NoError(t, err)
+	_, err = s.ClaimJob(ctx, "agent-2", time.Minute)
+	require.NoError(t, err)
+	_, err = s.ClaimJob(ctx, "agent-3", -time.Second)
+	require.NoError(t, err)
+
+	// agent-3 is still connected somewhere, so its lease is renewed in time.
+	n, err := s.RenewLeases(ctx, []string{"agent-3", "unknown"}, time.Minute)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	requeued, err := s.RequeueExpired(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{ids[0]}, requeued)
+
+	got, err := s.GetJob(ctx, ids[0])
+	require.NoError(t, err)
+	assert.Equal(t, models.JobStatusPending, got.Status)
+	assert.Empty(t, got.Agent)
+	assert.Nil(t, got.LeaseExpiresAt)
+
+	for _, id := range ids[1:] {
+		got, err := s.GetJob(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, models.JobStatusRunning, got.Status)
+	}
+
+	requeued, err = s.RequeueExpired(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, requeued)
+}
+
+func TestStoreAdoptJob(t *testing.T) {
+	t.Run("job still running on the agent", func(t *testing.T) {
+		s, _ := newStore(t)
+		ids := createJobs(t, s, 1)
+		_, err := s.ClaimJob(t.Context(), "agent-1", -time.Second)
+		require.NoError(t, err)
+
+		require.NoError(t, s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute))
+
+		got, err := s.GetJob(t.Context(), ids[0])
+		require.NoError(t, err)
+		assert.True(t, got.LeaseExpiresAt.After(time.Now().Add(30*time.Second)), "lease renewed")
+	})
+
+	t.Run("requeued job not yet claimed by anyone", func(t *testing.T) {
+		s, _ := newStore(t)
+		ids := createJobs(t, s, 1)
+		_, err := s.ClaimJob(t.Context(), "agent-1", -time.Second)
+		require.NoError(t, err)
+		_, err = s.RequeueExpired(t.Context())
+		require.NoError(t, err)
+
+		require.NoError(t, s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute))
+
+		got, err := s.GetJob(t.Context(), ids[0])
+		require.NoError(t, err)
+		assert.Equal(t, models.JobStatusRunning, got.Status)
+		assert.Equal(t, "agent-1", got.Agent)
+	})
+
+	t.Run("job taken over by another agent", func(t *testing.T) {
+		s, _ := newStore(t)
+		ids := createJobs(t, s, 1)
+		_, err := s.ClaimJob(t.Context(), "agent-2", time.Minute)
+		require.NoError(t, err)
+
+		err = s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute)
+		assert.ErrorIs(t, err, ErrJobConflict)
+	})
+
+	t.Run("finished job", func(t *testing.T) {
+		s, _ := newStore(t)
+		ids := createJobs(t, s, 1)
+		_, err := s.ClaimJob(t.Context(), "agent-1", time.Minute)
+		require.NoError(t, err)
+		require.NoError(t, s.FinishJob(t.Context(), "agent-1",
+			models.JobResult{JobID: ids[0], Status: models.JobStatusSuccess}))
+
+		err = s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute)
+		assert.ErrorIs(t, err, ErrJobConflict)
+	})
 }

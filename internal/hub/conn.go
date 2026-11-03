@@ -11,6 +11,7 @@ import (
 	"github.com/coder/websocket"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -125,9 +126,22 @@ func readHello(ctx context.Context, conn *websocket.Conn) (models.AgentHello, er
 }
 
 // register makes a the connection for its name, replacing an older one.
-// Jobs the database assigns to the agent but the agent no longer holds
-// (a lost assignment, an agent restart) go back to the queue.
+// The job the agent reports is kept on it (even if its lease expired, as
+// long as nobody else took it); jobs the database assigns to the agent but
+// the agent no longer holds (a lost assignment, an agent restart) go back
+// to the queue.
 func (h *Hub) register(ctx context.Context, hello models.AgentHello) (*agentConn, error) {
+	if id := hello.RunningJobID; id != 0 {
+		err := h.store.AdoptJob(ctx, hello.Name, id, h.lease)
+		switch {
+		case errors.Is(err, db.ErrJobConflict):
+			h.log.WarnContext(ctx, "agent reports a job that finished or moved on; its result will be dropped",
+				"agent", hello.Name, "job_id", id)
+		case err != nil:
+			return nil, err
+		}
+	}
+
 	n, err := h.store.RequeueAgentJobs(ctx, hello.Name, hello.RunningJobID)
 	if err != nil {
 		return nil, err

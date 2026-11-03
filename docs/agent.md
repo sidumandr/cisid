@@ -82,7 +82,7 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 ## Bilinen sınırlamalar (Faz 2)
 
 - Mesajlar onaylı (ack) teslim edilmez. Ağ aniden koparken yazılan mesaj kaybolabilir. Server'ın planlı kapanışında kayıp olmaz (`server_closing`).
-- Lease yok. Agent bir daha hiç bağlanmazsa job'u `running` kalır (bkz. [hub.md](hub.md#bilinen-sınırlamalar-faz-2)).
+- Agent 5 dakikadan (lease) uzun süre bağlanamazsa job'u başka bir agent'a verilir. Geri döndüğünde ilk job'un sonucu atılır (bkz. [hub.md](hub.md#canlılık-ve-lease)).
 - Kimlik doğrulama yok (Faz 4).
 
 ## Testler
