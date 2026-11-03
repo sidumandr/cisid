@@ -19,3 +19,5 @@ keywords:
 maintainers:
   - name: sidumandr
     url: https://github.com/sidumandr
+annotations:
+  artifacthub.io/license: MIT

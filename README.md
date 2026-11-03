@@ -188,3 +188,7 @@ Helm chart testleri ayrı bir Go modülündedir (Helm SDK'sı ana modüle bağı
 ```bash
 cd deployments/helm/charttest && go test ./...
 ```
+
+## Lisans
+
+[MIT](LICENSE)
