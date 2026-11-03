@@ -1,6 +1,7 @@
 # cisid builds itself: vet, then every test with the race detector, including
 # the PostgreSQL integration tests against a service container. Tests that
-# need Docker skip themselves here.
+# need Docker skip themselves here. Then the Helm chart is rendered and
+# checked (a module of its own, see deployments/helm/charttest).
 services:
   - name: postgres
     image: postgres:18-alpine
@@ -16,3 +17,11 @@ steps:
       - go vet ./...
       - go test -race ./...
     timeout: 15m
+
+  - name: chart
+    image: golang:1.27
+    commands:
+      - cd deployments/helm/charttest
+      - go vet ./...
+      - go test ./...
+    timeout: 10m
