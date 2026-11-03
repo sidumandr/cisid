@@ -41,6 +41,7 @@ func TestLoadDefaults(t *testing.T) {
 		ShutdownTimeout: 15 * time.Second,
 		LogLevel:        slog.LevelInfo,
 		GitHubAPIURL:    "https://api.github.com",
+		RateLimit:       10,
 	}, cfg)
 }
 
@@ -98,6 +99,11 @@ func TestLoadErrors(t *testing.T) {
 			name: "bad secret key",
 			vars: with(map[string]string{"CISID_SECRET_KEY": "c2hvcnQ="}),
 			want: []string{"CISID_SECRET_KEY", "invalid secret key"},
+		},
+		{
+			name: "bad rate limit",
+			vars: with(map[string]string{"CISID_RATE_LIMIT": "-1", "CISID_TRUST_PROXY": "maybe"}),
+			want: []string{"CISID_RATE_LIMIT must not be negative", "CISID_TRUST_PROXY"},
 		},
 		{
 			name: "agent token too short",

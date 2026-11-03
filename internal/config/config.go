@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,8 @@ type Config struct {
 	AgentToken      string        // CISID_AGENT_TOKEN, optional; required from agents when set
 	TLSCertFile     string        // CISID_TLS_CERT_FILE, optional; serve HTTPS with TLSKeyFile
 	TLSKeyFile      string        // CISID_TLS_KEY_FILE
+	RateLimit       float64       // CISID_RATE_LIMIT, requests per second per client, default 10, 0 disables
+	TrustProxy      bool          // CISID_TRUST_PROXY, take the client from X-Forwarded-For
 }
 
 // Load reads the configuration through getenv (normally os.Getenv) and
@@ -84,6 +87,26 @@ func Load(getenv func(string) string) (Config, error) {
 			problems = append(problems, fmt.Errorf("CISID_SECRET_KEY: %w", err))
 		}
 		cfg.SecretKey = key
+	}
+
+	cfg.RateLimit = 10
+	if v := getenv("CISID_RATE_LIMIT"); v != "" {
+		n, err := strconv.ParseFloat(v, 64)
+		switch {
+		case err != nil:
+			problems = append(problems, fmt.Errorf("CISID_RATE_LIMIT: %w", err))
+		case n < 0:
+			problems = append(problems, fmt.Errorf("CISID_RATE_LIMIT must not be negative"))
+		default:
+			cfg.RateLimit = n
+		}
+	}
+	if v := getenv("CISID_TRUST_PROXY"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("CISID_TRUST_PROXY: %w", err))
+		}
+		cfg.TrustProxy = b
 	}
 
 	if cfg.AgentToken != "" && len(cfg.AgentToken) < minAPITokenLen {
@@ -140,5 +163,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("secret_key_set", c.SecretKey != nil),
 		slog.Bool("agent_token_set", c.AgentToken != ""),
 		slog.Bool("tls", c.TLSCertFile != ""),
+		slog.Float64("rate_limit", c.RateLimit),
+		slog.Bool("trust_proxy", c.TrustProxy),
 	)
 }

@@ -11,8 +11,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -29,9 +32,14 @@ var (
 	errInvalidPush = errors.New("invalid push payload")
 )
 
-// JobCreator persists new jobs.
+// maxPayloadAge rejects pushes older than this, so a captured signed
+// payload cannot be replayed once its dedupe record is pruned.
+const maxPayloadAge = 7 * 24 * time.Hour
+
+// JobCreator queues the job of a webhook delivery, once per signed body.
+// *db.Store satisfies it.
 type JobCreator interface {
-	CreateJob(ctx context.Context, job models.Job) (int64, error)
+	QueueJob(ctx context.Context, job models.Job, payloadSHA256, deliveryID string) (int64, error)
 }
 
 // WebhookHandler handles GitHub webhook deliveries and queues a job for
@@ -40,6 +48,7 @@ type WebhookHandler struct {
 	secret []byte
 	jobs   JobCreator
 	log    *slog.Logger
+	now    func() time.Time
 }
 
 // NewWebhookHandler returns a handler that verifies deliveries with secret and
@@ -51,7 +60,7 @@ func NewWebhookHandler(secret []byte, jobs JobCreator, log *slog.Logger) (*Webho
 	if log == nil {
 		log = slog.Default()
 	}
-	return &WebhookHandler{secret: secret, jobs: jobs, log: log}, nil
+	return &WebhookHandler{secret: secret, jobs: jobs, log: log, now: time.Now}, nil
 }
 
 // webhookResponse is the JSON body returned for every delivery.
@@ -69,6 +78,8 @@ type pushPayload struct {
 	Repository struct {
 		FullName string `json:"full_name"`
 		CloneURL string `json:"clone_url"`
+		// PushedAt is a Unix time in push events (a string elsewhere).
+		PushedAt json.RawMessage `json:"pushed_at"`
 	} `json:"repository"`
 }
 
@@ -114,7 +125,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body []byte, delivery string) {
 	ctx := r.Context()
 
-	job, reason, err := jobFromPush(body)
+	job, reason, err := jobFromPush(body, h.now())
 	if err != nil {
 		h.log.WarnContext(ctx, "rejected push payload", "delivery", delivery, "error", err)
 		writeError(w, http.StatusBadRequest, "invalid push payload")
@@ -125,7 +136,13 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 		return
 	}
 
-	id, err := h.jobs.CreateJob(ctx, job)
+	sum := sha256.Sum256(body)
+	id, err := h.jobs.QueueJob(ctx, job, hex.EncodeToString(sum[:]), delivery)
+	if errors.Is(err, db.ErrDuplicateDelivery) {
+		h.log.WarnContext(ctx, "ignoring a payload that already queued a job", "delivery", delivery)
+		writeJSON(w, http.StatusOK, webhookResponse{Status: "ignored", Reason: "duplicate delivery"})
+		return
+	}
 	if err != nil {
 		h.log.ErrorContext(ctx, "queue job", "delivery", delivery, "repo", job.Repo, "error", err)
 		writeError(w, http.StatusInternalServerError, "could not queue job")
@@ -139,7 +156,7 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 
 // jobFromPush builds a pending job from a push payload. A non-empty reason
 // means the push is valid but does not trigger a job.
-func jobFromPush(body []byte) (models.Job, string, error) {
+func jobFromPush(body []byte, now time.Time) (models.Job, string, error) {
 	var p pushPayload
 	if err := json.Unmarshal(body, &p); err != nil {
 		return models.Job{}, "", fmt.Errorf("decode push payload: %w", err)
@@ -151,6 +168,10 @@ func jobFromPush(body []byte) (models.Job, string, error) {
 	}
 	if p.Deleted {
 		return models.Job{}, "branch deleted", nil
+	}
+	if pushed, err := strconv.ParseInt(string(p.Repository.PushedAt), 10, 64); err == nil && pushed > 0 &&
+		now.Sub(time.Unix(pushed, 0)) > maxPayloadAge {
+		return models.Job{}, "stale delivery", nil
 	}
 
 	switch {

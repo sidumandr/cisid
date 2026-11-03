@@ -15,7 +15,7 @@ Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jo
 | `POST /api/jobs/{id}/cancel` | Job'u iptal et (token gerekir) |
 | `POST /api/jobs/{id}/rerun` | Aynı commit için yeni job oluştur (token gerekir) |
 
-Hatalar: geçersiz parametre `400`, olmayan job `404`. Gövde `{"status":"error","reason":"..."}` biçimindedir.
+Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate limit aşıldıysa `429` (`Retry-After: 1`, bkz. `CISID_RATE_LIMIT`). Gövde `{"status":"error","reason":"..."}` biçimindedir.
 
 ### Job
 

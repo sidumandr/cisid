@@ -631,3 +631,29 @@ func TestStoreExpandMatrix(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, plain.Matrix)
 }
+
+func TestStoreQueueJobOncePerPayload(t *testing.T) {
+	s, pool := newStore(t)
+	ctx := t.Context()
+	job := pendingJob("6113728f27ae82c7b1a177c8d03f9e96e0adf246")
+
+	id, err := s.QueueJob(ctx, job, "hash-a", "delivery-1")
+	require.NoError(t, err)
+	assert.Positive(t, id)
+
+	_, err = s.QueueJob(ctx, job, "hash-a", "delivery-2")
+	assert.ErrorIs(t, err, ErrDuplicateDelivery, "same body, new delivery header: still a duplicate")
+
+	_, err = s.QueueJob(ctx, job, "hash-b", "")
+	require.NoError(t, err, "another body")
+
+	jobs, err := s.ListJobs(ctx, 10)
+	require.NoError(t, err)
+	assert.Len(t, jobs, 2)
+
+	_, err = pool.Exec(ctx, "UPDATE webhook_deliveries SET received_at = now() - interval '9 days' WHERE payload_sha256 = 'hash-a'")
+	require.NoError(t, err)
+	n, err := s.PruneDeliveries(ctx, 8*24*time.Hour)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+}

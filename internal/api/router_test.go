@@ -196,3 +196,26 @@ func TestRouterAllowsHijacking(t *testing.T) {
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 	_, _ = bufio.NewReader(resp.Body).ReadString('\n')
 }
+
+func TestRouterRateLimitsWebhookAndAPI(t *testing.T) {
+	h := NewRouter(Handlers{
+		Webhook:   http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		Agents:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		DB:        &mockPinger{},
+		RateLimit: NewRateLimiter(1, false), // burst 2
+	}, slog.New(slog.DiscardHandler))
+	call := func(method, path string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+		return rec.Code
+	}
+
+	assert.Equal(t, http.StatusOK, call(http.MethodPost, "/webhooks/github"))
+	assert.Equal(t, http.StatusNotFound, call(http.MethodGet, "/api/nothing"))
+	assert.Equal(t, http.StatusTooManyRequests, call(http.MethodPost, "/webhooks/github"))
+	assert.Equal(t, http.StatusTooManyRequests, call(http.MethodGet, "/api/jobs"))
+
+	for range 5 {
+		assert.Equal(t, http.StatusOK, call(http.MethodGet, "/agent/ws"), "agents are not limited")
+	}
+}

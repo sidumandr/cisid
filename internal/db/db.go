@@ -26,6 +26,9 @@ var (
 	ErrJobConflict = errors.New("job state conflict")
 	// ErrInvalidJobResult is returned for a result with a non-terminal status.
 	ErrInvalidJobResult = errors.New("invalid job result")
+	// ErrDuplicateDelivery is returned by QueueJob for a webhook payload
+	// that already queued a job.
+	ErrDuplicateDelivery = errors.New("duplicate webhook delivery")
 )
 
 // JobEventsChannel is the PostgreSQL NOTIFY channel on which the ID of a
@@ -87,6 +90,50 @@ func (s *Store) CreateJob(ctx context.Context, job models.Job) (int64, error) {
 		return 0, fmt.Errorf("insert job for %s@%s: %w", job.Repo, job.CommitSHA, err)
 	}
 	return id, nil
+}
+
+// QueueJob inserts job for a webhook delivery whose signed body has the
+// given SHA-256, unless that body already queued a job (ErrDuplicateDelivery).
+// Both happen in one transaction, so a failed insert can be redelivered.
+func (s *Store) QueueJob(ctx context.Context, job models.Job, payloadSHA256, deliveryID string) (int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("queue job: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO webhook_deliveries (payload_sha256, delivery_id) VALUES ($1, NULLIF($2, ''))
+		ON CONFLICT (payload_sha256) DO NOTHING`, payloadSHA256, deliveryID)
+	if err != nil {
+		return 0, fmt.Errorf("record delivery %s: %w", deliveryID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return 0, fmt.Errorf("%w: %s", ErrDuplicateDelivery, deliveryID)
+	}
+
+	var id int64
+	err = tx.QueryRow(ctx, `
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("insert job for %s@%s: %w", job.Repo, job.CommitSHA, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("queue job: %w", err)
+	}
+	return id, nil
+}
+
+// PruneDeliveries forgets webhook deliveries older than age and returns
+// how many it removed.
+func (s *Store) PruneDeliveries(ctx context.Context, age time.Duration) (int, error) {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM webhook_deliveries WHERE received_at < now() - make_interval(secs => $1)", age.Seconds())
+	if err != nil {
+		return 0, fmt.Errorf("prune webhook deliveries: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // GetJob returns the job with the given ID.

@@ -30,6 +30,11 @@ Aynı secret, server'a da verilmelidir. Secret boşsa `NewWebhookHandler` `ErrEm
    - `ref` (`refs/heads/` öneki atılır) → `jobs.branch`
    - `after` → `jobs.commit_sha` (40 ya da 64 karakter hex olmalı)
 
+## Tekrar (replay) koruması
+
+- Bir push payload'ı yalnızca bir kez job oluşturur. Tekilleştirme anahtarı **imzalı gövdenin SHA-256 özetidir**, `X-GitHub-Delivery` başlığı değildir. O başlık imzaya dahil olmadığı için saldırgan onu değiştirebilir, ama gövdeyi imzayı bozmadan değiştiremez. Kayıt ve job aynı transaction'da oluşur, bu yüzden GitHub'ın "Redeliver" ile yaptığı tekrar gönderimler de güvenlidir.
+- `repository.pushed_at` 7 günden eskiyse payload yok sayılır (`stale delivery`). Tekilleştirme kayıtları 8 gün tutulur ve sonra silinir. Böylece yakalanmış eski bir payload hiçbir zaman ikinci kez job oluşturamaz.
+
 ## Yanıtlar
 
 | Durum | Kod | Body |
@@ -37,6 +42,9 @@ Aynı secret, server'a da verilmelidir. Secret boşsa `NewWebhookHandler` `ErrEm
 | Job kuyruğa alındı | `202` | `{"status":"queued","job_id":42}` |
 | Tag push | `200` | `{"status":"ignored","reason":"not a branch push"}` |
 | Branch silindi | `200` | `{"status":"ignored","reason":"branch deleted"}` |
+| Aynı payload daha önce işlendi | `200` | `{"status":"ignored","reason":"duplicate delivery"}` |
+| `pushed_at` 7 günden eski | `200` | `{"status":"ignored","reason":"stale delivery"}` |
+| Rate limit aşıldı | `429` | `{"status":"error","reason":"too many requests"}`, `Retry-After: 1` |
 | Ping | `200` | `{"status":"pong"}` |
 | Desteklenmeyen event | `200` | `{"status":"ignored","reason":"unsupported event \"issues\""}` |
 | İmza eksik / yanlış | `401` | `{"status":"error","reason":"invalid signature"}` |

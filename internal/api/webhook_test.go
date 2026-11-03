@@ -8,12 +8,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/sidumandr/cisid/internal/db"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -28,8 +31,8 @@ type mockJobCreator struct {
 	mock.Mock
 }
 
-func (m *mockJobCreator) CreateJob(ctx context.Context, job models.Job) (int64, error) {
-	args := m.Called(ctx, job)
+func (m *mockJobCreator) QueueJob(ctx context.Context, job models.Job, payloadSHA256, deliveryID string) (int64, error) {
+	args := m.Called(ctx, job, payloadSHA256, deliveryID)
 	return args.Get(0).(int64), args.Error(1)
 }
 
@@ -77,13 +80,14 @@ func TestWebhookHandler(t *testing.T) {
 			event: "push",
 			body:  pushBody,
 			setup: func(m *mockJobCreator) {
-				m.On("CreateJob", mock.Anything, models.Job{
+				m.On("QueueJob", mock.Anything, models.Job{
 					Repo:      "sidumandr/cisid",
 					CloneURL:  "https://github.com/sidumandr/cisid.git",
 					Branch:    "main",
 					CommitSHA: "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
 					Status:    models.JobStatusPending,
-				}).Return(int64(42), nil).Once()
+				}, mock.Anything, mock.Anything).
+					Return(int64(42), nil).Once()
 			},
 			wantStatus: http.StatusAccepted,
 			wantBody:   webhookResponse{Status: "queued", JobID: 42},
@@ -93,13 +97,14 @@ func TestWebhookHandler(t *testing.T) {
 			event: "push",
 			body:  loadPayload(t, "push_nested_branch.json"),
 			setup: func(m *mockJobCreator) {
-				m.On("CreateJob", mock.Anything, models.Job{
+				m.On("QueueJob", mock.Anything, models.Job{
 					Repo:      "sidumandr/cisid",
 					CloneURL:  "https://github.com/sidumandr/cisid.git",
 					Branch:    "feature/webhook",
 					CommitSHA: "a3f1c9e2b7d4085f6e1a2b3c4d5e6f708192a3b4",
 					Status:    models.JobStatusPending,
-				}).Return(int64(7), nil).Once()
+				}, mock.Anything, mock.Anything).
+					Return(int64(7), nil).Once()
 			},
 			wantStatus: http.StatusAccepted,
 			wantBody:   webhookResponse{Status: "queued", JobID: 7},
@@ -198,7 +203,7 @@ func TestWebhookHandler(t *testing.T) {
 			event: "push",
 			body:  pushBody,
 			setup: func(m *mockJobCreator) {
-				m.On("CreateJob", mock.Anything, mock.AnythingOfType("models.Job")).
+				m.On("QueueJob", mock.Anything, mock.AnythingOfType("models.Job"), mock.Anything, mock.Anything).
 					Return(int64(0), errStore).Once()
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -258,7 +263,7 @@ func TestWebhookHandler(t *testing.T) {
 
 			store.AssertExpectations(t)
 			if tt.setup == nil {
-				store.AssertNotCalled(t, "CreateJob", mock.Anything, mock.Anything)
+				store.AssertNotCalled(t, "QueueJob", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			}
 		})
 	}
@@ -269,9 +274,9 @@ func TestWebhookHandlerPassesRequestContext(t *testing.T) {
 	body := loadPayload(t, "push.json")
 
 	store := &mockJobCreator{}
-	store.On("CreateJob",
+	store.On("QueueJob",
 		mock.MatchedBy(func(ctx context.Context) bool { return ctx.Value(ctxKey{}) == "req-ctx" }),
-		mock.AnythingOfType("models.Job"),
+		mock.AnythingOfType("models.Job"), mock.Anything, mock.Anything,
 	).Return(int64(1), nil).Once()
 	h := newTestHandler(t, store)
 
@@ -284,5 +289,55 @@ func TestWebhookHandlerPassesRequestContext(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
+	store.AssertExpectations(t)
+}
+
+func signedPush(t *testing.T, h http.Handler, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-GitHub-Delivery", "d-1")
+	req.Header.Set("X-Hub-Signature-256", sign(testSecret, body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestWebhookDeduplicatesBySignedBody(t *testing.T) {
+	body := loadPayload(t, "push.json")
+	sum := sha256.Sum256(body)
+	store := &mockJobCreator{}
+	store.On("QueueJob", mock.Anything, mock.AnythingOfType("models.Job"), hex.EncodeToString(sum[:]), "d-1").
+		Return(int64(1), nil).Once()
+	store.On("QueueJob", mock.Anything, mock.AnythingOfType("models.Job"), hex.EncodeToString(sum[:]), "d-1").
+		Return(int64(0), fmt.Errorf("x: %w", db.ErrDuplicateDelivery)).Once()
+	h := newTestHandler(t, store)
+
+	assert.Equal(t, http.StatusAccepted, signedPush(t, h, body).Code)
+
+	rec := signedPush(t, h, body)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"status":"ignored","reason":"duplicate delivery"}`, rec.Body.String())
+	store.AssertExpectations(t)
+}
+
+func TestWebhookIgnoresStalePushes(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	withPushedAt := func(at time.Time) []byte {
+		return bytes.Replace(loadPayload(t, "push.json"), []byte(`"full_name": "sidumandr/cisid",`),
+			[]byte(fmt.Sprintf(`"full_name": "sidumandr/cisid", "pushed_at": %d,`, at.Unix())), 1)
+	}
+
+	store := &mockJobCreator{}
+	store.On("QueueJob", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(int64(7), nil).Once()
+	h := newTestHandler(t, store)
+	h.now = func() time.Time { return now }
+
+	assert.Equal(t, http.StatusAccepted, signedPush(t, h, withPushedAt(now.Add(-time.Hour))).Code)
+
+	rec := signedPush(t, h, withPushedAt(now.Add(-8*24*time.Hour)))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"status":"ignored","reason":"stale delivery"}`, rec.Body.String(),
+		"a week-old signed payload is a replay")
 	store.AssertExpectations(t)
 }

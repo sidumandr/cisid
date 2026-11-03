@@ -35,8 +35,9 @@ import (
 )
 
 const (
-	dbConnectTimeout = 10 * time.Second
-	poolCloseTimeout = 5 * time.Second
+	dbConnectTimeout  = 10 * time.Second
+	poolCloseTimeout  = 5 * time.Second
+	deliveryRetention = 8 * 24 * time.Hour
 )
 
 func main() {
@@ -129,12 +130,13 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 
 	srv := &http.Server{
 		Handler: api.NewRouter(api.Handlers{
-			Webhook: webhook,
-			Agents:  agents,
-			Jobs:    jobsAPI,
-			Secrets: api.NewSecretsAPI(vault, cfg.APIToken, log),
-			UI:      web.Handler(),
-			DB:      store,
+			Webhook:   webhook,
+			Agents:    agents,
+			Jobs:      jobsAPI,
+			Secrets:   api.NewSecretsAPI(vault, cfg.APIToken, log),
+			UI:        web.Handler(),
+			RateLimit: rateLimiter(cfg),
+			DB:        store,
 		}, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
@@ -162,6 +164,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if reporter != nil {
 		g.Go(func() error { return reporter.Run(gctx) })
 	}
+	g.Go(func() error { return housekeep(gctx, store, log) })
 	g.Go(func() error {
 		return broker.Listen(gctx, func(ctx context.Context) (*pgx.Conn, error) {
 			c, err := pool.Acquire(ctx)
@@ -187,12 +190,42 @@ type wakeOnCreate struct {
 	wake func(jobID int64)
 }
 
-func (w wakeOnCreate) CreateJob(ctx context.Context, job models.Job) (int64, error) {
-	id, err := w.jobs.CreateJob(ctx, job)
+func (w wakeOnCreate) QueueJob(ctx context.Context, job models.Job, payloadSHA256, deliveryID string) (int64, error) {
+	id, err := w.jobs.QueueJob(ctx, job, payloadSHA256, deliveryID)
 	if err == nil {
 		w.wake(id)
 	}
 	return id, err
+}
+
+// rateLimiter returns the configured limiter, or nil when disabled.
+func rateLimiter(cfg config.Config) *api.RateLimiter {
+	if cfg.RateLimit == 0 {
+		return nil
+	}
+	return api.NewRateLimiter(cfg.RateLimit, cfg.TrustProxy)
+}
+
+// housekeep prunes old webhook deliveries hourly. Records outlive the
+// 7-day replay window a little, so a replay inside it is always caught.
+func housekeep(ctx context.Context, store *db.Store, log *slog.Logger) error {
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		if n, err := store.PruneDeliveries(pctx, deliveryRetention); err != nil {
+			log.WarnContext(pctx, "prune webhook deliveries", "error", err)
+		} else if n > 0 {
+			log.InfoContext(pctx, "pruned webhook deliveries", "count", n)
+		}
+		cancel()
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick.C:
+		}
+	}
 }
 
 // jobURL links commit statuses to the job when the public URL is known.

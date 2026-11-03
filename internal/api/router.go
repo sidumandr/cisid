@@ -31,6 +31,8 @@ type Handlers struct {
 	Secrets *SecretsAPI  // repository secrets API; omitted when nil
 	UI      http.Handler // browser UI at /, /jobs/{id} and /ui/; omitted when nil
 	DB      Pinger       // readiness check
+	// RateLimit applies to the webhook and the API; nil means no limit.
+	RateLimit *RateLimiter
 }
 
 // NewRouter returns the server's HTTP handler:
@@ -43,15 +45,25 @@ type Handlers struct {
 //	GET  /healthz          liveness: the process is serving requests
 //	GET  /readyz           readiness: the database is reachable
 func NewRouter(h Handlers, log *slog.Logger) http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/webhooks/github", h.Webhook)
-	mux.Handle("GET /agent/ws", h.Agents)
+	// The webhook and the API are rate limited; agents, the UI's static
+	// files and health checks are not.
+	limited := http.NewServeMux()
+	limited.Handle("/webhooks/github", h.Webhook)
 	if h.Jobs != nil {
-		h.Jobs.register(mux)
+		h.Jobs.register(limited)
 	}
 	if h.Secrets != nil {
-		h.Secrets.register(mux)
+		h.Secrets.register(limited)
 	}
+	var limitedHandler http.Handler = limited
+	if h.RateLimit != nil {
+		limitedHandler = h.RateLimit.Wrap(limited)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/webhooks/github", limitedHandler)
+	mux.Handle("/api/", limitedHandler)
+	mux.Handle("GET /agent/ws", h.Agents)
 	if h.UI != nil {
 		mux.Handle("GET /{$}", h.UI)
 		mux.Handle("GET /jobs/{id}", h.UI)
