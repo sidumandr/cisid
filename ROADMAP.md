@@ -41,7 +41,8 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
 - [ ] Agent ↔ server iletişimini gRPC'ye taşı (`api/proto`).
 - [x] Agent kimlik doğrulama (ortak token) ve TLS (`CISID_TLS_*`, agent'ta `wss://` ve özel CA).
-- [ ] Gözlemlenebilirlik: `slog` yapılandırılmış log, Prometheus metrikleri, OpenTelemetry trace.
+- [x] Gözlemlenebilirlik: `slog` yapılandırılmış log ve Prometheus metrikleri ([docs/metrics.md](docs/metrics.md)).
+- [ ] OpenTelemetry trace.
 - [x] Container izolasyonu ve kaynak limitleri: bellek, CPU, süreç sayısı, `no-new-privileges`, job başına ağ, OOM tespiti.
 - [x] Rate limiting (IP başına token bucket) ve webhook replay koruması (imzalı gövdeye göre tekilleştirme ve 7 günden eski payload'ları reddetme).
 - [ ] Dağıtım: Docker image'ları, docker-compose, Helm chart.

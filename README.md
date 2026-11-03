@@ -12,6 +12,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/ui.md](docs/ui.md): Web arayüzü
 - [docs/api.md](docs/api.md): Job API ve canlı log akışı (SSE)
 - [docs/secrets.md](docs/secrets.md): Şifreli repo secret'ları ve loglarda maskeleme
+- [docs/metrics.md](docs/metrics.md): Prometheus metrikleri
 - [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının GitHub'da commit status olarak gösterilmesi
 - [docs/webhook.md](docs/webhook.md): GitHub webhook kurulumu ve davranışı
 - [docs/runner.md](docs/runner.md): Docker runner kullanımı ve yaşam döngüsü
@@ -82,6 +83,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── config/      # Ortam değişkenlerinden server yapılandırması
 │   ├── events/      # PostgreSQL LISTEN/NOTIFY ile job değişikliği bildirimleri
 │   ├── hub/         # Agent bağlantıları ve job dağıtımı (server tarafı)
+│   ├── metrics/     # Prometheus metrikleri
 │   ├── github/      # GitHub API istemcisi (.cisid.yml okuma)
 │   ├── pipeline/    # .cisid.yml ayrıştırma, job → adımlar
 │   ├── secrets/     # AES-256-GCM ile şifreli secret'lar

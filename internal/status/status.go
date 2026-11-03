@@ -15,6 +15,7 @@ import (
 
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/github"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -150,14 +151,17 @@ func (r *Reporter) report(ctx context.Context, job models.Job) bool {
 	err := r.poster.CreateStatus(ctx, job.Repo, job.CommitSHA, st)
 	switch {
 	case errors.Is(err, github.ErrTemporary):
+		metrics.CommitStatuses.WithLabelValues("retry").Inc()
 		if ctx.Err() == nil {
 			r.log.WarnContext(ctx, "GitHub unavailable, will retry commit status", "job_id", job.ID, "error", err)
 		}
 		return false
 	case err != nil:
+		metrics.CommitStatuses.WithLabelValues("failed").Inc()
 		// Retrying cannot fix a missing permission or a deleted commit.
 		r.log.WarnContext(ctx, "could not set commit status, giving up", "job_id", job.ID, "error", err)
 	default:
+		metrics.CommitStatuses.WithLabelValues("sent").Inc()
 		r.log.DebugContext(ctx, "commit status set", "job_id", job.ID, "state", st.State)
 	}
 

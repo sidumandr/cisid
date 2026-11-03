@@ -7,7 +7,11 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"time"
+
+	"github.com/sidumandr/cisid/internal/metrics"
 )
 
 const readyTimeout = 2 * time.Second
@@ -33,6 +37,8 @@ type Handlers struct {
 	DB      Pinger       // readiness check
 	// RateLimit applies to the webhook and the API; nil means no limit.
 	RateLimit *RateLimiter
+	// Metrics serves GET /metrics; omitted when nil.
+	Metrics http.Handler
 }
 
 // NewRouter returns the server's HTTP handler:
@@ -64,6 +70,9 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	mux.Handle("/webhooks/github", limitedHandler)
 	mux.Handle("/api/", limitedHandler)
 	mux.Handle("GET /agent/ws", h.Agents)
+	if h.Metrics != nil {
+		mux.Handle("GET /metrics", h.Metrics)
+	}
 	if h.UI != nil {
 		mux.Handle("GET /{$}", h.UI)
 		mux.Handle("GET /jobs/{id}", h.UI)
@@ -114,11 +123,24 @@ func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		elapsed := time.Since(start)
+
+		// The mux records the matched pattern on r, which keeps the label
+		// set small (no IDs).
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched"
+		}
+		metrics.HTTPRequests.WithLabelValues(route, r.Method, strconv.Itoa(rec.status)).Inc()
+		if !streaming(route) {
+			metrics.HTTPDuration.WithLabelValues(route).Observe(elapsed.Seconds())
+		}
+
 		log.InfoContext(r.Context(), "http request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
-			"duration", time.Since(start),
+			"duration", elapsed,
 			"remote_addr", r.RemoteAddr)
 	})
 }
@@ -154,4 +176,10 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (r *statusRecorder) Flush() {
 	_ = http.NewResponseController(r.ResponseWriter).Flush()
+}
+
+// streaming reports whether route holds a connection open (agents, log
+// streams), which would only distort latency histograms.
+func streaming(route string) bool {
+	return strings.HasSuffix(route, "/stream") || strings.HasSuffix(route, "/agent/ws")
 }

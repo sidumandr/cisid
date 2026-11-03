@@ -382,6 +382,30 @@ func (s *Store) ExpandMatrix(ctx context.Context, id int64, combo map[string]str
 	return ids, nil
 }
 
+// CountJobsByStatus returns the number of jobs per status.
+func (s *Store) CountJobsByStatus(ctx context.Context) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, "SELECT status, count(*) FROM jobs GROUP BY status")
+	if err != nil {
+		return nil, fmt.Errorf("count jobs: %w", err)
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var (
+			status string
+			n      int
+		)
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, fmt.Errorf("count jobs: %w", err)
+		}
+		counts[status] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("count jobs: %w", err)
+	}
+	return counts, nil
+}
+
 // ListJobs returns the most recent jobs, newest first.
 func (s *Store) ListJobs(ctx context.Context, limit int) ([]models.Job, error) {
 	rows, err := s.pool.Query(ctx, "SELECT "+jobColumns+" FROM jobs ORDER BY id DESC LIMIT $1", limit)

@@ -27,6 +27,7 @@ import (
 	"github.com/sidumandr/cisid/internal/events"
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/hub"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/internal/status"
@@ -120,6 +121,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		return fmt.Errorf("create webhook handler: %w", err)
 	}
 
+	metrics.RegisterAgents(agents.Connected)
+	metrics.RegisterJobCounts(store.CountJobsByStatus, log)
+
 	broker := events.New(log)
 	jobsAPI := api.NewJobsAPI(store, broker, log,
 		api.WithWriteToken(cfg.APIToken),
@@ -136,6 +140,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Secrets:   api.NewSecretsAPI(vault, cfg.APIToken, log),
 			UI:        web.Handler(),
 			RateLimit: rateLimiter(cfg),
+			Metrics:   metrics.Handler(),
 			DB:        store,
 		}, log),
 		ReadHeaderTimeout: 10 * time.Second,

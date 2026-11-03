@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -340,4 +342,23 @@ func TestWebhookIgnoresStalePushes(t *testing.T) {
 	assert.JSONEq(t, `{"status":"ignored","reason":"stale delivery"}`, rec.Body.String(),
 		"a week-old signed payload is a replay")
 	store.AssertExpectations(t)
+}
+
+func TestWebhookCountsOutcomes(t *testing.T) {
+	queued := metrics.Webhooks.WithLabelValues("queued")
+	badSig := metrics.Webhooks.WithLabelValues("invalid_signature")
+	q0, b0 := testutil.ToFloat64(queued), testutil.ToFloat64(badSig)
+
+	store := &mockJobCreator{}
+	store.On("QueueJob", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(int64(1), nil).Once()
+	h := newTestHandler(t, store)
+	body := loadPayload(t, "push.json")
+	signedPush(t, h, body)
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, q0+1, testutil.ToFloat64(queued))
+	assert.Equal(t, b0+1, testutil.ToFloat64(badSig))
 }

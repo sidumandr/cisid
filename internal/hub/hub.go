@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -233,6 +234,13 @@ func (h *Hub) deliverCancels(ctx context.Context) {
 	}
 }
 
+// Connected returns the number of agents connected to this server.
+func (h *Hub) Connected() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.agents)
+}
+
 func (h *Hub) agentNames() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -361,6 +369,7 @@ func (h *Hub) failJob(ctx context.Context, agent string, jobID int64, reason str
 		h.log.ErrorContext(ctx, "record job failure", "job_id", jobID, "error", err)
 		return
 	}
+	metrics.JobsFinished.WithLabelValues(string(models.JobStatusFailed)).Inc()
 	h.jobChanged(jobID)
 }
 

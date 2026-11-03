@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -315,6 +316,7 @@ func (h *Hub) handleLog(ctx context.Context, a *agentConn, l models.JobLog) {
 		h.log.WarnContext(ctx, "dropping log for a job the agent does not hold", "agent", a.name, "job_id", l.JobID)
 		return
 	}
+	metrics.LogChunks.Inc()
 	if err := h.store.AppendJobLog(ctx, l); err != nil {
 		h.log.ErrorContext(ctx, "store job log", "job_id", l.JobID, "seq", l.Seq, "error", err)
 	}
@@ -334,6 +336,7 @@ func (h *Hub) handleResult(ctx context.Context, a *agentConn, res models.JobResu
 	case err != nil:
 		h.log.ErrorContext(ctx, "store job result", "job_id", res.JobID, "error", err)
 	default:
+		metrics.JobsFinished.WithLabelValues(string(res.Status)).Inc()
 		h.log.InfoContext(ctx, "job finished", "job_id", res.JobID, "agent", a.name,
 			"status", res.Status, "exit_code", res.ExitCode)
 		h.jobChanged(res.JobID)

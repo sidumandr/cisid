@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -714,4 +716,22 @@ func TestHubRequiresAgentToken(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_ = conn.CloseNow()
+}
+
+func TestHubCountsFinishedJobsAndAgents(t *testing.T) {
+	finished := make(chan struct{}, 1)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		s.On("FinishJob", mock.Anything, "agent-1", mock.Anything).Return(nil).Run(signal(finished)).Once()
+	})
+	counter := metrics.JobsFinished.WithLabelValues("success")
+	before := testutil.ToFloat64(counter)
+
+	a := f.connect(t, "agent-1", 0)
+	a.expectAssignment(t)
+	assert.Equal(t, 1, f.hub.Connected())
+	a.send(t, models.MsgJobResult, models.JobResult{JobID: 42, Status: models.JobStatusSuccess})
+	waitFor(t, finished, "result")
+
+	assert.Eventually(t, func() bool { return testutil.ToFloat64(counter) == before+1 }, testTimeout, 5*time.Millisecond)
 }

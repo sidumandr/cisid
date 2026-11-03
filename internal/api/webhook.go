@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sidumandr/cisid/internal/db"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -105,6 +106,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !validSignature(h.secret, body, r.Header.Get("X-Hub-Signature-256")) {
 		h.log.WarnContext(r.Context(), "rejected webhook with invalid signature",
 			"delivery", delivery, "remote_addr", r.RemoteAddr)
+		metrics.Webhooks.WithLabelValues("invalid_signature").Inc()
 		writeError(w, http.StatusUnauthorized, "invalid signature")
 		return
 	}
@@ -127,11 +129,13 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 
 	job, reason, err := jobFromPush(body, h.now())
 	if err != nil {
+		metrics.Webhooks.WithLabelValues("invalid_payload").Inc()
 		h.log.WarnContext(ctx, "rejected push payload", "delivery", delivery, "error", err)
 		writeError(w, http.StatusBadRequest, "invalid push payload")
 		return
 	}
 	if reason != "" {
+		metrics.Webhooks.WithLabelValues("ignored").Inc()
 		writeJSON(w, http.StatusOK, webhookResponse{Status: "ignored", Reason: reason})
 		return
 	}
@@ -139,16 +143,19 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 	sum := sha256.Sum256(body)
 	id, err := h.jobs.QueueJob(ctx, job, hex.EncodeToString(sum[:]), delivery)
 	if errors.Is(err, db.ErrDuplicateDelivery) {
+		metrics.Webhooks.WithLabelValues("duplicate").Inc()
 		h.log.WarnContext(ctx, "ignoring a payload that already queued a job", "delivery", delivery)
 		writeJSON(w, http.StatusOK, webhookResponse{Status: "ignored", Reason: "duplicate delivery"})
 		return
 	}
 	if err != nil {
+		metrics.Webhooks.WithLabelValues("error").Inc()
 		h.log.ErrorContext(ctx, "queue job", "delivery", delivery, "repo", job.Repo, "error", err)
 		writeError(w, http.StatusInternalServerError, "could not queue job")
 		return
 	}
 
+	metrics.Webhooks.WithLabelValues("queued").Inc()
 	h.log.InfoContext(ctx, "job queued", "delivery", delivery, "job_id", id,
 		"repo", job.Repo, "branch", job.Branch, "commit", job.CommitSHA)
 	writeJSON(w, http.StatusAccepted, webhookResponse{Status: "queued", JobID: id})

@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/sidumandr/cisid/internal/metrics"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -218,4 +220,31 @@ func TestRouterRateLimitsWebhookAndAPI(t *testing.T) {
 	for range 5 {
 		assert.Equal(t, http.StatusOK, call(http.MethodGet, "/agent/ws"), "agents are not limited")
 	}
+}
+
+func TestRouterCountsRequestsByPattern(t *testing.T) {
+	f := newRouterFixture(t)
+	counter := metrics.HTTPRequests.WithLabelValues("GET /healthz", "GET", "200")
+	before := testutil.ToFloat64(counter)
+
+	f.do(http.MethodGet, "/healthz")
+	f.do(http.MethodGet, "/healthz")
+
+	assert.Equal(t, before+2, testutil.ToFloat64(counter))
+	assert.True(t, streaming("GET /api/jobs/{id}/logs/stream"))
+	assert.True(t, streaming("GET /agent/ws"))
+	assert.False(t, streaming("GET /api/jobs/{id}"))
+}
+
+func TestRouterServesMetrics(t *testing.T) {
+	h := NewRouter(Handlers{
+		Webhook: http.NotFoundHandler(), Agents: http.NotFoundHandler(), DB: &mockPinger{},
+		Metrics: metrics.Handler(),
+	}, slog.New(slog.DiscardHandler))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "cisid_http_requests_total")
+	assert.Contains(t, rec.Body.String(), "go_goroutines")
 }

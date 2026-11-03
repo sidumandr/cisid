@@ -657,3 +657,14 @@ func TestStoreQueueJobOncePerPayload(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 }
+
+func TestStoreCountJobsByStatus(t *testing.T) {
+	s, _ := newStore(t)
+	createJobs(t, s, 3)
+	_, err := s.ClaimJob(t.Context(), "agent-1", time.Minute)
+	require.NoError(t, err)
+
+	counts, err := s.CountJobsByStatus(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int{"pending": 2, "running": 1}, counts)
+}
