@@ -42,6 +42,9 @@ var (
 	ErrTimeout = errors.New("step timed out")
 	// ErrContainerWait is returned when the daemon cannot report the exit status.
 	ErrContainerWait = errors.New("container wait failed")
+	// ErrOutOfMemory is returned, with exit code 137, for a container killed
+	// for exceeding its memory limit.
+	ErrOutOfMemory = errors.New("out of memory")
 )
 
 // DockerClient is the subset of the Docker Engine API the runner uses.
@@ -57,6 +60,7 @@ type DockerClient interface {
 	VolumeRemove(ctx context.Context, id string, opts client.VolumeRemoveOptions) (client.VolumeRemoveResult, error)
 	NetworkCreate(ctx context.Context, name string, opts client.NetworkCreateOptions) (client.NetworkCreateResult, error)
 	NetworkRemove(ctx context.Context, id string, opts client.NetworkRemoveOptions) (client.NetworkRemoveResult, error)
+	ContainerInspect(ctx context.Context, id string, opts client.ContainerInspectOptions) (client.ContainerInspectResult, error)
 }
 
 var _ DockerClient = (*client.Client)(nil)
@@ -122,11 +126,12 @@ type DockerRunner struct {
 	cli       DockerClient
 	stopGrace time.Duration
 	log       *slog.Logger
+	limits    Limits
 }
 
 // NewDockerRunner returns a runner that talks to the daemon through cli.
 func NewDockerRunner(cli DockerClient, opts ...Option) *DockerRunner {
-	r := &DockerRunner{cli: cli, stopGrace: DefaultStopGracePeriod, log: slog.Default()}
+	r := &DockerRunner{cli: cli, stopGrace: DefaultStopGracePeriod, log: slog.Default(), limits: Limits{Pids: DefaultPids}}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -201,7 +206,9 @@ func (r *DockerRunner) Start(ctx context.Context, step Step) (*Execution, error)
 		return nil, err
 	}
 
-	created, err := r.cli.ContainerCreate(ctx, createOptions(step))
+	opts := createOptions(step)
+	r.limits.apply(opts.HostConfig)
+	created, err := r.cli.ContainerCreate(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("create container for %s: %w", step.Image, err)
 	}
@@ -263,7 +270,10 @@ func (r *DockerRunner) supervise(ctx context.Context, exec *Execution, timeout t
 	defer cancelRun()
 
 	code, err := r.waitExit(runCtx, exec.ContainerID)
-	if err != nil {
+	if err == nil && code == 137 && r.oomKilled(ctx, exec.ContainerID) {
+		err = fmt.Errorf("%w: container %s exceeded its memory limit", ErrOutOfMemory, exec.ContainerID)
+	}
+	if err != nil && !errors.Is(err, ErrOutOfMemory) {
 		code = -1
 		switch {
 		case ctx.Err() != nil:
@@ -273,7 +283,7 @@ func (r *DockerRunner) supervise(ctx context.Context, exec *Execution, timeout t
 		}
 	}
 
-	if err != nil {
+	if code == -1 { // still running (or unknown): stop it
 		r.stop(ctx, exec.ContainerID)
 	}
 	// Keep the logs of a timed-out step; drop them only if the caller is gone.
@@ -354,6 +364,18 @@ func (r *DockerRunner) cleanup(ctx context.Context, id string, stopFirst bool) {
 	if _, err := r.cli.ContainerRemove(ctx, id, opts); err != nil {
 		r.log.WarnContext(ctx, "remove container", "container", id, "error", err)
 	}
+}
+
+// oomKilled reports whether the kernel killed the container for memory.
+func (r *DockerRunner) oomKilled(ctx context.Context, id string) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupSlack)
+	defer cancel()
+	res, err := r.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		r.log.WarnContext(ctx, "inspect container", "container", id, "error", err)
+		return false
+	}
+	return res.Container.State != nil && res.Container.State.OOMKilled
 }
 
 // RemoveVolume force-removes a named volume, e.g. a job workspace. Removing a
@@ -460,6 +482,8 @@ func (r *DockerRunner) StartService(ctx context.Context, svc Service) (string, e
 	for _, k := range slices.Sorted(maps.Keys(svc.Env)) {
 		env = append(env, k+"="+svc.Env[k])
 	}
+	hc := &container.HostConfig{NetworkMode: container.NetworkMode(svc.Network)}
+	r.limits.apply(hc)
 	created, err := r.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:  svc.Image,
@@ -467,7 +491,7 @@ func (r *DockerRunner) StartService(ctx context.Context, svc Service) (string, e
 			Env:    env,
 			Labels: map[string]string{LabelManaged: "true", LabelService: svc.Name},
 		},
-		HostConfig:       &container.HostConfig{NetworkMode: container.NetworkMode(svc.Network)},
+		HostConfig:       hc,
 		NetworkingConfig: endpoint(svc.Network, svc.Name),
 	})
 	if err != nil {

@@ -14,6 +14,9 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 | `CISID_AGENT_NAME` | hostname | Server'a bildirilen ad (`X-Cisid-Agent` başlığı ve `agent_hello`) |
 | `CISID_AGENT_TOKEN` | — | Server'ın istediği agent token'ı. `Authorization: Bearer` başlığıyla gönderilir. |
 | `CISID_SERVER_CA_FILE` | — | `wss://` için güvenilecek PEM CA dosyası (ör. kendinden imzalı ya da şirket içi CA) |
+| `CISID_STEP_MEMORY` | — | Her adım ve servis container'ı için bellek limiti (`512m`, `2g`). Swap kullanılamaz, limiti aşan container öldürülür. |
+| `CISID_STEP_CPUS` | — | Container başına CPU limiti (`2`, `0.5`) |
+| `CISID_STEP_PIDS` | `4096` | Container başına süreç limiti (fork bomb koruması) |
 | `DOCKER_HOST` vb. | Docker varsayılanı | Docker daemon bağlantısı (`client.FromEnv`) |
 
 `SIGINT` / `SIGTERM` graceful shutdown başlatır (aşağıya bak).
@@ -99,6 +102,14 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 3. `canceled` sonucu outbox'a yazılır, workspace volume silinir.
 4. Outbox en fazla `FlushTimeout` (10 sn) boyunca boşaltılır.
 5. Bağlantı `1000 Normal Closure` ile kapatılır.
+
+## Container izolasyonu
+
+- Bütün adım ve servis container'ları `no-new-privileges` ile çalışır: setuid binary'ler container'ın başladığı yetkilerin ötesine geçemez. Container'lar hiçbir zaman `--privileged` başlatılmaz.
+- `CISID_STEP_*` ile verilen limitler her container'a ayrı ayrı uygulanır. Süreç limiti varsayılan olarak 4096'dır.
+- Bellek limitini aşan bir adım çekirdek tarafından öldürülür. Job `failed` olur, `exit_code` 137 ve `error` `out of memory: …` olarak görünür.
+- Servisli job'lar kendi Docker ağında çalışır, diğer job'ların servislerine ulaşamaz.
+- Agent Docker daemon'a tam erişimle çalışır, bu yüzden agent makinesi güvenilmeyen kodun koştuğu yer olarak düşünülmeli. Her agent'ı ayrı ve yalıtılmış bir makinede ya da VM'de çalıştırın.
 
 ## Kimlik doğrulama ve TLS
 

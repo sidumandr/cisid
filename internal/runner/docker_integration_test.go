@@ -88,3 +88,17 @@ PGPASSWORD=test psql -h db -U postgres -tAc 'select 40 + 2'`},
 	require.Equal(t, 0, code, "stderr: %s", stderr.String())
 	assert.Equal(t, "42\n", stdout.String(), "the step reaches the service by name")
 }
+
+func TestDockerIntegrationMemoryLimit(t *testing.T) {
+	r := newDockerRunner(t)
+	limited := NewDockerRunner(r.cli, WithStopGracePeriod(time.Second), WithLimits(Limits{MemoryBytes: 32 << 20, Pids: 64}))
+
+	code, err := limited.Run(t.Context(), Step{
+		Image:   "alpine:3.22",
+		Cmd:     []string{"tail", "/dev/zero"}, // reads forever, buffering the "line"
+		Timeout: time.Minute,
+	}, &bytes.Buffer{}, &bytes.Buffer{})
+
+	assert.Equal(t, 137, code)
+	require.ErrorIs(t, err, ErrOutOfMemory)
+}

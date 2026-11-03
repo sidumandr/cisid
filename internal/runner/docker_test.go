@@ -76,6 +76,11 @@ func (m *mockDocker) VolumeRemove(ctx context.Context, id string, opts client.Vo
 	return args.Get(0).(client.VolumeRemoveResult), args.Error(1)
 }
 
+func (m *mockDocker) ContainerInspect(ctx context.Context, id string, opts client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	args := m.Called(ctx, id, opts)
+	return args.Get(0).(client.ContainerInspectResult), args.Error(1)
+}
+
 func (m *mockDocker) NetworkCreate(ctx context.Context, name string, opts client.NetworkCreateOptions) (client.NetworkCreateResult, error) {
 	args := m.Called(ctx, name, opts)
 	return args.Get(0).(client.NetworkCreateResult), args.Error(1)
@@ -220,6 +225,8 @@ func TestRunHappyPath(t *testing.T) {
 				{Type: mount.TypeBind, Source: "/srv/cisid/src", Target: "/workspace"},
 				{Type: mount.TypeVolume, Source: "cisid-cache", Target: "/cache", ReadOnly: true},
 			},
+			Resources:   container.Resources{PidsLimit: ptr(int64(DefaultPids))},
+			SecurityOpt: []string{"no-new-privileges:true"},
 		},
 	}).Return(client.ContainerCreateResult{ID: testContainerID}, nil).Once()
 	m.On("ContainerStart", mock.Anything, testContainerID, client.ContainerStartOptions{}).
@@ -574,7 +581,11 @@ func TestStartService(t *testing.T) {
 			Env:    []string{"POSTGRES_PASSWORD=test"},
 			Labels: map[string]string{LabelManaged: "true", LabelService: "db"},
 		},
-		HostConfig: &container.HostConfig{NetworkMode: "cisid-net"},
+		HostConfig: &container.HostConfig{
+			NetworkMode: "cisid-net",
+			Resources:   container.Resources{PidsLimit: ptr(int64(DefaultPids))},
+			SecurityOpt: []string{"no-new-privileges:true"},
+		},
 		NetworkingConfig: &network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{"cisid-net": {Aliases: []string{"db"}}},
 		},
@@ -603,4 +614,77 @@ func TestStepOnNetwork(t *testing.T) {
 	opts = createOptions(Step{Image: "alpine:3.22"})
 	assert.Empty(t, opts.HostConfig.NetworkMode)
 	assert.Nil(t, opts.NetworkingConfig)
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func TestLimitsApply(t *testing.T) {
+	m := &mockDocker{}
+	m.On("ImagePull", mock.Anything, testImage, client.ImagePullOptions{}).Return(&fakePull{}, nil).Once()
+	m.On("ContainerCreate", mock.Anything, mock.MatchedBy(func(o client.ContainerCreateOptions) bool {
+		r := o.HostConfig.Resources
+		return r.Memory == 512<<20 && r.MemorySwap == 512<<20 && r.NanoCPUs == 1_500_000_000 &&
+			r.PidsLimit != nil && *r.PidsLimit == 256
+	})).Return(client.ContainerCreateResult{ID: testContainerID}, nil).Once()
+	m.On("ContainerStart", mock.Anything, testContainerID, client.ContainerStartOptions{}).
+		Return(client.ContainerStartResult{}, nil).Once()
+	m.On("ContainerLogs", mock.Anything, testContainerID, logsOpts).Return(logsOf(), nil).Once()
+	m.On("ContainerWait", mock.Anything, testContainerID, waitOpts).Return(exited(0)).Once()
+	m.On("ContainerRemove", mock.Anything, testContainerID, removeOpts).Return(client.ContainerRemoveResult{}, nil).Once()
+
+	r := NewDockerRunner(m, WithLogger(slog.New(slog.DiscardHandler)),
+		WithLimits(Limits{MemoryBytes: 512 << 20, NanoCPUs: 1_500_000_000, Pids: 256}))
+	_, err := r.Run(t.Context(), simpleStep(), io.Discard, io.Discard)
+	require.NoError(t, err)
+	m.AssertExpectations(t)
+}
+
+func TestRunReportsOutOfMemory(t *testing.T) {
+	m := &mockDocker{}
+	expectPullCreateStart(m)
+	m.On("ContainerLogs", mock.Anything, testContainerID, logsOpts).Return(logsOf(), nil).Once()
+	m.On("ContainerWait", mock.Anything, testContainerID, waitOpts).Return(exited(137)).Once()
+	m.On("ContainerInspect", mock.Anything, testContainerID, client.ContainerInspectOptions{}).Return(
+		client.ContainerInspectResult{Container: container.InspectResponse{State: &container.State{OOMKilled: true}}}, nil).Once()
+	m.On("ContainerRemove", mock.Anything, testContainerID, removeOpts).Return(client.ContainerRemoveResult{}, nil).Once()
+
+	code, err := newTestRunner(m).Run(t.Context(), simpleStep(), io.Discard, io.Discard)
+
+	assert.Equal(t, 137, code)
+	require.ErrorIs(t, err, ErrOutOfMemory)
+	m.AssertExpectations(t)
+	m.AssertNotCalled(t, "ContainerStop", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestRunExit137WithoutOOMIsAPlainExitCode(t *testing.T) {
+	m := &mockDocker{}
+	expectPullCreateStart(m)
+	m.On("ContainerLogs", mock.Anything, testContainerID, logsOpts).Return(logsOf(), nil).Once()
+	m.On("ContainerWait", mock.Anything, testContainerID, waitOpts).Return(exited(137)).Once()
+	m.On("ContainerInspect", mock.Anything, testContainerID, client.ContainerInspectOptions{}).Return(
+		client.ContainerInspectResult{Container: container.InspectResponse{State: &container.State{}}}, nil).Once()
+	m.On("ContainerRemove", mock.Anything, testContainerID, removeOpts).Return(client.ContainerRemoveResult{}, nil).Once()
+
+	code, err := newTestRunner(m).Run(t.Context(), simpleStep(), io.Discard, io.Discard)
+
+	assert.Equal(t, 137, code)
+	assert.NoError(t, err, "a step that kills itself with SIGKILL just fails")
+}
+
+func TestParseMemoryAndCPUs(t *testing.T) {
+	for in, want := range map[string]int64{"": 0, "1024": 1024, "64k": 64 << 10, "512m": 512 << 20, "2G": 2 << 30} {
+		got, err := ParseMemory(in)
+		require.NoError(t, err, in)
+		assert.Equal(t, want, got, in)
+	}
+	for _, bad := range []string{"lots", "-1m", "0", "1.5g"} {
+		_, err := ParseMemory(bad)
+		assert.Error(t, err, bad)
+	}
+
+	n, err := ParseCPUs("1.5")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1_500_000_000), n)
+	_, err = ParseCPUs("none")
+	assert.Error(t, err)
 }
