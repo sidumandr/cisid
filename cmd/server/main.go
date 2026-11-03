@@ -42,6 +42,7 @@ const (
 	poolCloseTimeout  = 5 * time.Second
 	traceFlushTimeout = 5 * time.Second
 	deliveryRetention = 8 * 24 * time.Hour
+	expireBatch       = 100
 )
 
 func main() {
@@ -191,7 +192,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if reporter != nil {
 		g.Go(func() error { return reporter.Run(gctx) })
 	}
-	g.Go(func() error { return housekeep(gctx, store, log) })
+	g.Go(func() error { return housekeep(gctx, store, cfg.LogRetention, log) })
 	g.Go(func() error {
 		return broker.Listen(gctx, func(ctx context.Context) (*pgx.Conn, error) {
 			c, err := pool.Acquire(ctx)
@@ -233,9 +234,10 @@ func rateLimiter(cfg config.Config) *api.RateLimiter {
 	return api.NewRateLimiter(cfg.RateLimit, cfg.TrustProxy)
 }
 
-// housekeep prunes old webhook deliveries hourly. Records outlive the
-// 7-day replay window a little, so a replay inside it is always caught.
-func housekeep(ctx context.Context, store *db.Store, log *slog.Logger) error {
+// housekeep runs hourly. It prunes old webhook deliveries, which outlive
+// the 7-day replay window a little so a replay inside it is always caught,
+// and deletes the logs of jobs that finished logRetention ago (0 keeps them).
+func housekeep(ctx context.Context, store *db.Store, logRetention time.Duration, log *slog.Logger) error {
 	tick := time.NewTicker(time.Hour)
 	defer tick.Stop()
 	for {
@@ -245,6 +247,9 @@ func housekeep(ctx context.Context, store *db.Store, log *slog.Logger) error {
 		} else if n > 0 {
 			log.InfoContext(pctx, "pruned webhook deliveries", "count", n)
 		}
+		if logRetention > 0 {
+			expireLogs(pctx, store, logRetention, log)
+		}
 		cancel()
 
 		select {
@@ -252,6 +257,26 @@ func housekeep(ctx context.Context, store *db.Store, log *slog.Logger) error {
 			return nil
 		case <-tick.C:
 		}
+	}
+}
+
+// expireLogs deletes expired logs in batches, so no statement holds its
+// locks for long; whatever does not fit in ctx's time waits for the next run.
+func expireLogs(ctx context.Context, store *db.Store, retention time.Duration, log *slog.Logger) {
+	total := 0
+	for {
+		n, err := store.ExpireLogs(ctx, retention, expireBatch)
+		total += n
+		if err != nil {
+			log.WarnContext(ctx, "expire job logs", "error", err)
+			break
+		}
+		if n < expireBatch {
+			break
+		}
+	}
+	if total > 0 {
+		log.InfoContext(ctx, "deleted expired job logs", "jobs", total)
 	}
 }
 

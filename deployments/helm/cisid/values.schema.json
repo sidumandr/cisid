@@ -112,6 +112,10 @@
           "type": "string",
           "pattern": "^$|^https?://"
         },
+        "logRetention": {
+          "type": "string",
+          "pattern": "^(0|[0-9]+d|([0-9]+([.][0-9]+)?(ns|us|µs|ms|s|m|h))+)$"
+        },
         "shutdownTimeout": {
           "type": "string",
           "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"

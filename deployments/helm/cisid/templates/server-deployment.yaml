@@ -68,6 +68,8 @@ spec:
               value: {{ .Values.server.rateLimit | quote }}
             - name: CISID_TRUST_PROXY
               value: {{ include "cisid.trustProxy" . | quote }}
+            - name: CISID_LOG_RETENTION
+              value: {{ .Values.server.logRetention | quote }}
             {{- with .Values.server.githubAPIURL }}
             - name: CISID_GITHUB_API_URL
               value: {{ . | quote }}

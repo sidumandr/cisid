@@ -42,7 +42,25 @@ func TestLoadDefaults(t *testing.T) {
 		LogLevel:        slog.LevelInfo,
 		GitHubAPIURL:    "https://api.github.com",
 		RateLimit:       10,
+		LogRetention:    90 * 24 * time.Hour,
 	}, cfg)
+}
+
+func TestLoadLogRetention(t *testing.T) {
+	for v, want := range map[string]time.Duration{
+		"30d": 30 * 24 * time.Hour,
+		"36h": 36 * time.Hour,
+		"0":   0,
+		"0d":  0,
+	} {
+		cfg, err := Load(env(with(map[string]string{"CISID_LOG_RETENTION": v})))
+		require.NoError(t, err, v)
+		assert.Equal(t, want, cfg.LogRetention, v)
+	}
+	for _, v := range []string{"-1d", "-5h", "ninety", "1.5d"} {
+		_, err := Load(env(with(map[string]string{"CISID_LOG_RETENTION": v})))
+		assert.ErrorIs(t, err, ErrInvalidConfig, v)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {

@@ -55,6 +55,8 @@ type Job struct {
 	FailedStep *int       `json:"failed_step,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	// LogsExpiredAt is when the logs were deleted after the retention period.
+	LogsExpiredAt *time.Time `json:"logs_expired_at,omitempty"`
 }
 
 // SecretInfo describes a repository secret without its value.

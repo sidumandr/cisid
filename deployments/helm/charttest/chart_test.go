@@ -54,6 +54,7 @@ func TestDefaultInstall(t *testing.T) {
 	assert.Equal(t, "postgres://cisid:$(CISID_PG_PASSWORD)@ci-cisid-postgresql:5432/cisid?sslmode=disable",
 		env(c, "CISID_DATABASE_URL").Value)
 	assert.Equal(t, "false", env(c, "CISID_TRUST_PROXY").Value, "no proxy in front without an ingress")
+	assert.Equal(t, "90d", env(c, "CISID_LOG_RETENTION").Value)
 	assert.Nil(t, env(c, "CISID_PUBLIC_URL"))
 	assert.Nil(t, env(c, "CISID_TLS_CERT_FILE"))
 	assert.Nil(t, env(c, "OTEL_EXPORTER_OTLP_ENDPOINT"))
@@ -177,6 +178,7 @@ func TestSchemaRejectsMistakes(t *testing.T) {
 		"unknown mode":     with(required(), "agent.docker.mode", "podman"),
 		"bad log level":    with(required(), "server.logLevel", "verbose"),
 		"bad duration":     with(required(), "server.shutdownTimeout", "15"),
+		"bad retention":    with(required(), "server.logRetention", "3 months"),
 		"negative limit":   with(required(), "server.rateLimit", -1),
 		"wrong URL scheme": with(required(), "agent.serverURL", "http://ci.example.com/agent/ws"),
 	} {

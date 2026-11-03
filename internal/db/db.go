@@ -51,7 +51,7 @@ const CancelReason = "canceled by request"
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at, step_names,
-	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent`
+	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent, logs_expired_at`
 
 // leaseUntil is the SQL expression for a lease of $N seconds from now,
 // measured on the database clock so servers need not agree on the time.
@@ -132,6 +132,29 @@ func (s *Store) PruneDeliveries(ctx context.Context, age time.Duration) (int, er
 	tag, err := s.pool.Exec(ctx, "DELETE FROM webhook_deliveries WHERE received_at < now() - make_interval(secs => $1)", age.Seconds())
 	if err != nil {
 		return 0, fmt.Errorf("prune webhook deliveries: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// ExpireLogs deletes the logs of up to batch jobs that finished more than
+// age ago and returns how many jobs it expired. The jobs themselves stay,
+// marked with logs_expired_at.
+func (s *Store) ExpireLogs(ctx context.Context, age time.Duration, batch int) (int, error) {
+	const q = `
+		WITH expired AS (
+			SELECT id FROM jobs
+			WHERE finished_at < now() - make_interval(secs => $1) AND logs_expired_at IS NULL
+			ORDER BY finished_at
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		), deleted AS (
+			DELETE FROM job_logs WHERE job_id IN (SELECT id FROM expired)
+		)
+		UPDATE jobs SET logs_expired_at = now() WHERE id IN (SELECT id FROM expired)`
+
+	tag, err := s.pool.Exec(ctx, q, age.Seconds(), batch)
+	if err != nil {
+		return 0, fmt.Errorf("expire job logs: %w", err)
 	}
 	return int(tag.RowsAffected()), nil
 }
@@ -588,6 +611,6 @@ func scanJob(row pgx.Row) (models.Job, error) {
 	var j models.Job
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
 		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt,
-		&j.Matrix, &j.ParentID, &j.TraceParent)
+		&j.Matrix, &j.ParentID, &j.TraceParent, &j.LogsExpiredAt)
 	return j, err
 }

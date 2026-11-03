@@ -207,7 +207,12 @@ function renderJob(id) {
     showJob(j);
     if (FINISHED.has(j.status)) {
       es.close();
-      if (sections.size === 0) steps.replaceChildren(el("div", { class: "card notice" }, "No output."));
+      if (sections.size === 0) {
+        const note = j.logs_expired_at
+          ? `Logs were deleted on ${new Date(j.logs_expired_at).toLocaleDateString()} after the retention period.`
+          : "No output.";
+        steps.replaceChildren(el("div", { class: "card notice" }, note));
+      }
     }
   });
   es.addEventListener("log", (e) => {

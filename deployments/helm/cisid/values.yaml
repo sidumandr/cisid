@@ -50,6 +50,8 @@ server:
   trustProxy: null
   # The GitHub Enterprise Server API, e.g. https://ghe.example.com/api/v3.
   githubAPIURL: ""
+  # How long finished jobs keep their logs, e.g. 30d or 72h; 0 keeps them.
+  logRetention: 90d
   # How long shutdown waits for in-flight requests.
   shutdownTimeout: 15s
   # Keeps serving this long after the pod is told to stop, while the

@@ -36,11 +36,12 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
   "exit_code": 1,
   "failed_step": 1,
   "error": "",
-  "finished_at": "2026-11-03T10:45:31Z"
+  "finished_at": "2026-11-03T10:45:31Z",
+  "logs_expired_at": "2027-02-01T09:00:00Z"
 }
 ```
 
-`status`: `pending`, `running`, `success`, `failed`, `canceled`. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)).
+`status`: `pending`, `running`, `success`, `failed`, `canceled`. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)). `logs_expired_at` varsa job'un logları saklama süresi dolduğu için o tarihte silinmiştir (`CISID_LOG_RETENTION`, [server.md](server.md)); log uç noktaları boş döner.
 
 ### Log parçası
 

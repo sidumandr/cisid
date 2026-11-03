@@ -294,6 +294,48 @@ func TestStoreJobLogs(t *testing.T) {
 	assert.Error(t, err, "logs for unknown jobs are rejected")
 }
 
+func TestStoreExpireLogs(t *testing.T) {
+	s, pool := newStore(t)
+	ctx := t.Context()
+	// Two finished long ago, one recently, one still pending.
+	ids := createJobs(t, s, 4)
+	for _, id := range ids {
+		require.NoError(t, s.AppendJobLog(ctx, models.JobLog{JobID: id, Seq: 1, Stream: models.StreamStdout, Data: "line\n"}))
+	}
+	finish := func(id int64, ago string) {
+		_, err := pool.Exec(ctx, "UPDATE jobs SET status = 'success', finished_at = now() - $2::interval WHERE id = $1", id, ago)
+		require.NoError(t, err)
+	}
+	finish(ids[0], "100 days")
+	finish(ids[1], "95 days")
+	finish(ids[2], "1 day")
+
+	const retention = 90 * 24 * time.Hour
+	n, err := s.ExpireLogs(ctx, retention, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "at most a batch")
+	n, err = s.ExpireLogs(ctx, retention, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "the rest")
+	n, err = s.ExpireLogs(ctx, retention, 10)
+	require.NoError(t, err)
+	assert.Zero(t, n, "nothing left")
+
+	for i, id := range ids {
+		logs, err := s.JobLogs(ctx, id)
+		require.NoError(t, err)
+		job, err := s.GetJob(ctx, id)
+		require.NoError(t, err)
+		if i < 2 {
+			assert.Empty(t, logs, "job %d", i)
+			assert.NotNil(t, job.LogsExpiredAt, "job %d is marked", i)
+		} else {
+			assert.Len(t, logs, 1, "job %d keeps its logs", i)
+			assert.Nil(t, job.LogsExpiredAt, "job %d", i)
+		}
+	}
+}
+
 func TestStoreClaimJobSetsLease(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()

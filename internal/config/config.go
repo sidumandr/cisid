@@ -36,7 +36,11 @@ type Config struct {
 	TLSKeyFile      string        // CISID_TLS_KEY_FILE
 	RateLimit       float64       // CISID_RATE_LIMIT, requests per second per client, default 10, 0 disables
 	TrustProxy      bool          // CISID_TRUST_PROXY, take the client from X-Forwarded-For
+	LogRetention    time.Duration // CISID_LOG_RETENTION, how long finished jobs keep their logs, default 90 days, 0 forever
 }
+
+// defaultLogRetention matches GitHub Actions' default.
+const defaultLogRetention = 90 * 24 * time.Hour
 
 // Load reads the configuration through getenv (normally os.Getenv) and
 // reports every problem at once.
@@ -133,6 +137,15 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	cfg.LogRetention = defaultLogRetention
+	if v := getenv("CISID_LOG_RETENTION"); v != "" {
+		d, err := parseRetention(v)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("CISID_LOG_RETENTION: %w", err))
+		}
+		cfg.LogRetention = d
+	}
+
 	if v := getenv("CISID_LOG_LEVEL"); v != "" {
 		if err := cfg.LogLevel.UnmarshalText([]byte(v)); err != nil {
 			problems = append(problems, fmt.Errorf("CISID_LOG_LEVEL: %w", err))
@@ -143,6 +156,28 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidConfig, errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+// parseRetention reads a duration such as "90d" or "36h"; "0" means forever.
+func parseRetention(v string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(v, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n < 0 {
+			return 0, fmt.Errorf("%q is not a number of days", v)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("parse %q: %w", v, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("%q must not be negative", v)
+	}
+	return d, nil
 }
 
 // LogValue implements slog.LogValuer so secrets never reach the logs.
@@ -165,5 +200,6 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("tls", c.TLSCertFile != ""),
 		slog.Float64("rate_limit", c.RateLimit),
 		slog.Bool("trust_proxy", c.TrustProxy),
+		slog.Duration("log_retention", c.LogRetention),
 	)
 }

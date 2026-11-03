@@ -22,6 +22,7 @@ services:
       CISID_SECRET_KEY: ${CISID_SECRET_KEY:-}
       CISID_GITHUB_TOKEN: ${CISID_GITHUB_TOKEN:-}
       CISID_PUBLIC_URL: ${CISID_PUBLIC_URL:-}
+      CISID_LOG_RETENTION: ${CISID_LOG_RETENTION:-}
       # Tracing is off unless a collector is given; see docs/tracing.md.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     ports:

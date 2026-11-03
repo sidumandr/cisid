@@ -67,6 +67,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
 | `server.tls.secretName` | — | Server için HTTPS, agent'lar için `wss://` |
+| `server.logRetention` | `90d` | Biten job'ların loglarının saklanma süresi, `0` sonsuza dek saklar |
 | `agent.replicaCount` | `1` | Agent sayısı. Her agent aynı anda bir job çalıştırır. |
 | `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Adım ve servis container'larının sınırları |
 | `agent.docker.mode` | `dind` | `dind` ya da `hostSocket` |
