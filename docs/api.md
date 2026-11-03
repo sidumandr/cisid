@@ -1,6 +1,6 @@
 # Job API
 
-Server, job'ları ve loglarını salt-okunur bir HTTP API üzerinden sunar (`internal/api/jobs.go`). Bütün yanıtlar JSON'dur, canlı log akışı ise [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) ile gelir.
+Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jobs.go`). Job'lar okunabilir, iptal edilebilir ve yeniden çalıştırılabilir. Bütün yanıtlar JSON'dur, canlı log akışı ise [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) ile gelir.
 
 > Okuma uç noktalarında kimlik doğrulama yok (Faz 4). Server'ı güvenilmeyen bir ağa açmadan önce önüne erişim kontrolü koyun. Değişiklik yapan uç noktalar token ister (aşağıya bak).
 

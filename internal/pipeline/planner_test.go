@@ -209,3 +209,22 @@ func TestDockerIntegrationClone(t *testing.T) {
 	require.Equal(t, 0, code, "stderr:\n%s", stderr.String())
 	assert.Equal(t, sha+" Initialize Go module\n", stdout.String())
 }
+
+func TestPlanSkipsStepsForOtherBranches(t *testing.T) {
+	configs := &fakeConfigs{data: []byte(`
+steps:
+  - {name: test, image: golang:1.27, commands: [go test ./...]}
+  - {name: deploy, image: alpine:3.22, commands: [./deploy.sh], when: {branch: main}}
+`)}
+	job := testJob() // pushed to feature/webhook
+
+	steps, err := Planner{Configs: configs}.Plan(t.Context(), job)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"clone", "test"}, []string{steps[0].Name, steps[1].Name})
+	assert.Len(t, steps, 2)
+
+	job.Branch = "main"
+	steps, err = Planner{Configs: configs}.Plan(t.Context(), job)
+	require.NoError(t, err)
+	assert.Len(t, steps, 3)
+}

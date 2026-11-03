@@ -31,7 +31,8 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Çok adımlı pipeline'lar, adımlar arası paylaşılan workspace volume.
 - [ ] Service container'ları (ör. test için PostgreSQL).
 - [ ] Secret yönetimi (şifreli saklama, env olarak enjekte, loglarda maskeleme).
-- [ ] Branch / event filtreleri, matrix build.
+- [x] Branch filtreleri (`when.branch`).
+- [ ] Matrix build.
 - [x] GitHub commit status raporlama ([docs/commit-status.md](docs/commit-status.md)).
 - [x] Job iptal / yeniden çalıştırma API'si (token korumalı).
 - [ ] Basit web arayüzü.

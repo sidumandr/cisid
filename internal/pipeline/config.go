@@ -41,6 +41,8 @@ var (
 //	    environment:
 //	      CGO_ENABLED: 0
 //	    timeout: 10m
+//	    when:
+//	      branch: [main, "release/*"]
 type Config struct {
 	Steps []Step
 }
@@ -53,6 +55,14 @@ type Step struct {
 	Commands    []string
 	Environment map[string]string
 	Timeout     time.Duration
+	// Branches limits the step to pushes to matching branches; nil runs
+	// it for every branch.
+	Branches *branchMatcher
+}
+
+// RunsOn reports whether the step runs for a push to branch.
+func (s Step) RunsOn(branch string) bool {
+	return s.Branches.Matches(branch)
 }
 
 type rawConfig struct {
@@ -65,6 +75,7 @@ type rawStep struct {
 	Commands    []string          `yaml:"commands"`
 	Environment map[string]string `yaml:"environment"`
 	Timeout     string            `yaml:"timeout"`
+	When        rawWhen           `yaml:"when"`
 }
 
 // ParseConfig parses and validates a .cisid.yml, reporting every problem
@@ -153,12 +164,22 @@ func ParseConfig(data []byte) (Config, error) {
 			}
 		}
 
+		var branches *branchMatcher
+		if rs.When.Branch != nil {
+			m, err := newBranchMatcher(rs.When.Branch)
+			if err != nil {
+				bad("when.branch: %w", err)
+			}
+			branches = m
+		}
+
 		cfg.Steps = append(cfg.Steps, Step{
 			Name:        rs.Name,
 			Image:       rs.Image,
 			Commands:    rs.Commands,
 			Environment: rs.Environment,
 			Timeout:     timeout,
+			Branches:    branches,
 		})
 	}
 

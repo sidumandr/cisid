@@ -118,3 +118,67 @@ func TestParseConfigLimits(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidConfig)
 	assert.Contains(t, err.Error(), "at most 50 steps")
 }
+
+func TestParseConfigWhenBranch(t *testing.T) {
+	cfg, err := ParseConfig([]byte(`
+steps:
+  - name: test
+    image: golang:1.27
+    commands: [go test ./...]
+  - name: deploy
+    image: alpine:3.22
+    commands: [./deploy.sh]
+    when:
+      branch: main
+  - name: release
+    image: alpine:3.22
+    commands: [./release.sh]
+    when:
+      branch: [main, "release/*", "hotfix/**"]
+`))
+	require.NoError(t, err)
+
+	runs := func(step int, branch string) bool { return cfg.Steps[step].RunsOn(branch) }
+	assert.True(t, runs(0, "anything/at/all"), "no when: every branch")
+	assert.True(t, runs(1, "main"))
+	assert.False(t, runs(1, "mainline"), "patterns match the whole name")
+	assert.True(t, runs(2, "release/1.0"))
+	assert.False(t, runs(2, "release/1.0/rc1"), "* stays within a segment")
+	assert.True(t, runs(2, "hotfix/a/b"), "** crosses segments")
+	assert.False(t, runs(2, "feature/x"))
+}
+
+func TestParseConfigWhenErrors(t *testing.T) {
+	for name, yml := range map[string]string{
+		"unknown condition": "steps:\n  - {name: a, image: x, commands: [true], when: {event: push}}\n",
+		"empty pattern":     "steps:\n  - {name: a, image: x, commands: [true], when: {branch: [\"\"]}}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseConfig([]byte(yml))
+			assert.ErrorIs(t, err, ErrInvalidConfig)
+		})
+	}
+}
+
+func TestBranchGlobs(t *testing.T) {
+	tests := []struct {
+		pattern, branch string
+		want            bool
+	}{
+		{"main", "main", true},
+		{"feature/*", "feature/login", true},
+		{"feature/*", "feature/a/b", false},
+		{"feature/**", "feature/a/b", true},
+		{"v?.x", "v1.x", true},
+		{"v?.x", "v10.x", false},
+		{"a.b", "axb", false},
+		{"*", "main", true},
+		{"*", "feature/x", false},
+		{"**", "feature/x", true},
+	}
+	for _, tt := range tests {
+		m, err := newBranchMatcher([]string{tt.pattern})
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, m.Matches(tt.branch), "%q vs %q", tt.pattern, tt.branch)
+	}
+}

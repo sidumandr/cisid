@@ -78,7 +78,9 @@ func (p Planner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, e
 		return nil, err
 	}
 	for _, s := range cfg.Steps {
-		steps = append(steps, userStep(job, s))
+		if s.RunsOn(job.Branch) {
+			steps = append(steps, userStep(job, s))
+		}
 	}
 	return steps, nil
 }
