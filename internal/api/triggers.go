@@ -27,6 +27,9 @@ type TriggerStore interface {
 	PutSchedule(ctx context.Context, s models.Schedule) error
 	DeleteSchedule(ctx context.Context, repo, name string) (bool, error)
 	Schedules(ctx context.Context, repo string) ([]models.Schedule, error)
+	PutWatch(ctx context.Context, w models.Watch) (bool, error)
+	DeleteWatch(ctx context.Context, repo, branch string) (bool, error)
+	Watches(ctx context.Context, repo string) ([]models.Watch, error)
 }
 
 var _ TriggerStore = (*db.Store)(nil)
@@ -39,27 +42,45 @@ var scheduleNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 //	GET    /api/repos/{owner}/{repo}/schedules         list the repository's schedules
 //	PUT    /api/repos/{owner}/{repo}/schedules/{name}  create or change a schedule (needs the write token)
 //	DELETE /api/repos/{owner}/{repo}/schedules/{name}  remove a schedule (needs the write token)
+//	GET    /api/repos/{owner}/{repo}/watches           list the branches polled for new commits
+//	POST   /api/repos/{owner}/{repo}/watches           poll a branch (needs the write token)
+//	DELETE /api/repos/{owner}/{repo}/watches/{branch}  stop polling a branch (needs the write token)
 type TriggersAPI struct {
-	store    TriggerStore
-	resolver trigger.Resolver
-	token    string
-	read     *ReadAccess
-	changed  func(jobID int64)
-	log      *slog.Logger
-	now      func() time.Time
+	store     TriggerStore
+	resolver  trigger.Resolver
+	token     string
+	read      *ReadAccess
+	changed   func(jobID int64)
+	log       *slog.Logger
+	now       func() time.Time
+	pollEvery time.Duration
+}
+
+// TriggersOption configures a TriggersAPI.
+type TriggersOption func(*TriggersAPI)
+
+// WithPolling says branches are polled every every; without it, watching a
+// branch is refused, as nothing would poll it.
+func WithPolling(every time.Duration) TriggersOption {
+	return func(a *TriggersAPI) { a.pollEvery = every }
 }
 
 // NewTriggersAPI returns a TriggersAPI. token is the write token; read
-// guards listing schedules; changed runs with each job it queues.
+// guards listing schedules and watches; changed runs with each job it
+// queues.
 func NewTriggersAPI(store TriggerStore, resolver trigger.Resolver, token string, read *ReadAccess,
-	changed func(jobID int64), log *slog.Logger) *TriggersAPI {
+	changed func(jobID int64), log *slog.Logger, opts ...TriggersOption) *TriggersAPI {
 	if changed == nil {
 		changed = func(int64) {}
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &TriggersAPI{store: store, resolver: resolver, token: token, read: read, changed: changed, log: log, now: time.Now}
+	a := &TriggersAPI{store: store, resolver: resolver, token: token, read: read, changed: changed, log: log, now: time.Now}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
 }
 
 func (a *TriggersAPI) register(mux *http.ServeMux) {
@@ -67,6 +88,9 @@ func (a *TriggersAPI) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/repos/{owner}/{repo}/schedules", a.read.wrapFunc(a.listSchedules))
 	mux.HandleFunc("PUT /api/repos/{owner}/{repo}/schedules/{name}", requireToken(a.token, a.putSchedule))
 	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/schedules/{name}", requireToken(a.token, a.deleteSchedule))
+	mux.HandleFunc("GET /api/repos/{owner}/{repo}/watches", a.read.wrapFunc(a.listWatches))
+	mux.HandleFunc("POST /api/repos/{owner}/{repo}/watches", requireToken(a.token, a.watch))
+	mux.HandleFunc("DELETE /api/repos/{owner}/{repo}/watches/{branch...}", requireToken(a.token, a.unwatch))
 }
 
 // validBranch accepts the branch names git hosts do, roughly.
@@ -94,18 +118,8 @@ func (a *TriggersAPI) build(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	job, err := trigger.BranchJob(ctx, a.resolver, repo, body.Branch, models.EventManual)
-	switch {
-	case errors.Is(err, forge.ErrNotFound):
-		writeError(w, http.StatusNotFound, "repository or branch not found")
-		return
-	case errors.Is(err, forge.ErrUnknownForge):
-		writeError(w, http.StatusNotFound, "the server is not configured for this repository's forge")
-		return
-	case errors.Is(err, forge.ErrTemporary):
-		writeError(w, http.StatusServiceUnavailable, "the forge is unavailable, try again")
-		return
-	case err != nil:
-		a.internalError(w, r, "resolve branch", err)
+	if err != nil {
+		a.resolveError(w, r, err)
 		return
 	}
 	job.TraceParent = telemetry.TraceParent(ctx)
@@ -191,6 +205,115 @@ func (a *TriggersAPI) deleteSchedule(w http.ResponseWriter, r *http.Request) {
 	case !found:
 		writeError(w, http.StatusNotFound, "schedule not found")
 	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// resolveError answers a failure to look a repository or branch up on its
+// forge.
+func (a *TriggersAPI) resolveError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, forge.ErrNotFound):
+		writeError(w, http.StatusNotFound, "repository or branch not found")
+	case errors.Is(err, forge.ErrUnknownForge):
+		writeError(w, http.StatusNotFound, "the server is not configured for this repository's forge")
+	case errors.Is(err, forge.ErrTemporary):
+		writeError(w, http.StatusServiceUnavailable, "the forge is unavailable, try again")
+	default:
+		a.internalError(w, r, "resolve branch", err)
+	}
+}
+
+func (a *TriggersAPI) listWatches(w http.ResponseWriter, r *http.Request) {
+	repo, ok := repoParam(w, r)
+	if !ok {
+		return
+	}
+	watches, err := a.store.Watches(r.Context(), repo)
+	if err != nil {
+		a.internalError(w, r, "list watches", err)
+		return
+	}
+	if watches == nil {
+		watches = []models.Watch{}
+	}
+	writeJSON(w, http.StatusOK, watches)
+}
+
+// watch starts polling a branch, the default branch when none is given,
+// and returns the watch: 201 when new, 200 when it was watched already.
+func (a *TriggersAPI) watch(w http.ResponseWriter, r *http.Request) {
+	repo, ok := repoParam(w, r)
+	if !ok {
+		return
+	}
+	if a.pollEvery <= 0 {
+		writeError(w, http.StatusConflict, "polling is off on this server (CISID_POLL_INTERVAL=0)")
+		return
+	}
+	var body struct {
+		Branch string `json:"branch"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); (err != nil && !errors.Is(err, io.EOF)) || !validBranch(body.Branch) {
+		writeError(w, http.StatusBadRequest, `body must be {"branch": "..."} with a valid branch, or empty`)
+		return
+	}
+
+	ctx := r.Context()
+	info, err := a.resolver.Repository(ctx, repo)
+	if err != nil {
+		a.resolveError(w, r, err)
+		return
+	}
+	branch := body.Branch
+	if branch == "" {
+		branch = info.DefaultBranch
+	}
+	if _, err := a.resolver.BranchHead(ctx, repo, branch); err != nil {
+		a.resolveError(w, r, err)
+		return
+	}
+
+	created, err := a.store.PutWatch(ctx, models.Watch{Repo: repo, Branch: branch, CloneURL: info.CloneURL})
+	if err != nil {
+		a.internalError(w, r, "store watch", err)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+		a.log.InfoContext(ctx, "branch watched", "repo", repo, "branch", branch, "every", a.pollEvery)
+	}
+	watches, err := a.store.Watches(ctx, repo)
+	if err != nil {
+		a.internalError(w, r, "read watch", err)
+		return
+	}
+	for _, wt := range watches {
+		if wt.Branch == branch {
+			writeJSON(w, status, wt)
+			return
+		}
+	}
+	a.internalError(w, r, "read watch", fmt.Errorf("watch of %s %s vanished", repo, branch))
+}
+
+func (a *TriggersAPI) unwatch(w http.ResponseWriter, r *http.Request) {
+	repo, ok := repoParam(w, r)
+	if !ok {
+		return
+	}
+	branch := r.PathValue("branch")
+	found, err := a.store.DeleteWatch(r.Context(), repo, branch)
+	switch {
+	case err != nil:
+		a.internalError(w, r, "delete watch", err)
+	case !found:
+		writeError(w, http.StatusNotFound, "branch not watched")
+	default:
+		a.log.InfoContext(r.Context(), "branch no longer watched", "repo", repo, "branch", branch)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

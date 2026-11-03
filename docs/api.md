@@ -68,6 +68,10 @@ Token yoksa ya da yanlışsa `401` döner. Health check'ler (`/healthz`, `/ready
 curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 ```
 
+## Polling
+
+Webhook'u server'a ulaşamayan sağlayıcılar için branch'ler yoklanabilir: `GET`, `POST /api/repos/{owner}/{repo}/watches` ve `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Ayrıntılar: [polling.md](polling.md).
+
 ## Elle ve zamanlanmış build'ler
 
 Bir branch'in son commit'i push beklemeden derlenebilir. Server commit'i ve clone adresini reponun sağlayıcısının API'sinden alır (özel repolar için sağlayıcının token'ı gerekir). Diğer sağlayıcıların repoları adreste önekiyle yazılır, ör. `/api/repos/gitea:office/app/builds` ya da `/api/repos/gitlab:group%2Fsub/project/builds` ([forges.md](forges.md#repo-adları)). Bu uç noktalar API token'ı ister; zamanlamaları listelemek okuma erişimi ister.

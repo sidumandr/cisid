@@ -36,6 +36,8 @@ CISID_PUBLIC_URL=https://ci.example.com
 CISID_GITEA_URL=https://git.example.com
 CISID_GITEA_TOKEN=gitea-erişim-token'ı
 CISID_GITEA_WEBHOOK_SECRET=uzun-rastgele-bir-değer
+# Webhook'u server'a ulaşamayan sağlayıcılar için (bkz. docs/polling.md):
+CISID_POLL_INTERVAL=1m
 ```
 
 `CISID_AGENT_TOKEN` zorunludur, eksikse compose başlamaz. Sağlayıcıların ayarları ([forges.md](forges.md)) ve diğerleri isteğe bağlıdır. Diğerleri isteğe bağlıdır, anlamları için [server.md](server.md) ve [secrets.md](secrets.md). Her komutta `-f` yazmamak için `.env`'e `COMPOSE_FILE=compose.stack.yaml` ekleyebilirsiniz.

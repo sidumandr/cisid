@@ -9,7 +9,7 @@ Server, job'ları izlemek ve yönetmek için bir web arayüzü sunar (`internal/
 | `/` | Son 200 job. Üstte durumu özetleyen tek cümle: kaç job çalışıyor, son 24 saatte kaçı kırıldı, en sonuncusu hangi adımda. Sekmeler (Tümü, Çalışanlar, Kırılanlar, Pull request'ler) sayılarıyla birlikte; repo, branch ya da commit ile filtre. 5 saniyede bir yenilenir. |
 | `/jobs/{id}` | Job'un durumu tek cümlede ("Failed at test with exit code 1 after 1m 48s."), tetikleyen olay, commit, agent, başlama zamanı ve süre. Altında adım şeridi ve seçilen adımın canlı logu. |
 | `/repos` | Son job'larda görünen repolar: son build'leri, durumları, build sayıları. |
-| `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları ve secret'ları, sekmelerde. |
+| `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları, yoklanan branch'leri ([polling](polling.md)) ve secret'ları, sekmelerde. Diğer sağlayıcıların repoları önekiyle açılır, ör. `/repos/gitea:office/app` ya da iç içe GitLab grupları için `/repos/gitlab:group%2Fsub/project`. |
 
 Diyaloglar: **Run build** (repo ve branch), API token'ı, okuma için oturum açma, yeni zamanlama, yeni secret ve silme onayları.
 

@@ -77,6 +77,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.replicaCount` | `1` | Server kopyası |
 | `server.giteaURL`, `server.forgejoURL` | — | Gitea ve Forgejo sunucularının adresi; verilince açılırlar |
 | `server.gitlabURL` | GitLab.com | Kendi GitLab kurulumunuzun adresi |
+| `server.pollInterval` | `1m` | İzlenen branch'lerin yoklanma aralığı; `0` polling'i kapatır ([polling](../../../docs/polling.md)) |
 | `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
 | `server.tls.secretName` | — | Server için HTTPS, agent'lar için `wss://` |

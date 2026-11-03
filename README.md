@@ -14,6 +14,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/secrets.md](docs/secrets.md): Şifreli repo secret'ları ve loglarda maskeleme
 - [docs/metrics.md](docs/metrics.md): Prometheus metrikleri
 - [docs/tracing.md](docs/tracing.md): OpenTelemetry trace'leri: webhook'tan adımlara tek trace
+- [docs/polling.md](docs/polling.md): Webhook'suz push build'leri: branch'leri yoklama
 - [docs/forges.md](docs/forges.md): GitHub, Gitea, Forgejo, GitLab ve Bitbucket kurulumu, repo adları ve özel repolar
 - [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının sağlayıcılarda commit status olarak gösterilmesi
 - [docs/webhook.md](docs/webhook.md): Webhook kurulumu ve davranışı
@@ -101,6 +102,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── secrets/     # AES-256-GCM ile şifreli secret'lar
 │   ├── status/      # Commit status raporlama
 │   ├── telemetry/   # OpenTelemetry trace kurulumu ve trace bağlamı taşıma
+│   ├── trigger/     # Elle, zamanlanmış ve yoklanan (polling) build'ler
 │   ├── web/         # Gömülü web arayüzü
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)

@@ -169,8 +169,14 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		agents.Wake()
 		jobChanged(id)
 	}
-	triggersAPI := api.NewTriggersAPI(store, forges, cfg.APIToken, read, queued, log)
+	triggersAPI := api.NewTriggersAPI(store, forges, cfg.APIToken, read, queued, log, api.WithPolling(cfg.PollInterval))
 	scheduler := trigger.NewScheduler(store, forges, trigger.WithLogger(log), trigger.WithQueued(queued))
+	var poller *trigger.Poller
+	if cfg.PollInterval > 0 {
+		poller = trigger.NewPoller(store, forges, cfg.PollInterval, trigger.WithPollLogger(log), trigger.WithPollQueued(queued))
+	} else {
+		log.InfoContext(ctx, "polling disabled: CISID_POLL_INTERVAL is 0")
+	}
 
 	srv := &http.Server{
 		Handler: api.NewRouter(api.Handlers{
@@ -215,6 +221,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	g.Go(func() error { return housekeep(gctx, store, cfg.LogRetention, log) })
 	g.Go(func() error { return scheduler.Run(gctx) })
+	if poller != nil {
+		g.Go(func() error { return poller.Run(gctx) })
+	}
 	g.Go(func() error {
 		return broker.Listen(gctx, func(ctx context.Context) (*pgx.Conn, error) {
 			c, err := pool.Acquire(ctx)

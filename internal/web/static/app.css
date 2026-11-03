@@ -315,6 +315,7 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
 .jobs-grid { grid-template-columns: minmax(0, 3.4fr) minmax(0, 2.6fr) minmax(88px, 0.9fr) minmax(0, 1fr) minmax(96px, 1fr); }
 .repos-grid { grid-template-columns: minmax(0, 3.4fr) minmax(0, 2.6fr) minmax(88px, 0.9fr) minmax(72px, 0.7fr) minmax(96px, 1fr); }
 .sched-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 64px; }
+.watch-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr) 64px; }
 .secret-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) minmax(0, 1fr) 64px; }
 
 .ident { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -335,6 +336,7 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
 .line1 .num { color: var(--faint); }
 .line2 { margin-top: 3px; color: var(--muted); font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .line2 .num { font-size: 13px; }
+.line2.failing { color: var(--pill-negative-ink); white-space: normal; }
 .dash { color: var(--faint); }
 
 /* ---------- status pills: a pale tint with ink of its own hue ---------- */
@@ -558,10 +560,11 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   }
   .col-time .line2 { margin-top: 0; }
   .wide-only { display: none; }
-  .sched-grid, .secret-grid { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .sched-grid, .watch-grid, .secret-grid { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .sched-grid > :not(:first-child):not(:last-child),
+  .watch-grid > :not(:first-child):not(:last-child),
   .secret-grid > :not(:first-child):not(:last-child) { grid-column: 1; text-align: left; justify-self: start; }
-  .sched-grid > :last-child, .secret-grid > :last-child { grid-column: 2; grid-row: 1; }
+  .sched-grid > :last-child, .watch-grid > :last-child, .secret-grid > :last-child { grid-column: 2; grid-row: 1; }
 
   .facts { grid-template-columns: minmax(0, 1fr); }
   .fact { display: flex; justify-content: space-between; gap: 16px; border-left: 0; padding: 10px 14px; }

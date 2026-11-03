@@ -93,6 +93,22 @@ type Schedule struct {
 	LastJobID *int64     `json:"last_job_id,omitempty"`
 }
 
+// Watch is a branch the server polls, building each new head commit.
+type Watch struct {
+	ID       int64  `json:"-"`
+	Repo     string `json:"repo"`
+	Branch   string `json:"branch"`
+	CloneURL string `json:"-"`
+	// LastSHA is the head last seen; empty until the first poll, which
+	// builds the head the branch has then.
+	LastSHA    string     `json:"last_sha,omitempty"`
+	LastPollAt *time.Time `json:"last_poll_at,omitempty"`
+	LastJobID  *int64     `json:"last_job_id,omitempty"`
+	// LastError is why the last poll failed, empty after a good one.
+	LastError string    `json:"last_error,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // SecretInfo describes a repository secret without its value.
 type SecretInfo struct {
 	Name      string    `json:"name"`

@@ -74,6 +74,9 @@ server:
   gitlabURL: ""
   # How long finished jobs keep their logs, e.g. 30d or 72h; 0 keeps them.
   logRetention: 90d
+  # How often watched branches are polled for new commits, e.g. 1m; 0
+  # turns polling off. For servers the forges' webhooks cannot reach.
+  pollInterval: 1m
   # How long shutdown waits for in-flight requests.
   shutdownTimeout: 15s
   # Keeps serving this long after the pod is told to stop, while the

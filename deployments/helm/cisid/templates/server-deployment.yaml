@@ -70,6 +70,8 @@ spec:
               value: {{ include "cisid.trustProxy" . | quote }}
             - name: CISID_LOG_RETENTION
               value: {{ .Values.server.logRetention | quote }}
+            - name: CISID_POLL_INTERVAL
+              value: {{ .Values.server.pollInterval | quote }}
             - name: CISID_BUILD_FORKS
               value: {{ .Values.server.buildForks | quote }}
             {{- range $env, $url := dict "CISID_GITHUB_API_URL" .Values.server.githubAPIURL "CISID_GITEA_URL" .Values.server.giteaURL "CISID_FORGEJO_URL" .Values.server.forgejoURL "CISID_GITLAB_URL" .Values.server.gitlabURL }}

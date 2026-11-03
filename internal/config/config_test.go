@@ -45,7 +45,23 @@ func TestLoadDefaults(t *testing.T) {
 		LogRetention:    90 * 24 * time.Hour,
 		GitLab:          Forge{URL: "https://gitlab.com"},
 		Bitbucket:       Forge{URL: "https://api.bitbucket.org/2.0"},
+		PollInterval:    time.Minute,
 	}, cfg)
+}
+
+func TestLoadPollInterval(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{"CISID_POLL_INTERVAL": "5m"})))
+	require.NoError(t, err)
+	assert.Equal(t, 5*time.Minute, cfg.PollInterval)
+
+	cfg, err = Load(env(with(map[string]string{"CISID_POLL_INTERVAL": "0"})))
+	require.NoError(t, err)
+	assert.Zero(t, cfg.PollInterval, "0 turns polling off")
+
+	_, err = Load(env(with(map[string]string{"CISID_POLL_INTERVAL": "1s"})))
+	assert.ErrorContains(t, err, "at least 10s")
+	_, err = Load(env(with(map[string]string{"CISID_POLL_INTERVAL": "often"})))
+	assert.ErrorContains(t, err, "CISID_POLL_INTERVAL")
 }
 
 func TestLoadWithoutWebhooks(t *testing.T) {

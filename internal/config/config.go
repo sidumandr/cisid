@@ -39,6 +39,7 @@ type Config struct {
 	TrustProxy      bool          // CISID_TRUST_PROXY, take the client from X-Forwarded-For
 	LogRetention    time.Duration // CISID_LOG_RETENTION, how long finished jobs keep their logs, default 90 days, 0 forever
 	BuildForks      bool          // CISID_BUILD_FORKS, build pull requests from forks (without secrets)
+	PollInterval    time.Duration // CISID_POLL_INTERVAL, how often watched branches are polled, default 1m, at least 10s, 0 turns polling off
 
 	// The other forges. Gitea and Forgejo are on when their URL is set;
 	// GitLab (GitLab.com by default) and Bitbucket Cloud always are, as
@@ -95,6 +96,12 @@ func loadForge(getenv func(string) string, prefix, defaultURL string, problems *
 	}
 	return f
 }
+
+// Polling bounds; see internal/trigger.
+const (
+	defaultPollInterval = time.Minute
+	minPollInterval     = 10 * time.Second
+)
 
 // defaultLogRetention matches GitHub Actions' default.
 const defaultLogRetention = 90 * 24 * time.Hour
@@ -215,6 +222,21 @@ func Load(getenv func(string) string) (Config, error) {
 		cfg.BuildForks = b
 	}
 
+	cfg.PollInterval = defaultPollInterval
+	if v := getenv("CISID_POLL_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case v == "0":
+			cfg.PollInterval = 0
+		case err != nil:
+			problems = append(problems, fmt.Errorf("CISID_POLL_INTERVAL: %w", err))
+		case d < minPollInterval:
+			problems = append(problems, fmt.Errorf("CISID_POLL_INTERVAL must be at least %s, or 0 to turn polling off", minPollInterval))
+		default:
+			cfg.PollInterval = d
+		}
+	}
+
 	cfg.LogRetention = defaultLogRetention
 	if v := getenv("CISID_LOG_RETENTION"); v != "" {
 		d, err := parseRetention(v)
@@ -286,5 +308,6 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("trust_proxy", c.TrustProxy),
 		slog.Duration("log_retention", c.LogRetention),
 		slog.Bool("build_forks", c.BuildForks),
+		slog.Duration("poll_interval", c.PollInterval),
 	)
 }

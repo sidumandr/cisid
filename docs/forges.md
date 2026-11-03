@@ -8,7 +8,7 @@ Her sağlayıcı için üç şey ayarlanabilir, hepsi isteğe bağlıdır:
 |---|---|
 | Adres | Gitea ve Forgejo'nun adresi verilince açılırlar. GitHub, GitLab.com ve Bitbucket Cloud her zaman açıktır. |
 | Token | Özel repoları okumak ve clone'lamak, rate limit'i yükseltmek ve commit status yazmak için. |
-| Webhook secret | Verilirse o sağlayıcının webhook adresi açılır: `/webhooks/<sağlayıcı>`. Verilmezse build'ler elle ya da zamanlamayla başlatılır. |
+| Webhook secret | Verilirse o sağlayıcının webhook adresi açılır: `/webhooks/<sağlayıcı>`. Verilmezse push'lar [polling](polling.md) ile, ya da elle ve zamanlanmış build'lerle derlenir. |
 
 ## Repo adları
 

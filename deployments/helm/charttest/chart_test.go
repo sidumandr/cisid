@@ -294,6 +294,7 @@ func TestSettingsReachTheProcesses(t *testing.T) {
 		"imagePullSecrets":           []any{map[string]any{"name": "regcred"}},
 		"agent.replicaCount":         3,
 		"server.preStopSleepSeconds": 0,
+		"server.pollInterval":        "5m",
 	} {
 		vals = with(vals, path, value)
 	}
@@ -306,6 +307,7 @@ func TestSettingsReachTheProcesses(t *testing.T) {
 	assert.Equal(t, "debug", env(c, "CISID_LOG_LEVEL").Value)
 	assert.Equal(t, "2.5", env(c, "CISID_RATE_LIMIT").Value)
 	assert.Equal(t, "https://ghe.example.com/api/v3", env(c, "CISID_GITHUB_API_URL").Value)
+	assert.Equal(t, "5m", env(c, "CISID_POLL_INTERVAL").Value)
 	assert.Equal(t, "Europe/Istanbul", env(c, "TZ").Value)
 	assert.Nil(t, c.Lifecycle, "no preStop sleep when set to 0")
 	assert.Equal(t, "regcred", spec.ImagePullSecrets[0].Name)

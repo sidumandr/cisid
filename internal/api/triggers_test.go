@@ -25,6 +25,38 @@ type memTriggers struct {
 	mu        sync.Mutex
 	jobs      []models.Job
 	schedules map[string]models.Schedule // "repo name"
+	watches   map[string]models.Watch    // "repo branch"
+}
+
+func (m *memTriggers) PutWatch(_ context.Context, w models.Watch) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.watches == nil {
+		m.watches = map[string]models.Watch{}
+	}
+	_, existed := m.watches[w.Repo+" "+w.Branch]
+	m.watches[w.Repo+" "+w.Branch] = w
+	return !existed, nil
+}
+
+func (m *memTriggers) DeleteWatch(_ context.Context, repo, branch string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.watches[repo+" "+branch]
+	delete(m.watches, repo+" "+branch)
+	return ok, nil
+}
+
+func (m *memTriggers) Watches(_ context.Context, repo string) ([]models.Watch, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []models.Watch
+	for _, w := range m.watches {
+		if w.Repo == repo {
+			out = append(out, w)
+		}
+	}
+	return out, nil
 }
 
 func (m *memTriggers) CreateJob(_ context.Context, job models.Job) (int64, error) {
@@ -84,8 +116,8 @@ func (r stubResolver) BranchHead(_ context.Context, _, branch string) (string, e
 	return headSHA, nil
 }
 
-func triggersRouter(store TriggerStore, resolver stubResolver, read *ReadAccess, changed func(int64)) http.Handler {
-	a := NewTriggersAPI(store, resolver, writeToken, read, changed, slog.New(slog.DiscardHandler))
+func triggersRouter(store TriggerStore, resolver stubResolver, read *ReadAccess, changed func(int64), opts ...TriggersOption) http.Handler {
+	a := NewTriggersAPI(store, resolver, writeToken, read, changed, slog.New(slog.DiscardHandler), opts...)
 	a.now = func() time.Time { return time.Date(2026, 11, 3, 10, 30, 0, 0, time.UTC) }
 	return NewRouter(Handlers{
 		Webhook:  http.NotFoundHandler(),
@@ -159,6 +191,44 @@ func TestManualBuildOfOtherForges(t *testing.T) {
 
 	unknown := triggersRouter(&memTriggers{}, stubResolver{err: forge.ErrUnknownForge}, nil, nil)
 	assert.Equal(t, http.StatusNotFound, call(unknown, http.MethodPost, "/api/repos/forgejo:office/app/builds", writeToken, "").Code)
+}
+
+func TestWatchesAPI(t *testing.T) {
+	store := &memTriggers{}
+	h := triggersRouter(store, stubResolver{}, nil, nil, WithPolling(time.Minute))
+	const base = "/api/repos/gitea:office/app/watches"
+
+	assert.Equal(t, http.StatusUnauthorized, call(h, http.MethodPost, base, "", `{"branch":"main"}`).Code, "needs the write token")
+
+	rec := call(h, http.MethodPost, base, writeToken, `{"branch":"release/1.0"}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	var got models.Watch
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "release/1.0", got.Branch, "the stored watch is returned")
+	assert.Equal(t, "https://github.com/gitea:office/app.git", store.watches["gitea:office/app release/1.0"].CloneURL,
+		"the clone URL comes from the forge")
+
+	rec = call(h, http.MethodPost, base, writeToken, "")
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.Contains(t, store.watches, "gitea:office/app main", "no branch: the default branch")
+	assert.Equal(t, http.StatusOK, call(h, http.MethodPost, base, writeToken, `{"branch":"main"}`).Code, "watching twice is fine")
+	assert.Equal(t, http.StatusNotFound, call(h, http.MethodPost, base, writeToken, `{"branch":"gone"}`).Code)
+	assert.Equal(t, http.StatusBadRequest, call(h, http.MethodPost, base, writeToken, `{"branch":"a b"}`).Code)
+
+	rec = call(h, http.MethodGet, base, "", "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	var list []models.Watch
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
+	assert.Len(t, list, 2)
+
+	assert.Equal(t, http.StatusNoContent, call(h, http.MethodDelete, base+"/release/1.0", writeToken, "").Code,
+		"branch names keep their slashes")
+	assert.Equal(t, http.StatusNotFound, call(h, http.MethodDelete, base+"/release/1.0", writeToken, "").Code)
+	assert.Equal(t, http.StatusUnauthorized, call(h, http.MethodDelete, base+"/main", "", "").Code)
+
+	off := triggersRouter(&memTriggers{}, stubResolver{}, nil, nil)
+	assert.Equal(t, http.StatusConflict, call(off, http.MethodPost, base, writeToken, `{"branch":"main"}`).Code,
+		"nothing would poll the branch")
 }
 
 func TestSchedulesAPI(t *testing.T) {

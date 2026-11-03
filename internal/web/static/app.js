@@ -792,6 +792,7 @@ function renderRepos() {
 const REPO_TABS = [
   { id: "builds", label: "Builds" },
   { id: "schedules", label: "Schedules" },
+  { id: "polling", label: "Polling" },
   { id: "secrets", label: "Secrets" },
 ];
 
@@ -822,6 +823,7 @@ function renderRepo(owner, name) {
     timer = null;
     if (tab === "builds") builds();
     else if (tab === "schedules") schedules();
+    else if (tab === "polling") polling();
     else secrets();
   }
 
@@ -906,6 +908,69 @@ function renderRepo(owner, name) {
       }
     }
     load();
+  }
+
+  // polling lists the branches the server polls for new commits, for a
+  // server the forge's webhooks cannot reach.
+  function polling() {
+    const add = el("button", { class: "btn small", type: "button" }, "Poll a branch");
+    const rows = el("div", { class: "table", role: "table", "aria-label": "Polled branches" });
+    body.replaceChildren(el("div", { class: "toolbar" },
+      el("span", { class: "muted small" }, "Each new commit on a polled branch is built as a push, without a webhook."), add), rows);
+    const head = () => el("div", { class: "tr th watch-grid", role: "row" },
+      el("span", { role: "columnheader" }, "Branch"), el("span", { role: "columnheader" }, "Last commit"),
+      el("span", { role: "columnheader" }, "Last poll"), el("span", { role: "columnheader" }, "Last build"),
+      el("span", { role: "columnheader" }, ""));
+
+    add.addEventListener("click", async () => {
+      const done = await openDialog({
+        title: "Poll a branch",
+        text: `Checks a branch of ${repo} for new commits and builds each one. The first poll builds the branch's current head.`,
+        fields: [{ name: "branch", label: "Branch", hint: "Empty polls the default branch." }],
+        submit: "Poll branch",
+        onSubmit: async (v) => {
+          const saved = await request("POST", `${base}/watches`, { body: { branch: v.branch.trim() }, token: true });
+          if (!saved) throw new Error("Polling a branch needs the API token.");
+        },
+      });
+      if (done) load();
+    });
+
+    async function remove(w) {
+      const ok = await openDialog({
+        title: `Stop polling ${w.branch}?`,
+        text: `New commits on ${w.branch} are no longer built without a webhook. Builds already started stay.`,
+        submit: "Stop polling",
+        danger: true,
+        onSubmit: async () => {
+          const done = await request("DELETE", `${base}/watches/${w.branch.split("/").map(encodeURIComponent).join("/")}`, { token: true });
+          if (!done) throw new Error("Stopping needs the API token.");
+        },
+      });
+      if (ok) load();
+    }
+
+    async function load() {
+      try {
+        const list = await getJSON(`${base}/watches`);
+        tabs.count("polling", list.length);
+        if (list.length === 0) {
+          rows.replaceChildren(note("No polled branches. Poll a branch when the forge's webhooks cannot reach this server."));
+          return;
+        }
+        rows.replaceChildren(head(), ...list.map((w) => el("div", { class: "tr watch-grid", role: "row" },
+          el("div", { role: "cell", class: "line1" }, el("span", { class: "name" }, w.branch)),
+          el("div", { role: "cell", class: "num" }, w.last_sha ? w.last_sha.slice(0, 7) : el("span", { class: "muted" }, "not polled yet")),
+          el("div", { role: "cell" }, el("div", { class: "num" }, w.last_poll_at ? ago(w.last_poll_at) : "-"),
+            w.last_error ? el("div", { class: "line2 failing" }, w.last_error) : null),
+          el("div", { role: "cell" }, w.last_job_id ? el("a", { class: "num", href: "/jobs/" + w.last_job_id }, "#" + w.last_job_id) : dash()),
+          el("div", { role: "cell", class: "right" }, el("button", { class: "text-action danger", type: "button", onclick: () => remove(w) }, "Stop")))));
+      } catch (err) {
+        rows.replaceChildren(errorNote(`Couldn't load polled branches: ${err.message}`, load));
+      }
+    }
+    load();
+    timer = setInterval(load, 10000);
   }
 
   function secrets() {
