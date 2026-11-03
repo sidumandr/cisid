@@ -500,7 +500,7 @@ func TestRunServesTLSToAuthenticatedAgents(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		require.NoError(t, err)
+		require.NoError(t, err, logs.String())
 	case <-time.After(2 * testTimeout):
 		t.Fatalf("server did not shut down; log:\n%s", logs.String())
 	}

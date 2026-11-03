@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -31,6 +32,9 @@ const (
 	defaultMinBackoff   = time.Second
 	defaultMaxBackoff   = time.Minute
 	defaultFlushTimeout = 10 * time.Second
+
+	dialTimeout         = 30 * time.Second
+	tlsHandshakeTimeout = 10 * time.Second
 )
 
 // ErrInvalidConfig is returned by New for an unusable Config.
@@ -79,6 +83,7 @@ type Agent struct {
 	cfg    Config
 	runner StepRunner
 	log    *slog.Logger
+	client *http.Client
 	out    *outbox
 	busy   atomic.Bool
 	// runningJob is the job accepted last whose result the server has not
@@ -118,7 +123,28 @@ func New(cfg Config, r StepRunner, log *slog.Logger) (*Agent, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Agent{cfg: cfg, runner: r, log: log, out: newOutbox(outboxSize), cancelLater: map[int64]bool{}}, nil
+	return &Agent{
+		cfg: cfg, runner: r, log: log, client: newHTTPClient(cfg.TLS),
+		out: newOutbox(outboxSize), cancelLater: map[int64]bool{},
+	}, nil
+}
+
+// newHTTPClient returns the client for WebSocket handshakes. Keep-alives
+// are off: a handshake either takes the connection over or fails, and a
+// pooled connection, e.g. one whose dial finished after it was abandoned,
+// would sit idle on the server and hold up its graceful shutdown.
+func newHTTPClient(tlsConfig *tls.Config) *http.Client {
+	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
+	t := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         dialer.DialContext,
+		TLSHandshakeTimeout: tlsHandshakeTimeout,
+		DisableKeepAlives:   true,
+	}
+	if tlsConfig != nil {
+		t.TLSClientConfig = tlsConfig.Clone()
+	}
+	return &http.Client{Transport: t}
 }
 
 // Run connects to the server and runs assigned jobs until ctx is canceled,
@@ -193,10 +219,7 @@ func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan
 	if a.cfg.Token != "" {
 		header.Set("Authorization", "Bearer "+a.cfg.Token)
 	}
-	opts := &websocket.DialOptions{HTTPHeader: header}
-	if a.cfg.TLS != nil {
-		opts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: a.cfg.TLS}}
-	}
+	opts := &websocket.DialOptions{HTTPHeader: header, HTTPClient: a.client}
 
 	conn, resp, err := websocket.Dial(ctx, a.cfg.ServerURL, opts)
 	if err != nil {

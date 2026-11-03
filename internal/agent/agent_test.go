@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -888,4 +890,46 @@ func TestAgentConnectsOverTLSWithPrivateCA(t *testing.T) {
 	require.Eventually(t, accepted.Load, testTimeout, 5*time.Millisecond, "TLS handshake with the private CA")
 	cancel()
 	<-done
+}
+
+// TestAgentLeavesNoConnectionBehind stops the agent while the server has
+// not answered its TLS handshake yet. If the dial still finishes, the
+// connection must be closed rather than pooled: the server would otherwise
+// see a connection that never sends a request and wait for it on shutdown.
+func TestAgentLeavesNoConnectionBehind(t *testing.T) {
+	ts := httptest.NewTLSServer(http.NotFoundHandler())
+	serverTLS := ts.TLS
+	roots := x509.NewCertPool()
+	roots.AddCert(ts.Certificate())
+	ts.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	a, err := New(Config{
+		ServerURL: "wss://" + ln.Addr().String() + "/agent/ws", Name: "test-agent",
+		TLS: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, MinBackoff: time.Hour,
+	}, &mockRunner{}, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = a.Run(ctx) }()
+
+	raw, err := ln.Accept()
+	require.NoError(t, err)
+	defer raw.Close()
+	cancel()
+	<-done
+
+	// Only now answer the handshake the stopped agent started.
+	conn := tls.Server(raw, serverTLS)
+	require.NoError(t, conn.SetDeadline(time.Now().Add(testTimeout)))
+	err = conn.Handshake()
+	if err == nil {
+		_, err = conn.Read(make([]byte, 1))
+	}
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, os.ErrDeadlineExceeded, "the agent kept a connection it no longer uses")
 }
