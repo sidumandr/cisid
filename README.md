@@ -9,6 +9,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [ROADMAP.md](ROADMAP.md): fazlar ve ilerleme
 - [CLAUDE.md](CLAUDE.md): kod ve commit kuralları
 - [docs/pipeline.md](docs/pipeline.md): `.cisid.yml` formatı ve adımların çalışma şekli
+- [docs/ui.md](docs/ui.md): Web arayüzü
 - [docs/api.md](docs/api.md): Job API ve canlı log akışı (SSE)
 - [docs/secrets.md](docs/secrets.md): Şifreli repo secret'ları ve loglarda maskeleme
 - [docs/commit-status.md](docs/commit-status.md): Job sonuçlarının GitHub'da commit status olarak gösterilmesi
@@ -85,6 +86,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── pipeline/    # .cisid.yml ayrıştırma, job → adımlar
 │   ├── secrets/     # AES-256-GCM ile şifreli secret'lar
 │   ├── status/      # GitHub commit status raporlama
+│   ├── web/         # Gömülü web arayüzü
 │   │   └── testdata/    # Örnek GitHub webhook payload'ları
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)

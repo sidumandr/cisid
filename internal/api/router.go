@@ -29,6 +29,7 @@ type Handlers struct {
 	Agents  http.Handler // agent WebSocket connections
 	Jobs    *JobsAPI     // job and log API; omitted when nil
 	Secrets *SecretsAPI  // repository secrets API; omitted when nil
+	UI      http.Handler // browser UI at /, /jobs/{id} and /ui/; omitted when nil
 	DB      Pinger       // readiness check
 }
 
@@ -38,6 +39,7 @@ type Handlers struct {
 //	GET  /agent/ws         agent WebSocket connections
 //	GET  /api/jobs/...     jobs and logs (see JobsAPI)
 //	     /api/repos/...    repository secrets (see SecretsAPI)
+//	GET  /, /jobs/{id}     browser UI
 //	GET  /healthz          liveness: the process is serving requests
 //	GET  /readyz           readiness: the database is reachable
 func NewRouter(h Handlers, log *slog.Logger) http.Handler {
@@ -49,6 +51,11 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	}
 	if h.Secrets != nil {
 		h.Secrets.register(mux)
+	}
+	if h.UI != nil {
+		mux.Handle("GET /{$}", h.UI)
+		mux.Handle("GET /jobs/{id}", h.UI)
+		mux.Handle("GET /ui/", h.UI)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, statusResponse{Status: "ok"})

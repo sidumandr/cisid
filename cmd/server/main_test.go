@@ -311,7 +311,7 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, "pending", sts[0].State)
 	last := sts[len(sts)-1]
 	assert.Equal(t, "cisid", last.Context)
-	assert.Equal(t, fmt.Sprintf("https://ci.example.com/api/jobs/%d", queued.JobID), last.TargetURL)
+	assert.Equal(t, fmt.Sprintf("https://ci.example.com/jobs/%d", queued.JobID), last.TargetURL)
 	assert.True(t, strings.HasPrefix(last.Description, "Passed in "), last.Description)
 
 	// The API serves the job and replays its logs as a finished stream.

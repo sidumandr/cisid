@@ -125,6 +125,20 @@ func TestRouterRoutes(t *testing.T) {
 		assert.False(t, f.agents)
 	})
 
+	t.Run("ui", func(t *testing.T) {
+		ui := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
+		h := NewRouter(Handlers{Webhook: http.NotFoundHandler(), Agents: http.NotFoundHandler(), UI: ui, DB: &mockPinger{}},
+			slog.New(slog.DiscardHandler))
+		for _, path := range []string{"/", "/jobs/7", "/ui/app.js"} {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			assert.Equal(t, http.StatusTeapot, rec.Code, path)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/elsewhere", nil))
+		assert.Equal(t, http.StatusNotFound, rec.Code)
+	})
+
 	t.Run("unknown path", func(t *testing.T) {
 		f := newRouterFixture(t)
 		assert.Equal(t, http.StatusNotFound, f.do(http.MethodGet, "/nope").Code)

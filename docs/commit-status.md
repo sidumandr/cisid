@@ -15,7 +15,7 @@ cisid her job'un durumunu pushlanan commit'e GitHub **commit status** olarak yaz
 | Değişken | Açıklama |
 |---|---|
 | `CISID_GITHUB_TOKEN` | Zorunlu. Token yoksa commit status kapalıdır. Fine-grained token'da **Commit statuses: Read and write** ve **Contents: Read-only** yetkileri gerekir. Classic token'da `repo:status` yeterlidir, `.cisid.yml` okumak için özel repolarda `repo` gerekir. |
-| `CISID_PUBLIC_URL` | İsteğe bağlı. Verilirse her status job'a bağlanır (`<url>/api/jobs/<id>`). |
+| `CISID_PUBLIC_URL` | İsteğe bağlı. Verilirse her status, web arayüzündeki job sayfasına bağlanır (`<url>/jobs/<id>`). |
 
 ## Güvenilirlik
 

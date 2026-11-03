@@ -29,6 +29,7 @@ import (
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/internal/status"
+	"github.com/sidumandr/cisid/internal/web"
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
@@ -127,6 +128,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Agents:  agents,
 			Jobs:    jobsAPI,
 			Secrets: api.NewSecretsAPI(vault, cfg.APIToken, log),
+			UI:      web.Handler(),
 			DB:      store,
 		}, log),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -184,7 +186,7 @@ func jobURL(publicURL string) func(int64) string {
 	if publicURL == "" {
 		return nil
 	}
-	return func(id int64) string { return fmt.Sprintf("%s/api/jobs/%d", publicURL, id) }
+	return func(id int64) string { return fmt.Sprintf("%s/jobs/%d", publicURL, id) }
 }
 
 // closePool closes the database pool, but gives up waiting after a few

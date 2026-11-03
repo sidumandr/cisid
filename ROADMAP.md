@@ -35,7 +35,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] Matrix build.
 - [x] GitHub commit status raporlama ([docs/commit-status.md](docs/commit-status.md)).
 - [x] Job iptal / yeniden çalıştırma API'si (token korumalı).
-- [ ] Basit web arayüzü.
+- [x] Basit web arayüzü: job listesi ve canlı loglu job sayfası ([docs/ui.md](docs/ui.md)).
 
 ## Faz 4 — Production
 
