@@ -10,7 +10,13 @@ Kubernetes 1.29 veya üstü gerekir: Docker-in-Docker, native sidecar olarak ça
 
 ## Önce: image'lar
 
-Image'lar henüz bir registry'de yayımlanmıyor. Proje kökünden derleyip kendi registry'nize gönderin:
+Etiketlenen her sürümde image'lar ve chart `ghcr.io/sidumandr` altına yayımlanır ([release.md](../../../docs/release.md)). Chart'ın varsayılan değerleri bu image'ları kullanır ve yayımlanan chart doğrudan kurulabilir:
+
+```bash
+helm install ci oci://ghcr.io/sidumandr/charts/cisid --version 0.1.0 --namespace ci
+```
+
+Henüz yayımlanmış bir sürüm yoksa ya da kendi değişikliklerinizi kullanacaksanız, image'ları proje kökünden derleyip kendi registry'nize gönderin:
 
 ```bash
 docker build --target server -t ghcr.io/<hesap>/cisid-server:0.1.0 .

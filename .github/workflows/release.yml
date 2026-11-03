@@ -1,0 +1,109 @@
+# Publishes a release when a version tag (v1.2.3) is pushed: the server and
+# agent images and the Helm chart to GitHub's container registry, and a
+# GitHub release with generated notes. See docs/release.md.
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: cisid
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+        env:
+          CISID_TEST_DATABASE_URL: postgres://postgres:cisid@localhost:5432/postgres?sslmode=disable
+          # The runner has Docker, so the tests against a real daemon run too.
+          CISID_DOCKER_TESTS: "1"
+      - name: chart tests
+        working-directory: deployments/helm/charttest
+        run: go test ./...
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [server, agent]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cisid-${{ matrix.target }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  chart:
+    needs: images
+    runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.package.outputs.file }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+      - id: package
+        name: package the chart at the tag's version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          helm package deployments/helm/cisid --version "$version" --app-version "$version"
+          echo "file=cisid-$version.tgz" >> "$GITHUB_OUTPUT"
+      - name: push to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "${{ steps.package.outputs.file }}" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chart
+          path: ${{ steps.package.outputs.file }}
+
+  release:
+    needs: chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: chart
+      - name: create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes "${{ needs.chart.outputs.package }}"
