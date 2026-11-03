@@ -32,6 +32,7 @@ type Store interface {
 	RequeueExpired(ctx context.Context) ([]int64, error)
 	AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error
 	CancelRequestedJobs(ctx context.Context, agents []string) ([]models.Job, error)
+	SetJobSteps(ctx context.Context, id int64, names []string) error
 	RequeueJob(ctx context.Context, id int64, agent string) error
 	RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error)
 	FinishJob(ctx context.Context, agent string, res models.JobResult) error
@@ -284,6 +285,14 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 		if err != nil {
 			h.failJob(ctx, a.name, job.ID, "plan job: "+err.Error())
 			continue
+		}
+
+		names := make([]string, len(steps))
+		for i, s := range steps {
+			names[i] = s.Name
+		}
+		if err := h.store.SetJobSteps(ctx, job.ID, names); err != nil {
+			h.log.WarnContext(ctx, "record job steps", "job_id", job.ID, "error", err)
 		}
 
 		if h.assign(a, models.JobAssignment{JobID: job.ID, Steps: steps}) {

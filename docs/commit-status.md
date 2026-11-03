@@ -7,10 +7,8 @@ cisid her job'un durumunu pushlanan commit'e GitHub **commit status** olarak yaz
 | `pending` | `pending` | Waiting for an agent |
 | `running` | `pending` | Running on worker-1 |
 | `success` | `success` | Passed in 1m23s |
-| `failed` | `failure` | Step 2 failed with exit code 1 · Clone failed with exit code 128 · Failed: no .cisid.yml in repository |
+| `failed` | `failure` | Step "test" failed with exit code 1 · Step "clone" failed with exit code 128 · Failed: no .cisid.yml in repository |
 | `canceled` | `error` | Canceled |
-
-Adım numaraları `.cisid.yml`'deki sıradır, clone adımı `0` sayılır.
 
 ## Kurulum
 

@@ -556,3 +556,14 @@ func TestStoreRerunJob(t *testing.T) {
 	_, err = s.RerunJob(ctx, id+100)
 	assert.ErrorIs(t, err, ErrJobNotFound)
 }
+
+func TestStoreSetJobSteps(t *testing.T) {
+	s, _ := newStore(t)
+	id := createJobs(t, s, 1)[0]
+
+	require.NoError(t, s.SetJobSteps(t.Context(), id, []string{"clone", "test"}))
+
+	got, err := s.GetJob(t.Context(), id)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"clone", "test"}, got.StepNames)
+}

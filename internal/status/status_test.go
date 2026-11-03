@@ -35,6 +35,8 @@ func TestDescribe(t *testing.T) {
 		{"success without times", models.Job{Status: models.JobStatusSuccess}, "success", "Passed"},
 		{"clone failed", models.Job{Status: models.JobStatusFailed, FailedStep: ptr(0), ExitCode: ptr(128)}, "failure", "Clone failed with exit code 128"},
 		{"step failed", models.Job{Status: models.JobStatusFailed, FailedStep: ptr(2), ExitCode: ptr(1)}, "failure", "Step 2 failed with exit code 1"},
+		{"named step failed", models.Job{Status: models.JobStatusFailed, FailedStep: ptr(1), ExitCode: ptr(2),
+			StepNames: []string{"clone", "test"}}, "failure", `Step "test" failed with exit code 2`},
 		{"runner error", models.Job{Status: models.JobStatusFailed, Error: "no .cisid.yml in repository"}, "failure", "Failed: no .cisid.yml in repository"},
 		{"canceled", models.Job{Status: models.JobStatusCanceled}, "error", "Canceled"},
 	}

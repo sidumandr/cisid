@@ -189,11 +189,14 @@ func failure(job models.Job) string {
 	if job.FailedStep == nil || job.ExitCode == nil {
 		return "Failed"
 	}
-	if *job.FailedStep == 0 {
+	step := *job.FailedStep
+	if step >= 0 && step < len(job.StepNames) {
+		return fmt.Sprintf("Step %q failed with exit code %d", job.StepNames[step], *job.ExitCode)
+	}
+	if step == 0 {
 		return fmt.Sprintf("Clone failed with exit code %d", *job.ExitCode)
 	}
-	// Step 0 is the clone, so step N is the Nth step of .cisid.yml.
-	return fmt.Sprintf("Step %d failed with exit code %d", *job.FailedStep, *job.ExitCode)
+	return fmt.Sprintf("Step %d failed with exit code %d", step, *job.ExitCode)
 }
 
 func duration(job models.Job) (time.Duration, bool) {

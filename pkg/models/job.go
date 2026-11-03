@@ -33,6 +33,8 @@ type Job struct {
 	Agent          string     `json:"agent,omitempty"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
 	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
+	// StepNames lists the planned steps; FailedStep and JobLog.Step index it.
+	StepNames []string `json:"steps,omitempty"`
 
 	// Set once the job has finished.
 	ExitCode   *int       `json:"exit_code,omitempty"`

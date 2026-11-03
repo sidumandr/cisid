@@ -56,6 +56,10 @@ func (m *mockStore) CancelRequestedJobs(ctx context.Context, agents []string) ([
 	return jobs, args.Error(1)
 }
 
+func (m *mockStore) SetJobSteps(ctx context.Context, id int64, names []string) error {
+	return m.Called(ctx, id, names).Error(0)
+}
+
 func (m *mockStore) AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error {
 	return m.Called(ctx, agent, id, lease).Error(0)
 }
@@ -136,6 +140,7 @@ func newFixture(t *testing.T, setup func(s *mockStore, p *mockPlanner), opts ...
 	f.store.On("RequeueExpired", mock.Anything).Return([]int64(nil), nil).Maybe()
 	f.store.On("AdoptJob", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	f.store.On("CancelRequestedJobs", mock.Anything, mock.Anything).Return([]models.Job(nil), nil).Maybe()
+	f.store.On("SetJobSteps", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	f.planner.On("Plan", mock.Anything, mock.Anything).Return(cloneSteps, nil).Maybe()
 
 	f.hub = New(f.store, f.planner, append([]Option{WithLogger(slog.New(slog.DiscardHandler)),

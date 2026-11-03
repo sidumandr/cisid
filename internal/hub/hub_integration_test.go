@@ -168,6 +168,7 @@ func TestIntegrationJobsRunEndToEnd(t *testing.T) {
 	ok := s.waitFinished(t, s.queue(t, sha1))
 	assert.Equal(t, models.JobStatusSuccess, ok.Status)
 	assert.Equal(t, "it-agent", ok.Agent)
+	assert.Equal(t, []string{"clone"}, ok.StepNames)
 	assert.Equal(t, 0, *ok.ExitCode)
 	assert.Nil(t, ok.FailedStep)
 
