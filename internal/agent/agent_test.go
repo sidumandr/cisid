@@ -66,9 +66,10 @@ type fakeServer struct {
 }
 
 type serverConn struct {
-	conn  *websocket.Conn
-	msgs  chan models.Message
-	hello models.AgentHello
+	conn   *websocket.Conn
+	msgs   chan models.Message
+	hello  models.AgentHello
+	closed chan websocket.StatusCode
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -86,13 +87,14 @@ func newFakeServer(t *testing.T) *fakeServer {
 		if !assert.NoError(t, err) {
 			return
 		}
-		sc := &serverConn{conn: conn, msgs: make(chan models.Message, 1000)}
+		sc := &serverConn{conn: conn, msgs: make(chan models.Message, 1000), closed: make(chan websocket.StatusCode, 1)}
 		fs.conns <- sc
 
 		defer close(sc.msgs)
 		for {
 			_, data, err := conn.Read(r.Context())
 			if err != nil {
+				sc.closed <- websocket.CloseStatus(err)
 				return
 			}
 			var msg models.Message
@@ -541,4 +543,20 @@ func TestAgentIgnoresUnknownAndMalformedMessages(t *testing.T) {
 	})
 	_, res := sc.collectJob(t, 13)
 	assert.Equal(t, models.JobStatusSuccess, res.Status)
+}
+
+func TestAgentClosesConnectionWhenServerDrains(t *testing.T) {
+	fs := newFakeServer(t)
+	startAgent(t, fs, &mockRunner{})
+	sc := fs.accept(t)
+
+	sc.send(t, models.MsgServerClosing, struct{}{})
+
+	select {
+	case code := <-sc.closed:
+		assert.Equal(t, websocket.StatusNormalClosure, code, "the agent closes cleanly")
+	case <-time.After(testTimeout):
+		t.Fatal("agent did not close the connection")
+	}
+	fs.accept(t) // and reconnects
 }

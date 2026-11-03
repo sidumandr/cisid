@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,9 @@ const (
 
 // ErrInvalidConfig is returned by New for an unusable Config.
 var ErrInvalidConfig = errors.New("invalid agent config")
+
+// errServerClosing ends a session the server asked to close.
+var errServerClosing = errors.New("server is shutting down")
 
 // StepRunner runs step containers. *runner.DockerRunner satisfies it.
 type StepRunner interface {
@@ -188,9 +192,14 @@ func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan
 		return true, err
 	}
 
+	// Closed by the reader when the server announces it is shutting down.
+	draining := make(chan struct{})
+	var drainOnce sync.Once
+	drain := func() { drainOnce.Do(func() { close(draining) }) }
+
 	g, gctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return a.writeLoop(gctx, conn) })
-	g.Go(func() error { return a.readLoop(gctx, conn, stopping, jobs) })
+	g.Go(func() error { return a.writeLoop(gctx, conn, draining) })
+	g.Go(func() error { return a.readLoop(gctx, conn, stopping, jobs, drain) })
 	err = g.Wait()
 
 	if ctx.Err() != nil {
@@ -200,11 +209,17 @@ func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan
 }
 
 // writeLoop is the only goroutine that writes to conn after the hello.
-func (a *Agent) writeLoop(ctx context.Context, conn *websocket.Conn) error {
+// When draining is closed it stops taking messages from the outbox and
+// closes the connection, so the server processes everything sent so far.
+func (a *Agent) writeLoop(ctx context.Context, conn *websocket.Conn, draining <-chan struct{}) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-draining:
+			a.log.InfoContext(ctx, "server is shutting down, closing connection")
+			_ = conn.Close(websocket.StatusNormalClosure, "server closing")
+			return errServerClosing
 		case msg := <-a.out.ch:
 			if msg.Type == models.MsgJobResult {
 				// From here on the result is on its way (or lost with the
@@ -223,7 +238,8 @@ func (a *Agent) writeLoop(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-func (a *Agent) readLoop(ctx context.Context, conn *websocket.Conn, stopping <-chan struct{}, jobs chan<- models.JobAssignment) error {
+func (a *Agent) readLoop(ctx context.Context, conn *websocket.Conn, stopping <-chan struct{},
+	jobs chan<- models.JobAssignment, drain func()) error {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -244,6 +260,9 @@ func (a *Agent) readLoop(ctx context.Context, conn *websocket.Conn, stopping <-c
 				continue
 			}
 			a.accept(ctx, stopping, jobs, job)
+		case models.MsgServerClosing:
+			// Keep reading: the close handshake needs a reader.
+			drain()
 		default:
 			a.log.DebugContext(ctx, "ignoring unknown message", "type", msg.Type)
 		}

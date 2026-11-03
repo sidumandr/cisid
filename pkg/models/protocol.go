@@ -19,6 +19,10 @@ const (
 	MsgJobLog MessageType = "job_log"
 	// MsgJobResult reports the final outcome of a job.
 	MsgJobResult MessageType = "job_result"
+	// MsgServerClosing tells an agent the server is shutting down. The agent
+	// stops sending and closes the connection itself, so every message it
+	// sent before is processed; the rest waits for the next connection.
+	MsgServerClosing MessageType = "server_closing"
 )
 
 // Message is the envelope for every WebSocket message.
