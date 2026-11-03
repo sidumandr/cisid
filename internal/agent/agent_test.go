@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +37,23 @@ func (m *mockRunner) Run(ctx context.Context, step runner.Step, stdout, stderr i
 
 func (m *mockRunner) RemoveVolume(ctx context.Context, name string) error {
 	return m.Called(ctx, name).Error(0)
+}
+
+func (m *mockRunner) CreateNetwork(ctx context.Context, name string) error {
+	return m.Called(ctx, name).Error(0)
+}
+
+func (m *mockRunner) RemoveNetwork(ctx context.Context, name string) error {
+	return m.Called(ctx, name).Error(0)
+}
+
+func (m *mockRunner) StartService(ctx context.Context, svc runner.Service) (string, error) {
+	args := m.Called(ctx, svc)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockRunner) StopService(ctx context.Context, id string) error {
+	return m.Called(ctx, id).Error(0)
 }
 
 // writeTo returns a mock Run hook that writes to the step's stdout/stderr.
@@ -724,4 +742,75 @@ func TestAgentMasksSecretsInLogs(t *testing.T) {
 	assert.Equal(t, "+ curl -H 'Authorization: ***' https://deploy\n", stderr.String())
 	assert.Equal(t, "token tail: dep_s3", stdout.String(), "a mere prefix is flushed as is when the step ends")
 	r.AssertExpectations(t)
+}
+
+func TestAgentStartsServicesOnAJobNetwork(t *testing.T) {
+	fs := newFakeServer(t)
+	r := &mockRunner{}
+	var (
+		mu    sync.Mutex
+		order []string
+		net   string
+	)
+	record := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, s)
+	}
+	r.On("CreateNetwork", mock.Anything, mock.MatchedBy(func(n string) bool { net = n; return strings.HasPrefix(n, "cisid-job-71-") })).
+		Run(func(mock.Arguments) { record("create network") }).Return(nil).Once()
+	r.On("StartService", mock.Anything, mock.MatchedBy(func(s runner.Service) bool {
+		return s.Name == "db" && s.Image == "postgres:18-alpine" && s.Network == net && s.Env["POSTGRES_PASSWORD"] == "test"
+	})).Run(func(mock.Arguments) { record("start db") }).Return("svc-db", nil).Once()
+	r.On("Run", mock.Anything, mock.MatchedBy(func(s runner.Step) bool { return s.Network == net }), mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) { record("run step") }).Return(0, nil).Once()
+	r.On("StopService", mock.MatchedBy(notCanceled), "svc-db").Run(func(mock.Arguments) { record("stop db") }).Return(nil).Once()
+	r.On("RemoveNetwork", mock.MatchedBy(notCanceled), mock.Anything).Run(func(mock.Arguments) { record("remove network") }).Return(nil).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Run(func(mock.Arguments) { record("remove volume") }).Return(nil).Once()
+
+	startAgent(t, fs, r)
+	sc := fs.accept(t)
+	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID:    71,
+		Steps:    []models.StepSpec{{Name: "test", Image: "golang:1.27", Commands: []string{"go test ./..."}}},
+		Services: []models.ServiceSpec{{Name: "db", Image: "postgres:18-alpine", Env: map[string]string{"POSTGRES_PASSWORD": "test"}}},
+	})
+
+	_, res := sc.collectJob(t, 71)
+	assert.Equal(t, models.JobStatusSuccess, res.Status)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"create network", "start db", "run step", "stop db", "remove network", "remove volume"}, order)
+	r.AssertExpectations(t)
+}
+
+func TestAgentFailsJobWhenServiceDoesNotStart(t *testing.T) {
+	fs := newFakeServer(t)
+	r := &mockRunner{}
+	r.On("CreateNetwork", mock.Anything, mock.Anything).Return(nil).Once()
+	r.On("StartService", mock.Anything, mock.MatchedBy(func(s runner.Service) bool { return s.Name == "db" })).Return("svc-db", nil).Once()
+	r.On("StartService", mock.Anything, mock.MatchedBy(func(s runner.Service) bool { return s.Name == "cache" })).
+		Return("", fmt.Errorf("%w: redis:nope: manifest unknown", runner.ErrImagePull)).Once()
+	r.On("StopService", mock.Anything, "svc-db").Return(nil).Once()
+	r.On("RemoveNetwork", mock.Anything, mock.Anything).Return(nil).Once()
+	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
+
+	startAgent(t, fs, r)
+	sc := fs.accept(t)
+	sc.send(t, models.MsgJobAssigned, models.JobAssignment{
+		JobID: 72,
+		Steps: []models.StepSpec{{Name: "test", Image: "golang:1.27", Commands: []string{"go test ./..."}}},
+		Services: []models.ServiceSpec{
+			{Name: "db", Image: "postgres:18-alpine"},
+			{Name: "cache", Image: "redis:nope"},
+		},
+	})
+
+	_, res := sc.collectJob(t, 72)
+	assert.Equal(t, models.JobResult{
+		JobID: 72, Status: models.JobStatusFailed, ExitCode: -1,
+		Error: "start service cache: image pull failed: redis:nope: manifest unknown",
+	}, res)
+	r.AssertExpectations(t) // the started service is cleaned up, no step ran
+	r.AssertNotCalled(t, "Run", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }

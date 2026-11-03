@@ -1,8 +1,18 @@
-# cisid builds itself. Tests that need PostgreSQL or Docker skip themselves here.
+# cisid builds itself: vet, then every test with the race detector, including
+# the PostgreSQL integration tests against a service container. Tests that
+# need Docker skip themselves here.
+services:
+  - name: postgres
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: cisid
+
 steps:
   - name: test
     image: golang:1.27
+    environment:
+      CISID_TEST_DATABASE_URL: postgres://postgres:cisid@postgres:5432/postgres?sslmode=disable
     commands:
       - go vet ./...
-      - go test ./...
+      - go test -race ./...
     timeout: 15m

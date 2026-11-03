@@ -110,7 +110,7 @@ func TestSecretsAPIRejectsBadInput(t *testing.T) {
 		want                       int
 	}{
 		{"bad name", http.MethodPut, base + "/BAD-NAME", `{"value":"x"}`, http.StatusBadRequest},
-		{"reserved name", http.MethodPut, base + "/CISID_X", `{"value":"x"}`, http.StatusBadRequest},
+		{"reserved name", http.MethodPut, base + "/CISID_JOB_ID", `{"value":"x"}`, http.StatusBadRequest},
 		{"missing value", http.MethodPut, base + "/TOKEN", `{}`, http.StatusBadRequest},
 		{"unknown field", http.MethodPut, base + "/TOKEN", `{"value":"x","note":"y"}`, http.StatusBadRequest},
 		{"not json", http.MethodPut, base + "/TOKEN", `value=x`, http.StatusBadRequest},

@@ -81,10 +81,10 @@ func TestCipherRejectsMovedOrTamperedValues(t *testing.T) {
 }
 
 func TestValidateName(t *testing.T) {
-	for _, ok := range []string{"TOKEN", "npm_token", "_X", "A1"} {
+	for _, ok := range []string{"TOKEN", "npm_token", "_X", "A1", "CISID_DEPLOY_KEY"} {
 		assert.NoError(t, ValidateName(ok), ok)
 	}
-	for _, bad := range []string{"", "1TOKEN", "MY-TOKEN", "A B", "CI", "CISID", "CISID_X", strings.Repeat("A", 101)} {
+	for _, bad := range []string{"", "1TOKEN", "MY-TOKEN", "A B", "CI", "CISID", "CISID_STEP", strings.Repeat("A", 101)} {
 		assert.ErrorIs(t, ValidateName(bad), ErrInvalidName, bad)
 	}
 }

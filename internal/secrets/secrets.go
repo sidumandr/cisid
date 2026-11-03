@@ -61,7 +61,7 @@ func ValidateName(name string) error {
 		return fmt.Errorf("%w: %q is longer than %d characters", ErrInvalidName, name, maxNameLen)
 	case !nameRe.MatchString(name):
 		return fmt.Errorf("%w: %q must be letters, digits and '_', not starting with a digit", ErrInvalidName, name)
-	case name == "CI" || name == "CISID" || strings.HasPrefix(name, "CISID_"):
+	case models.ReservedEnv(name):
 		return fmt.Errorf("%w: %q is reserved", ErrInvalidName, name)
 	}
 	return nil

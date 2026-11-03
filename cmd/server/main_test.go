@@ -183,7 +183,13 @@ func fakeGitHub(t *testing.T) (url string, statuses func() []github.CommitStatus
 	}
 }
 
-func (stepRunner) RemoveVolume(context.Context, string) error { return nil }
+func (stepRunner) RemoveVolume(context.Context, string) error  { return nil }
+func (stepRunner) CreateNetwork(context.Context, string) error { return nil }
+func (stepRunner) RemoveNetwork(context.Context, string) error { return nil }
+func (stepRunner) StopService(context.Context, string) error   { return nil }
+func (stepRunner) StartService(_ context.Context, svc runner.Service) (string, error) {
+	return "svc-" + svc.Name, nil
+}
 
 // TestRunEndToEnd starts the real server on a fresh database with a real
 // agent, delivers a signed webhook, waits for the job to finish and shuts

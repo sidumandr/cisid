@@ -33,7 +33,7 @@ curl -X DELETE -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080
 
 Kurallar:
 
-- Ad bir ortam değişkeni adı olmalıdır: harf, rakam ve `_`, rakamla başlamaz, en fazla 100 karakter. `CI`, `CISID` ve `CISID_*` ayrılmıştır.
+- Ad bir ortam değişkeni adı olmalıdır: harf, rakam ve `_`, rakamla başlamaz, en fazla 100 karakter. cisid'in adımlara kendi verdiği değişkenler (`CI`, `CISID`, `CISID_JOB_ID`, `CISID_STEP`, `CISID_REPO`, `CISID_BRANCH`, `CISID_COMMIT_SHA`, `CISID_CLONE_URL`) kullanılamaz.
 - Değer en fazla 64 KB olabilir.
 
 ## Kullanım

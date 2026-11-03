@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/sidumandr/cisid/internal/secrets"
+	"github.com/sidumandr/cisid/pkg/models"
 )
 
 // ConfigFile is the pipeline definition read from the repository root.
@@ -23,6 +24,7 @@ const (
 	maxStepTimeout     = 24 * time.Hour
 	maxConfigBytes     = 64 << 10
 	maxSteps           = 50
+	maxServices        = 10
 )
 
 var (
@@ -30,7 +32,9 @@ var (
 	ErrInvalidConfig = errors.New("invalid " + ConfigFile)
 
 	stepNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$`)
-	envNameRe  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// Service names become host names, so they must be DNS labels.
+	serviceNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+	envNameRe     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 // Config is a parsed .cisid.yml:
@@ -46,8 +50,24 @@ var (
 //	    when:
 //	      branch: [main, "release/*"]
 //	    secrets: [DEPLOY_TOKEN]
+//
+//	services:
+//	  - name: postgres
+//	    image: postgres:18-alpine
+//	    environment:
+//	      POSTGRES_PASSWORD: test
 type Config struct {
-	Steps []Step
+	Steps    []Step
+	Services []Service
+}
+
+// Service is a container started before the steps and stopped after them.
+// Steps reach it at host Name.
+type Service struct {
+	Name        string
+	Image       string
+	Environment map[string]string
+	Command     []string
 }
 
 // Step is one step of a pipeline. Its commands run in order in a shell in
@@ -72,7 +92,15 @@ func (s Step) RunsOn(branch string) bool {
 }
 
 type rawConfig struct {
-	Steps []rawStep `yaml:"steps"`
+	Steps    []rawStep    `yaml:"steps"`
+	Services []rawService `yaml:"services"`
+}
+
+type rawService struct {
+	Name        string            `yaml:"name"`
+	Image       string            `yaml:"image"`
+	Environment map[string]string `yaml:"environment"`
+	Command     []string          `yaml:"command"`
 }
 
 type rawStep struct {
@@ -151,7 +179,7 @@ func ParseConfig(data []byte) (Config, error) {
 			switch {
 			case !envNameRe.MatchString(k):
 				bad("environment name %q is invalid", k)
-			case k == "CI" || k == "CISID" || strings.HasPrefix(k, "CISID_"):
+			case models.ReservedEnv(k):
 				bad("environment %q is reserved", k)
 			}
 		}
@@ -206,8 +234,48 @@ func ParseConfig(data []byte) (Config, error) {
 		})
 	}
 
+	cfg.Services, problems = parseServices(raw.Services, problems)
+
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidConfig, errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+func parseServices(raw []rawService, problems []error) ([]Service, []error) {
+	if len(raw) > maxServices {
+		return nil, append(problems, fmt.Errorf("at most %d services are allowed, got %d", maxServices, len(raw)))
+	}
+	var (
+		services []Service
+		seen     = map[string]bool{}
+	)
+	for i, rs := range raw {
+		bad := func(format string, args ...any) {
+			problems = append(problems, fmt.Errorf("services[%d]: "+format, append([]any{i}, args...)...))
+		}
+		switch {
+		case rs.Name == "":
+			bad("name is required")
+		case !serviceNameRe.MatchString(rs.Name):
+			bad("name %q must be a host name: lowercase letters, digits and '-'", rs.Name)
+		case seen[rs.Name]:
+			bad("name %q is used twice", rs.Name)
+		}
+		seen[rs.Name] = true
+
+		switch {
+		case rs.Image == "":
+			bad("image is required")
+		case strings.ContainsAny(rs.Image, " \t\r\n"):
+			bad("image %q contains whitespace", rs.Image)
+		}
+		for k := range rs.Environment {
+			if !envNameRe.MatchString(k) {
+				bad("environment name %q is invalid", k)
+			}
+		}
+		services = append(services, Service(rs))
+	}
+	return services, problems
 }

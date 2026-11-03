@@ -84,13 +84,37 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 	workspace := workspaceName(job.JobID)
 	defer a.removeWorkspace(ctx, workspace)
 
+	// Services share a per-job network with the steps. Deferred cleanup
+	// runs in reverse: services, then the network, then the workspace.
+	var network string
+	if len(job.Services) > 0 {
+		network = workspace
+		if err := a.runner.CreateNetwork(ctx, network); err != nil {
+			return a.setupFailed(ctx, res, "create job network", err)
+		}
+		defer a.cleanup(ctx, "remove job network", func(ctx context.Context) error {
+			return a.runner.RemoveNetwork(ctx, network)
+		})
+		for _, svc := range job.Services {
+			id, err := a.runner.StartService(ctx, runner.Service{
+				Name: svc.Name, Image: svc.Image, Env: svc.Env, Cmd: svc.Command, Network: network,
+			})
+			if err != nil {
+				return a.setupFailed(ctx, res, "start service "+svc.Name, err)
+			}
+			defer a.cleanup(ctx, "stop service "+svc.Name, func(ctx context.Context) error {
+				return a.runner.StopService(ctx, id)
+			})
+		}
+	}
+
 	var seq atomic.Int64
 	for i, spec := range job.Steps {
 		// Secrets are masked before output leaves the agent.
 		stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}, spec.Secrets)
 		stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}, spec.Secrets)
 
-		code, err := a.runner.Run(ctx, toRunnerStep(job.JobID, spec, workspace), stdout, stderr)
+		code, err := a.runner.Run(ctx, toRunnerStep(job.JobID, spec, workspace, network), stdout, stderr)
 		_ = stdout.Flush()
 		_ = stderr.Flush()
 		if err == nil && code == 0 {
@@ -132,6 +156,27 @@ func (a *Agent) report(ctx context.Context, res models.JobResult) {
 	a.log.InfoContext(ctx, "job finished", "job_id", res.JobID, "status", res.Status, "exit_code", res.ExitCode)
 }
 
+// setupFailed reports a job whose services could not be set up; no step ran.
+func (a *Agent) setupFailed(ctx context.Context, res models.JobResult, what string, err error) models.JobResult {
+	res.ExitCode = -1
+	if ctx.Err() != nil {
+		res.Status, res.Error = models.JobStatusCanceled, context.Cause(ctx).Error()
+		return res
+	}
+	res.Status, res.Error = models.JobStatusFailed, what+": "+err.Error()
+	a.log.WarnContext(ctx, "job setup failed", "job_id", res.JobID, "error", res.Error)
+	return res
+}
+
+// cleanup runs a cleanup action even when ctx is canceled, logging failures.
+func (a *Agent) cleanup(ctx context.Context, what string, f func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceTimeout)
+	defer cancel()
+	if err := f(ctx); err != nil {
+		a.log.WarnContext(ctx, what, "error", err)
+	}
+}
+
 func (a *Agent) removeWorkspace(ctx context.Context, name string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceTimeout)
 	defer cancel()
@@ -152,12 +197,17 @@ func validateJob(job models.JobAssignment) error {
 			return fmt.Errorf("%w %d: step %d (%s) has no commands", ErrInvalidJob, job.JobID, i, s.Name)
 		}
 	}
+	for i, s := range job.Services {
+		if s.Name == "" || s.Image == "" {
+			return fmt.Errorf("%w %d: service %d needs a name and an image", ErrInvalidJob, job.JobID, i)
+		}
+	}
 	return nil
 }
 
 // toRunnerStep runs the step's commands as one shell script that stops at
 // the first failing command and echoes each command before running it.
-func toRunnerStep(jobID int64, spec models.StepSpec, workspace string) runner.Step {
+func toRunnerStep(jobID int64, spec models.StepSpec, workspace, network string) runner.Step {
 	env := maps.Clone(spec.Env)
 	if env == nil {
 		env = map[string]string{}
@@ -176,6 +226,7 @@ func toRunnerStep(jobID int64, spec models.StepSpec, workspace string) runner.St
 		Env:        env,
 		WorkingDir: workspacePath,
 		Mounts:     []runner.Mount{{Type: runner.MountVolume, Source: workspace, Target: workspacePath}},
+		Network:    network,
 		Timeout:    time.Duration(spec.TimeoutSeconds) * time.Second,
 	}
 }

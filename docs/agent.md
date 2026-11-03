@@ -29,7 +29,7 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 | Tip | Yön | Payload |
 |---|---|---|
 | `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, her bağlantıda ilk mesaj. `running_job_id`: elindeki ya da sonucu henüz gönderilmemiş job (yoksa alan yazılmaz) |
-| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"timeout_seconds":600}]}` |
+| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}]}` |
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
 | `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |
@@ -42,6 +42,7 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 ## Job yürütme
 
 - Agent aynı anda **bir** job çalıştırır. Meşgulken gelen atamaya `job_rejected` döner. Kapanış sırasında gelen atamaya da `job_rejected` döner, sebep `"agent shutting down"` olur.
+- Atamada servis varsa agent önce job'a özel bir Docker ağı oluşturur ve servisleri bu ağda, adlarını host adı olarak kullanarak başlatır. Adımlar aynı ağda çalışır. Job bitince servisler ve ağ silinir ([pipeline.md](pipeline.md#servisler)).
 - Adımlar sırayla çalışır ve ilk başarısız adımda durulur.
 - Her job'a özel bir Docker volume oluşturulur (`cisid-job-<id>-<rastgele>`). Volume tüm adımlarda `/workspace` yoluna bağlanır ve çalışma dizini olarak kullanılır. Job bitince volume silinir.
 - Komutlar tek bir shell script olarak çalıştırılır: `/bin/sh -c "set -ex\n<komutlar>"`. Böylece ilk hatalı komutta durulur ve her komut çalışmadan önce stderr'a yazılır.

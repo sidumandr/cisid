@@ -78,10 +78,21 @@ type AgentHello struct {
 	RunningJobID int64  `json:"running_job_id,omitempty"`
 }
 
-// JobAssignment tells an agent which steps to run for a job.
+// JobAssignment tells an agent which steps to run for a job, and which
+// services to start for them first.
 type JobAssignment struct {
-	JobID int64      `json:"job_id"`
-	Steps []StepSpec `json:"steps"`
+	JobID    int64         `json:"job_id"`
+	Steps    []StepSpec    `json:"steps"`
+	Services []ServiceSpec `json:"services,omitempty"`
+}
+
+// ServiceSpec is a container running alongside the steps of a job; steps
+// reach it at host Name.
+type ServiceSpec struct {
+	Name    string            `json:"name"`
+	Image   string            `json:"image"`
+	Env     map[string]string `json:"env,omitempty"`
+	Command []string          `json:"command,omitempty"`
 }
 
 // StepSpec is one step of a job: shell commands run in an image.
@@ -128,4 +139,14 @@ type JobResult struct {
 	ExitCode   int       `json:"exit_code"`
 	FailedStep *int      `json:"failed_step,omitempty"`
 	Error      string    `json:"error,omitempty"`
+}
+
+// ReservedEnv reports whether name is an environment variable cisid sets
+// for steps itself, which a pipeline or secret cannot use.
+func ReservedEnv(name string) bool {
+	switch name {
+	case "CI", "CISID", "CISID_JOB_ID", "CISID_STEP", "CISID_REPO", "CISID_BRANCH", "CISID_COMMIT_SHA", "CISID_CLONE_URL":
+		return true
+	}
+	return false
 }

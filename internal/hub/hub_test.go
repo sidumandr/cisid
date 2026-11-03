@@ -85,10 +85,11 @@ type mockPlanner struct {
 	mock.Mock
 }
 
-func (m *mockPlanner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, error) {
+// Plan returns the steps given to Return as an assignment.
+func (m *mockPlanner) Plan(ctx context.Context, job models.Job) (models.JobAssignment, error) {
 	args := m.Called(ctx, job)
 	steps, _ := args.Get(0).([]models.StepSpec)
-	return steps, args.Error(1)
+	return models.JobAssignment{Steps: steps}, args.Error(1)
 }
 
 // signal returns a mock Run hook that reports each call on the channel.

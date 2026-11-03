@@ -29,7 +29,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 ## Faz 3 — Features
 
 - [x] Çok adımlı pipeline'lar, adımlar arası paylaşılan workspace volume.
-- [ ] Service container'ları (ör. test için PostgreSQL).
+- [x] Service container'ları (ör. test için PostgreSQL), job başına ayrı Docker ağında.
 - [x] Secret yönetimi: şifreli saklama, env olarak enjekte, loglarda maskeleme ([docs/secrets.md](docs/secrets.md)).
 - [x] Branch filtreleri (`when.branch`).
 - [ ] Matrix build.

@@ -59,36 +59,45 @@ type Planner struct {
 	Secrets SecretSource
 }
 
-// Plan returns the steps for job: the clone step, then the steps of the
-// .cisid.yml at the pushed commit.
-func (p Planner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, error) {
+// Plan returns what an agent runs for job: the clone step, then the steps
+// of the .cisid.yml at the pushed commit, with its services. JobID is left
+// for the caller to set.
+func (p Planner) Plan(ctx context.Context, job models.Job) (models.JobAssignment, error) {
+	steps, services, err := p.plan(ctx, job)
+	if err != nil {
+		return models.JobAssignment{}, err
+	}
+	return models.JobAssignment{Steps: steps, Services: services}, nil
+}
+
+func (p Planner) plan(ctx context.Context, job models.Job) ([]models.StepSpec, []models.ServiceSpec, error) {
 	switch {
 	case job.CloneURL == "":
-		return nil, fmt.Errorf("%w %d: clone URL is empty", ErrInvalidJob, job.ID)
+		return nil, nil, fmt.Errorf("%w %d: clone URL is empty", ErrInvalidJob, job.ID)
 	case job.CommitSHA == "":
-		return nil, fmt.Errorf("%w %d: commit SHA is empty", ErrInvalidJob, job.ID)
+		return nil, nil, fmt.Errorf("%w %d: commit SHA is empty", ErrInvalidJob, job.ID)
 	case job.Branch == "":
-		return nil, fmt.Errorf("%w %d: branch is empty", ErrInvalidJob, job.ID)
+		return nil, nil, fmt.Errorf("%w %d: branch is empty", ErrInvalidJob, job.ID)
 	}
 
 	steps := []models.StepSpec{p.cloneStep(job)}
 	if p.Configs == nil {
-		return steps, nil
+		return steps, nil, nil
 	}
 
 	data, err := p.Configs.FileContent(ctx, job.Repo, job.CommitSHA, ConfigFile)
 	switch {
 	case errors.Is(err, github.ErrNotFound):
-		return nil, fmt.Errorf("%w (%s@%s)", ErrNoConfig, job.Repo, job.CommitSHA)
+		return nil, nil, fmt.Errorf("%w (%s@%s)", ErrNoConfig, job.Repo, job.CommitSHA)
 	case errors.Is(err, github.ErrTemporary), err != nil && ctx.Err() != nil:
-		return nil, fmt.Errorf("%w: %w", ErrTemporary, err)
+		return nil, nil, fmt.Errorf("%w: %w", ErrTemporary, err)
 	case err != nil:
-		return nil, fmt.Errorf("read %s: %w", ConfigFile, err)
+		return nil, nil, fmt.Errorf("read %s: %w", ConfigFile, err)
 	}
 
 	cfg, err := ParseConfig(data)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var run []Step
 	for _, s := range cfg.Steps {
@@ -98,12 +107,17 @@ func (p Planner) Plan(ctx context.Context, job models.Job) ([]models.StepSpec, e
 	}
 	values, err := p.secretsFor(ctx, job, run)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, s := range run {
 		steps = append(steps, userStep(job, s, values))
 	}
-	return steps, nil
+
+	var services []models.ServiceSpec
+	for _, s := range cfg.Services {
+		services = append(services, models.ServiceSpec{Name: s.Name, Image: s.Image, Env: s.Environment, Command: s.Command})
+	}
+	return steps, services, nil
 }
 
 // secretsFor fetches the secrets the steps ask for.

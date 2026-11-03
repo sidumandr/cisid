@@ -41,9 +41,9 @@ type Store interface {
 
 var _ Store = (*db.Store)(nil)
 
-// Planner turns a job into steps. pipeline.Planner satisfies it.
+// Planner turns a job into what an agent runs. pipeline.Planner satisfies it.
 type Planner interface {
-	Plan(ctx context.Context, job models.Job) ([]models.StepSpec, error)
+	Plan(ctx context.Context, job models.Job) (models.JobAssignment, error)
 }
 
 var _ Planner = pipeline.Planner{}
@@ -275,7 +275,7 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 			return false
 		}
 
-		steps, err := h.planner.Plan(ctx, job)
+		asg, err := h.planner.Plan(ctx, job)
 		if errors.Is(err, pipeline.ErrTemporary) {
 			// Retry on a later round; continuing now would claim the same job again.
 			h.log.WarnContext(ctx, "planning failed, job requeued", "job_id", job.ID, "error", err)
@@ -287,16 +287,18 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 			continue
 		}
 
-		names := make([]string, len(steps))
-		for i, s := range steps {
+		asg.JobID = job.ID
+		names := make([]string, len(asg.Steps))
+		for i, s := range asg.Steps {
 			names[i] = s.Name
 		}
 		if err := h.store.SetJobSteps(ctx, job.ID, names); err != nil {
 			h.log.WarnContext(ctx, "record job steps", "job_id", job.ID, "error", err)
 		}
 
-		if h.assign(a, models.JobAssignment{JobID: job.ID, Steps: steps}) {
-			h.log.InfoContext(ctx, "job assigned", "job_id", job.ID, "agent", a.name, "steps", len(steps))
+		if h.assign(a, asg) {
+			h.log.InfoContext(ctx, "job assigned", "job_id", job.ID, "agent", a.name,
+				"steps", len(asg.Steps), "services", len(asg.Services))
 			h.jobChanged(job.ID)
 			return true
 		}

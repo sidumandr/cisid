@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,19 @@ import (
 
 // EnvURL names the variable holding a PostgreSQL URL with CREATE DATABASE rights.
 const EnvURL = "CISID_TEST_DATABASE_URL"
+
+// connect retries for a while, so tests can start alongside a database
+// service that is still booting.
+func connect(ctx context.Context, url string) (*pgx.Conn, error) {
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		conn, err := pgx.Connect(ctx, url)
+		if err == nil || time.Now().After(deadline) {
+			return conn, err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
 
 // New creates an empty database, connects to it and drops it when the test
 // ends. The test is skipped when EnvURL is not set. Callers apply
@@ -40,7 +54,7 @@ func NewURL(t testing.TB) string {
 	}
 
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, base)
+	admin, err := connect(ctx, base)
 	if err != nil {
 		t.Fatalf("connect to %s: %v", EnvURL, err)
 	}

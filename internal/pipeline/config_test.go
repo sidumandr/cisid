@@ -193,12 +193,42 @@ steps:
   - name: a
     image: x
     commands: [true]
-    secrets: [BAD-NAME, CISID_X, TOKEN, TOKEN, GOFLAGS]
+    secrets: [BAD-NAME, CISID_REPO, TOKEN, TOKEN, GOFLAGS]
     environment:
       GOFLAGS: -mod=mod
 `))
 	require.ErrorIs(t, err, ErrInvalidConfig)
-	for _, want := range []string{"BAD-NAME", `"CISID_X" is reserved`, `"TOKEN" is listed twice`, `"GOFLAGS" is also set in environment`} {
+	for _, want := range []string{"BAD-NAME", `"CISID_REPO" is reserved`, `"TOKEN" is listed twice`, `"GOFLAGS" is also set in environment`} {
 		assert.Contains(t, err.Error(), want)
 	}
+}
+
+func TestParseConfigServiceErrors(t *testing.T) {
+	_, err := ParseConfig([]byte(`
+services:
+  - name: Postgres_DB
+    image: postgres:18-alpine
+  - name: cache
+  - name: cache
+    image: "redis 8"
+    environment:
+      "1X": y
+steps:
+  - {name: a, image: x, commands: [true]}
+`))
+	require.ErrorIs(t, err, ErrInvalidConfig)
+	for _, want := range []string{
+		`services[0]: name "Postgres_DB" must be a host name`,
+		"services[1]: image is required",
+		`services[2]: name "cache" is used twice`,
+		`services[2]: image "redis 8" contains whitespace`,
+		`services[2]: environment name "1X" is invalid`,
+	} {
+		assert.Contains(t, err.Error(), want)
+	}
+}
+
+func TestParseConfigAllowsUnreservedCISIDVariables(t *testing.T) {
+	_, err := ParseConfig([]byte("steps:\n  - {name: a, image: x, commands: [true], environment: {CISID_TEST_DATABASE_URL: postgres://db}}\n"))
+	assert.NoError(t, err, "only the variables cisid sets are reserved")
 }

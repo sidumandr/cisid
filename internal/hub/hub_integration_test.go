@@ -66,7 +66,13 @@ func (r *fakeRunner) Run(ctx context.Context, step runner.Step, stdout, stderr i
 	return code, nil
 }
 
-func (r *fakeRunner) RemoveVolume(context.Context, string) error { return nil }
+func (r *fakeRunner) RemoveVolume(context.Context, string) error  { return nil }
+func (r *fakeRunner) CreateNetwork(context.Context, string) error { return nil }
+func (r *fakeRunner) RemoveNetwork(context.Context, string) error { return nil }
+func (r *fakeRunner) StopService(context.Context, string) error   { return nil }
+func (r *fakeRunner) StartService(_ context.Context, svc runner.Service) (string, error) {
+	return "svc-" + svc.Name, nil
+}
 
 // system is a database, a restartable hub behind one URL and an agent.
 type system struct {

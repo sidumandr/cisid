@@ -41,10 +41,15 @@ var errServerClosing = errors.New("server is shutting down")
 // errCanceledByServer is the cause of a job stopped through the API.
 var errCanceledByServer = errors.New("canceled by request")
 
-// StepRunner runs step containers. *runner.DockerRunner satisfies it.
+// StepRunner runs step and service containers. *runner.DockerRunner
+// satisfies it.
 type StepRunner interface {
 	Run(ctx context.Context, step runner.Step, stdout, stderr io.Writer) (int, error)
 	RemoveVolume(ctx context.Context, name string) error
+	CreateNetwork(ctx context.Context, name string) error
+	RemoveNetwork(ctx context.Context, name string) error
+	StartService(ctx context.Context, svc runner.Service) (string, error)
+	StopService(ctx context.Context, id string) error
 }
 
 var _ StepRunner = (*runner.DockerRunner)(nil)

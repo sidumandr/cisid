@@ -31,7 +31,7 @@ func testJob() models.Job {
 }
 
 func TestPlanClonesTheCommit(t *testing.T) {
-	steps, err := Planner{}.Plan(t.Context(), testJob())
+	steps, err := stepsOf(Planner{}.Plan(t.Context(), testJob()))
 
 	require.NoError(t, err)
 	require.Len(t, steps, 1)
@@ -80,7 +80,7 @@ steps:
 `)}
 	job := testJob()
 
-	steps, err := Planner{Configs: configs}.Plan(t.Context(), job)
+	steps, err := stepsOf(Planner{Configs: configs}.Plan(t.Context(), job))
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"sidumandr/cisid", job.CommitSHA, ".cisid.yml"}, configs.got,
@@ -139,7 +139,7 @@ func TestPlanCanceledFetchIsTemporary(t *testing.T) {
 }
 
 func TestPlanUsesConfiguredCloneImage(t *testing.T) {
-	steps, err := Planner{CloneImage: "registry.local/git:2"}.Plan(t.Context(), testJob())
+	steps, err := stepsOf(Planner{CloneImage: "registry.local/git:2"}.Plan(t.Context(), testJob()))
 
 	require.NoError(t, err)
 	assert.Equal(t, "registry.local/git:2", steps[0].Image)
@@ -150,7 +150,7 @@ func TestPlanKeepsPayloadOutOfTheScript(t *testing.T) {
 	job.CloneURL = `https://example.com/x.git"; rm -rf / #`
 	job.Branch = "$(reboot)"
 
-	steps, err := Planner{}.Plan(t.Context(), job)
+	steps, err := stepsOf(Planner{}.Plan(t.Context(), job))
 
 	require.NoError(t, err)
 	script := strings.Join(steps[0].Commands, "\n")
@@ -186,12 +186,12 @@ func TestDockerIntegrationClone(t *testing.T) {
 
 	// The repository's first commit, which only contains go.mod and .gitignore.
 	const sha = "015857938dbfb83c919c7c6603363e29bb61df3e"
-	steps, err := Planner{CloneImage: os.Getenv("CISID_TEST_CLONE_IMAGE")}.Plan(t.Context(), models.Job{
+	steps, err := stepsOf(Planner{CloneImage: os.Getenv("CISID_TEST_CLONE_IMAGE")}.Plan(t.Context(), models.Job{
 		Repo:      "sidumandr/cisid",
 		CloneURL:  "https://github.com/sidumandr/cisid.git",
 		Branch:    "main",
 		CommitSHA: sha,
-	})
+	}))
 	require.NoError(t, err)
 	step := steps[0]
 
@@ -219,13 +219,13 @@ steps:
 `)}
 	job := testJob() // pushed to feature/webhook
 
-	steps, err := Planner{Configs: configs}.Plan(t.Context(), job)
+	steps, err := stepsOf(Planner{Configs: configs}.Plan(t.Context(), job))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"clone", "test"}, []string{steps[0].Name, steps[1].Name})
 	assert.Len(t, steps, 2)
 
 	job.Branch = "main"
-	steps, err = Planner{Configs: configs}.Plan(t.Context(), job)
+	steps, err = stepsOf(Planner{Configs: configs}.Plan(t.Context(), job))
 	require.NoError(t, err)
 	assert.Len(t, steps, 3)
 }
@@ -265,7 +265,7 @@ func TestPlanGivesSecretsToTheStepsThatAsk(t *testing.T) {
 	job := testJob()
 	job.Branch = "main"
 
-	steps, err := Planner{Configs: &fakeConfigs{data: []byte(secretsConfig)}, Secrets: src}.Plan(t.Context(), job)
+	steps, err := stepsOf(Planner{Configs: &fakeConfigs{data: []byte(secretsConfig)}, Secrets: src}.Plan(t.Context(), job))
 
 	require.NoError(t, err)
 	require.Len(t, steps, 4)
@@ -297,4 +297,33 @@ func TestPlanSecretErrors(t *testing.T) {
 
 	_, err = Planner{Configs: configs, Secrets: &fakeSecrets{err: errors.New("connection refused")}}.Plan(t.Context(), testJob())
 	assert.ErrorIs(t, err, ErrTemporary)
+}
+
+// stepsOf returns the steps of a plan.
+func stepsOf(a models.JobAssignment, err error) ([]models.StepSpec, error) {
+	return a.Steps, err
+}
+
+func TestPlanIncludesServices(t *testing.T) {
+	configs := &fakeConfigs{data: []byte(`
+services:
+  - name: postgres
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+  - name: cache
+    image: redis:8-alpine
+    command: [redis-server, --save, ""]
+steps:
+  - {name: test, image: golang:1.27, commands: [go test ./...]}
+`)}
+
+	plan, err := Planner{Configs: configs}.Plan(t.Context(), testJob())
+
+	require.NoError(t, err)
+	assert.Len(t, plan.Steps, 2)
+	assert.Equal(t, []models.ServiceSpec{
+		{Name: "postgres", Image: "postgres:18-alpine", Env: map[string]string{"POSTGRES_PASSWORD": "test"}},
+		{Name: "cache", Image: "redis:8-alpine", Command: []string{"redis-server", "--save", ""}},
+	}, plan.Services)
 }
