@@ -294,6 +294,36 @@ func TestStoreJobLogs(t *testing.T) {
 	assert.Error(t, err, "logs for unknown jobs are rejected")
 }
 
+func TestStoreCurrentStep(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	ids := createJobs(t, s, 2)
+	running, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, ids[0], running.ID)
+	for _, l := range []models.JobLog{
+		{JobID: ids[0], Seq: 1, Step: 0, Stream: models.StreamStdout, Data: "cloned"},
+		{JobID: ids[0], Seq: 2, Step: 1, Stream: models.StreamStderr, Data: "+ go test ./..."},
+	} {
+		require.NoError(t, s.AppendJobLog(ctx, l))
+	}
+
+	job, err := s.GetJob(ctx, ids[0])
+	require.NoError(t, err)
+	require.NotNil(t, job.CurrentStep)
+	assert.Equal(t, 1, *job.CurrentStep, "the step that wrote last")
+
+	jobs, err := s.ListJobs(ctx, 10)
+	require.NoError(t, err)
+	byID := map[int64]models.Job{}
+	for _, j := range jobs {
+		byID[j.ID] = j
+	}
+	require.NotNil(t, byID[ids[0]].CurrentStep)
+	assert.Equal(t, 1, *byID[ids[0]].CurrentStep)
+	assert.Nil(t, byID[ids[1]].CurrentStep, "a pending job has none")
+}
+
 func TestStoreExpireLogs(t *testing.T) {
 	s, pool := newStore(t)
 	ctx := t.Context()

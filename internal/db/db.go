@@ -194,7 +194,51 @@ func (s *Store) GetJob(ctx context.Context, id int64) (models.Job, error) {
 	if err != nil {
 		return models.Job{}, fmt.Errorf("get job %d: %w", id, err)
 	}
-	return job, nil
+	jobs := []models.Job{job}
+	if err := s.fillCurrentSteps(ctx, jobs); err != nil {
+		return models.Job{}, err
+	}
+	return jobs[0], nil
+}
+
+// fillCurrentSteps sets CurrentStep on the running jobs: the last step that
+// has written output.
+func (s *Store) fillCurrentSteps(ctx context.Context, jobs []models.Job) error {
+	var running []int64
+	for _, j := range jobs {
+		if j.Status == models.JobStatusRunning {
+			running = append(running, j.ID)
+		}
+	}
+	if len(running) == 0 {
+		return nil
+	}
+	rows, err := s.pool.Query(ctx,
+		"SELECT job_id, max(step) FROM job_logs WHERE job_id = ANY($1) GROUP BY job_id", running)
+	if err != nil {
+		return fmt.Errorf("read current steps: %w", err)
+	}
+	steps := map[int64]int{}
+	for rows.Next() {
+		var (
+			id   int64
+			step int
+		)
+		if err := rows.Scan(&id, &step); err != nil {
+			rows.Close()
+			return fmt.Errorf("read current steps: %w", err)
+		}
+		steps[id] = step
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read current steps: %w", err)
+	}
+	for i := range jobs {
+		if step, ok := steps[jobs[i].ID]; ok {
+			jobs[i].CurrentStep = &step
+		}
+	}
+	return nil
 }
 
 // ClaimJob marks the oldest pending job as running on agent, with a lease
@@ -501,6 +545,9 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]models.Job, error) {
 	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (models.Job, error) { return scanJob(row) })
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	if err := s.fillCurrentSteps(ctx, jobs); err != nil {
+		return nil, err
 	}
 	return jobs, nil
 }

@@ -76,6 +76,8 @@ type Job struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	// LogsExpiredAt is when the logs were deleted after the retention period.
 	LogsExpiredAt *time.Time `json:"logs_expired_at,omitempty"`
+	// CurrentStep is, for a running job, the step that wrote output last.
+	CurrentStep *int `json:"current_step,omitempty"`
 }
 
 // Schedule builds the head of a branch at the times its cron spec matches.
