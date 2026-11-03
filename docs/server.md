@@ -42,6 +42,8 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_READ_ACCESS` | read token varsa `signed-in`, yoksa `public` | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister ([accounts.md](accounts.md#okuma-erişimi)) |
 | `CISID_ADMIN_USER`, `CISID_ADMIN_PASSWORD` | `admin`, — | Şifre verilirse server açılışta bu admin'i oluşturur (varsa dokunmaz); şifre en az 10 karakter |
 | `CISID_SESSION_TTL` | `7d` | Bir girişin süresi (`12h`, `30d` gibi) |
+| `CISID_<SAĞLAYICI>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sağlayıcıyla giriş: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; `CISID_PUBLIC_URL` gerekir ([accounts.md](accounts.md#sağlayıcıyla-giriş)) |
+| `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına hesap açılır |
 | `CISID_SECRET_KEY` | — | Secret'ları şifreleyen 32 byte'lık anahtar, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | Kullanıcıların server'a eriştiği adres. Commit status bağlantılarında kullanılır ([commit-status.md](commit-status.md)). |
 | `CISID_BUILD_FORKS` | `false` | `true` ise fork'lardan gelen pull request'ler de derlenir; bu job'lara secret verilmez ([webhook.md](webhook.md#pull-requestler)) |
@@ -63,6 +65,7 @@ Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapı
 | `/api/repos/{owner}/{repo}/builds`, `…/schedules` | Elle ve zamanlanmış build'ler ([api.md](api.md#elle-ve-zamanlanmış-buildler)) |
 | `GET /`, `GET /jobs/{id}` | Web arayüzü ([ui.md](ui.md)) |
 | `GET /metrics` | Prometheus metrikleri ([metrics.md](metrics.md)) |
+| `GET /auth/{sağlayıcı}/login`, `/callback` | Sağlayıcıyla giriş ([accounts.md](accounts.md#sağlayıcıyla-giriş)) |
 | `GET /healthz` | Liveness: süreç ayakta ise `200 {"status":"ok"}` |
 | `GET /readyz` | Readiness: veritabanı 2 sn içinde yanıt verirse `200`, vermezse `503 {"status":"unavailable","reason":"database unreachable"}` |
 

@@ -29,6 +29,8 @@ func (a *Access) register(mux *http.ServeMux) {
 	if a.cfg.Accounts == nil {
 		return
 	}
+	mux.HandleFunc("GET /auth/{forge}/login", a.oauthLogin)
+	mux.HandleFunc("GET /auth/{forge}/callback", a.oauthCallback)
 	mux.HandleFunc("PUT /api/me/password", a.require(auth.RoleViewer, a.changePassword))
 	mux.HandleFunc("GET /api/me/tokens", a.require(auth.RoleViewer, a.listTokens))
 	mux.HandleFunc("POST /api/me/tokens", a.require(auth.RoleViewer, a.createToken))
@@ -69,7 +71,9 @@ func (a *Access) login(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusUnauthorized, "wrong token")
 				return
 			}
-			a.startSession(w, r, u)
+			if a.startSession(w, r, u) {
+				w.WriteHeader(http.StatusNoContent)
+			}
 			return
 		}
 		if !equal(body.Token, a.cfg.ReadToken) && !equal(body.Token, a.cfg.APIToken) {
@@ -102,20 +106,23 @@ func (a *Access) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "wrong username or password")
 		return
 	}
-	a.startSession(w, r, u)
+	if a.startSession(w, r, u) {
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
-// startSession signs u in on this browser.
-func (a *Access) startSession(w http.ResponseWriter, r *http.Request, u models.User) {
+// startSession signs u in on this browser, or answers 500 and returns
+// false.
+func (a *Access) startSession(w http.ResponseWriter, r *http.Request, u models.User) bool {
 	ctx := r.Context()
 	secret, digest, err := auth.NewSecret("")
 	if err != nil {
 		a.internalError(w, r, "start session", err)
-		return
+		return false
 	}
 	if err := a.cfg.Accounts.CreateSession(ctx, digest, u.ID, a.now().Add(a.cfg.SessionTTL)); err != nil {
 		a.internalError(w, r, "start session", err)
-		return
+		return false
 	}
 	// Lax, not Strict: signing in through a forge comes back from another
 	// site, and the first page after it must see the session.
@@ -124,7 +131,7 @@ func (a *Access) startSession(w http.ResponseWriter, r *http.Request, u models.U
 		HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteLaxMode,
 	})
 	a.log.InfoContext(ctx, "signed in", "username", u.Username, "remote_addr", r.RemoteAddr)
-	w.WriteHeader(http.StatusNoContent)
+	return true
 }
 
 func (a *Access) logout(w http.ResponseWriter, r *http.Request) {
@@ -169,9 +176,6 @@ func (a *Access) me(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
-
-// providerNames lists the forges one can sign in through; see oauth.go.
-func (a *Access) providerNames() []string { return nil }
 
 // signedInUser is the user behind a request that require let through, or
 // writes a 403 for the server's own tokens, which belong to no user.

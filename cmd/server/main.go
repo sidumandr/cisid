@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/sidumandr/cisid/internal/api"
+	"github.com/sidumandr/cisid/internal/auth"
 	"github.com/sidumandr/cisid/internal/bitbucket"
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
@@ -170,6 +172,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	access := api.NewAccess(api.AccessConfig{
 		APIToken: cfg.APIToken, ReadToken: cfg.ReadToken, PublicRead: cfg.PublicRead,
 		Accounts: store, SessionTTL: cfg.SessionTTL, Log: log,
+		OAuth: api.OAuthConfig{Providers: oauthProviders(cfg, forgeHTTP), PublicURL: cfg.PublicURL, SignupRole: auth.Role(cfg.OAuthSignupRole)},
 	})
 	jobsAPI := api.NewJobsAPI(store, broker, log,
 		api.WithAccess(access),
@@ -269,6 +272,34 @@ func forgeClients(cfg config.Config, httpClient *http.Client) (*forge.Set, *bitb
 	bb := &bitbucket.Client{APIURL: cfg.Bitbucket.URL, Token: cfg.Bitbucket.Token, HTTP: httpClient}
 	s.Add(forge.Bitbucket, bb)
 	return s, bb
+}
+
+// oauthProviders returns the forges users can sign in through.
+func oauthProviders(cfg config.Config, httpClient *http.Client) []*auth.Provider {
+	var ps []*auth.Provider
+	if o := cfg.GitHubOAuth; o.Enabled() {
+		web := "https://github.com"
+		if cfg.GitHubAPIURL != github.DefaultAPIURL {
+			web = strings.TrimSuffix(strings.TrimSuffix(cfg.GitHubAPIURL, "/"), "/api/v3")
+		}
+		ps = append(ps, auth.GitHubProvider(web, strings.TrimSuffix(cfg.GitHubAPIURL, "/"), o.ClientID, o.ClientSecret))
+	}
+	if o := cfg.Gitea.OAuth; o.Enabled() {
+		ps = append(ps, auth.GiteaProvider(forge.Gitea, cfg.Gitea.URL, o.ClientID, o.ClientSecret))
+	}
+	if o := cfg.Forgejo.OAuth; o.Enabled() {
+		ps = append(ps, auth.GiteaProvider(forge.Forgejo, cfg.Forgejo.URL, o.ClientID, o.ClientSecret))
+	}
+	if o := cfg.GitLab.OAuth; o.Enabled() {
+		ps = append(ps, auth.GitLabProvider(cfg.GitLab.URL, o.ClientID, o.ClientSecret))
+	}
+	if o := cfg.Bitbucket.OAuth; o.Enabled() {
+		ps = append(ps, auth.BitbucketProvider(cfg.Bitbucket.URL, o.ClientID, o.ClientSecret))
+	}
+	for _, p := range ps {
+		p.HTTP = httpClient
+	}
+	return ps
 }
 
 func anyForgeToken(cfg config.Config) bool {

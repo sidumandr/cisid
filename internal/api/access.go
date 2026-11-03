@@ -66,7 +66,9 @@ type AccessConfig struct {
 	Accounts AccountStore
 	// SessionTTL is how long a sign-in lasts; DefaultSessionTTL when 0.
 	SessionTTL time.Duration
-	Log        *slog.Logger
+	// OAuth signs users in through their forges; see oauth.go.
+	OAuth OAuthConfig
+	Log   *slog.Logger
 }
 
 // Access decides who may do what. A caller is known by

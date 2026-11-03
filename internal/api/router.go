@@ -64,6 +64,7 @@ type Handlers struct {
 //	GET  /agent/ws         agent WebSocket connections
 //	GET  /api/jobs/...     jobs and logs (see JobsAPI)
 //	     /api/repos/...    repository secrets (see SecretsAPI)
+//	GET  /auth/{forge}/... signing in through a forge (see oauth.go)
 //	GET  /, /jobs/{id}     browser UI
 //	GET  /healthz          liveness: the process is serving requests
 //	GET  /readyz           readiness: the database is reachable
@@ -103,6 +104,7 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/webhooks/", limitedHandler)
 	mux.Handle("/api/", limitedHandler)
+	mux.Handle("/auth/", limitedHandler)
 	mux.Handle("GET /agent/ws", h.Agents)
 	if h.Metrics != nil {
 		mux.Handle("GET /metrics", access.Wrap(h.Metrics))

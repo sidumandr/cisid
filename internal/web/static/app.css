@@ -188,6 +188,7 @@ svg path.fill { fill: currentColor; stroke: none; }
   background: var(--accent);
 }
 .rail-end { margin-top: auto; }
+[hidden] { display: none !important; }
 .rail-label {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap;

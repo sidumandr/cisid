@@ -67,5 +67,5 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Birden fazla git sağlayıcısı: GitHub, Gitea, Forgejo, GitLab ve Bitbucket Cloud; webhook'lar, commit status, özel repoları clone'lama ([docs/forges.md](docs/forges.md)).
 - [x] Webhook'suz push build'leri: branch'leri yoklama; birden fazla server kopyası aynı commit'i iki kez derlemez ([docs/polling.md](docs/polling.md)).
 - [x] Kullanıcı hesapları ve roller (viewer, maintainer, admin), şifreyle giriş, kişisel API token'ları, CSRF koruması ([docs/accounts.md](docs/accounts.md)).
-- [ ] Sağlayıcılarla (OAuth) giriş.
+- [x] Sağlayıcılarla (OAuth) giriş: GitHub, Gitea, Forgejo, GitLab, Bitbucket; hesaplar sağlayıcının değişmeyen kullanıcı numarasıyla eşleşir, isteğe bağlı otomatik hesap açma ([docs/accounts.md](docs/accounts.md#sağlayıcıyla-giriş)).
 - [ ] Dokümanlar İngilizce ve Türkçe.

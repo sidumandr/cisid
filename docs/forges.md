@@ -2,7 +2,7 @@
 
 cisid beş sağlayıcıdaki repoları derler: **GitHub**, **Gitea**, **Forgejo**, **GitLab** (GitLab.com ya da kendi kurulumunuz) ve **Bitbucket Cloud**. Her sağlayıcının istemcisi kendi paketindedir (`internal/github`, `internal/gitea`, `internal/gitlab`, `internal/bitbucket`). Ortak arayüz `internal/forge`'dadır.
 
-Her sağlayıcı için üç şey ayarlanabilir, hepsi isteğe bağlıdır:
+Her sağlayıcı için üç şey ayarlanabilir, hepsi isteğe bağlıdır (bir dördüncüsü, sağlayıcıyla giriş, [accounts.md](accounts.md#sağlayıcıyla-giriş)'dedir):
 
 | Ayar | Ne işe yarar |
 |---|---|

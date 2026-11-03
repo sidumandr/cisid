@@ -73,6 +73,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo'nun token'ı ve webhook secret'ı (`server.forgejoURL` ile) |
 | `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab'ın token'ı ve webhook secret'ı |
 | `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud'un token'ı ve webhook secret'ı |
+| `secrets.oauthClientSecrets.<sağlayıcı>` | — | Sağlayıcıyla giriş için OAuth uygulamasının client secret'ı (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
 | `secrets.adminPassword` | — | İlk açılışta `server.adminUser`'ı admin olarak oluşturur, en az 10 karakter ([hesaplar](../../../docs/accounts.md)) |
 | `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
 | `server.replicaCount` | `1` | Server kopyası |
@@ -81,6 +82,8 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.readAccess` | — | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister. Boşsa read token varken `signed-in`, yokken `public`. |
 | `server.sessionTTL` | `7d` | Bir girişin süresi |
 | `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
+| `server.oauthClientIDs.<sağlayıcı>` | — | OAuth uygulamasının client id'si; secret'ı ve `server.publicURL` (ya da ingress) gerekir |
+| `server.oauthSignupRole` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte hesap açılır |
 | `server.pollInterval` | `1m` | İzlenen branch'lerin yoklanma aralığı; `0` polling'i kapatır ([polling](../../../docs/polling.md)) |
 | `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |

@@ -138,6 +138,9 @@ gitlab-webhook-secret: {{ .Values.secrets.gitlabWebhookSecret | quote }}
 bitbucket-token: {{ .Values.secrets.bitbucketToken | quote }}
 bitbucket-webhook-secret: {{ .Values.secrets.bitbucketWebhookSecret | quote }}
 admin-password: {{ .Values.secrets.adminPassword | quote }}
+{{- range $forge, $secret := .Values.secrets.oauthClientSecrets }}
+{{ $forge }}-oauth-client-secret: {{ $secret | quote }}
+{{- end }}
 {{- end }}
 
 {{/* The server's settings read from optional Secret keys: env name to key. */}}
@@ -156,6 +159,9 @@ CISID_GITLAB_WEBHOOK_SECRET: gitlab-webhook-secret
 CISID_BITBUCKET_TOKEN: bitbucket-token
 CISID_BITBUCKET_WEBHOOK_SECRET: bitbucket-webhook-secret
 CISID_ADMIN_PASSWORD: admin-password
+{{- range $forge := list "github" "gitea" "forgejo" "gitlab" "bitbucket" }}
+CISID_{{ upper $forge }}_OAUTH_CLIENT_SECRET: {{ $forge }}-oauth-client-secret
+{{- end }}
 {{- end }}
 
 {{/* Stops rendering with a clear message when a required value is missing. */}}

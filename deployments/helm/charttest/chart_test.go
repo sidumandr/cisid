@@ -377,6 +377,22 @@ func TestAccountSettingsReachTheServer(t *testing.T) {
 	assert.ErrorContains(t, err, "secrets.adminPassword must be at least 10")
 }
 
+func TestOAuthSettingsReachTheServer(t *testing.T) {
+	vals := with(required(), "server.oauthClientIDs.gitea", "gitea-client")
+	vals = with(vals, "secrets.oauthClientSecrets.gitea", "gitea-client-secret")
+	vals = with(vals, "server.oauthSignupRole", "viewer")
+	m := render(t, vals)
+
+	c := container(t, m.server(t).Spec.Template.Spec, "server")
+	assert.Equal(t, "gitea-client", env(c, "CISID_GITEA_OAUTH_CLIENT_ID").Value)
+	assert.Nil(t, env(c, "CISID_GITHUB_OAUTH_CLIENT_ID"), "an unset client id is left out")
+	assert.Equal(t, "gitea-oauth-client-secret", env(c, "CISID_GITEA_OAUTH_CLIENT_SECRET").ValueFrom.SecretKeyRef.Key)
+	assert.Equal(t, "viewer", env(c, "CISID_OAUTH_SIGNUP_ROLE").Value)
+	data := m.secrets["ci-cisid"].Data
+	assert.Equal(t, "gitea-client-secret", string(data["gitea-oauth-client-secret"]))
+	assert.NotContains(t, data, "github-oauth-client-secret")
+}
+
 func TestNoWebhookSecretIsFine(t *testing.T) {
 	m := render(t, with(required(), "secrets.webhookSecret", ""))
 	assert.NotContains(t, m.secrets["ci-cisid"].Data, "webhook-secret", "a server that polls needs no webhook")

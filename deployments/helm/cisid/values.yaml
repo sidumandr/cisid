@@ -38,6 +38,13 @@ secrets:
   gitlabWebhookSecret: ""
   bitbucketToken: ""
   bitbucketWebhookSecret: ""
+  # Client secrets of the OAuth apps users sign in through, by forge.
+  oauthClientSecrets:
+    github: ""
+    gitea: ""
+    forgejo: ""
+    gitlab: ""
+    bitbucket: ""
   # Creates server.adminUser as an admin on the first start, 10+
   # characters. Change the password in the UI afterwards.
   adminPassword: ""
@@ -87,6 +94,17 @@ server:
   sessionTTL: 7d
   # The account secrets.adminPassword creates.
   adminUser: admin
+  # Client ids of the OAuth apps users sign in through, by forge; each
+  # needs its secret in secrets.oauthClientSecrets and publicURL set.
+  oauthClientIDs:
+    github: ""
+    gitea: ""
+    forgejo: ""
+    gitlab: ""
+    bitbucket: ""
+  # viewer or maintainer: forge users without an account get one on their
+  # first sign-in. Empty: only users an admin linked sign in.
+  oauthSignupRole: ""
   # How long shutdown waits for in-flight requests.
   shutdownTimeout: 15s
   # Keeps serving this long after the pod is told to stop, while the

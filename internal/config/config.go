@@ -45,6 +45,8 @@ type Config struct {
 	SessionTTL      time.Duration // CISID_SESSION_TTL, how long a sign-in lasts, default 7d
 	AdminUser       string        // CISID_ADMIN_USER, default "admin": the account CISID_ADMIN_PASSWORD creates
 	AdminPassword   string        // CISID_ADMIN_PASSWORD, optional: creates AdminUser as an admin if it does not exist
+	GitHubOAuth     OAuthApp      // CISID_GITHUB_OAUTH_CLIENT_ID, CISID_GITHUB_OAUTH_CLIENT_SECRET: sign in through GitHub
+	OAuthSignupRole string        // CISID_OAUTH_SIGNUP_ROLE, viewer or maintainer: forge users without an account get one; empty: only linked users sign in
 
 	// The other forges. Gitea and Forgejo are on when their URL is set;
 	// GitLab (GitLab.com by default) and Bitbucket Cloud always are, as
@@ -60,6 +62,29 @@ type Forge struct {
 	URL           string // web URL (Gitea, Forgejo, GitLab) or API URL (Bitbucket)
 	Token         string // access token: private repositories, rate limits, commit statuses
 	WebhookSecret string
+	OAuth         OAuthApp // CISID_<FORGE>_OAUTH_CLIENT_ID and _SECRET: sign in through the forge
+}
+
+// OAuthApp is an OAuth application registered on a forge.
+type OAuthApp struct {
+	ClientID     string
+	ClientSecret string
+}
+
+// Enabled reports whether users can sign in through the app.
+func (o OAuthApp) Enabled() bool { return o.ClientID != "" }
+
+// loadOAuth reads CISID_<prefix>_OAUTH_CLIENT_ID and _SECRET, which go
+// together.
+func loadOAuth(getenv func(string) string, prefix string, problems *[]error) OAuthApp {
+	o := OAuthApp{
+		ClientID:     getenv("CISID_" + prefix + "_OAUTH_CLIENT_ID"),
+		ClientSecret: getenv("CISID_" + prefix + "_OAUTH_CLIENT_SECRET"),
+	}
+	if (o.ClientID == "") != (o.ClientSecret == "") {
+		*problems = append(*problems, fmt.Errorf("CISID_%s_OAUTH_CLIENT_ID and CISID_%s_OAUTH_CLIENT_SECRET must be set together", prefix, prefix))
+	}
+	return o
 }
 
 // Enabled reports whether the forge is configured.
@@ -70,6 +95,7 @@ func (f Forge) logValue() slog.Value {
 		slog.String("url", f.URL),
 		slog.Bool("token_set", f.Token != ""),
 		slog.Bool("webhook", f.WebhookSecret != ""),
+		slog.Bool("sign_in", f.OAuth.Enabled()),
 	)
 }
 
@@ -80,6 +106,7 @@ func loadForge(getenv func(string) string, prefix, defaultURL string, problems *
 		URL:           getenv("CISID_" + prefix + "_URL"),
 		Token:         getenv("CISID_" + prefix + "_TOKEN"),
 		WebhookSecret: getenv("CISID_" + prefix + "_WEBHOOK_SECRET"),
+		OAuth:         loadOAuth(getenv, prefix, problems),
 	}
 	urlVar := "CISID_" + prefix + "_URL"
 	if prefix == "BITBUCKET" {
@@ -90,8 +117,8 @@ func loadForge(getenv func(string) string, prefix, defaultURL string, problems *
 	case f.URL == "" && defaultURL != "":
 		f.URL = defaultURL
 	case f.URL == "":
-		if f.Token != "" || f.WebhookSecret != "" {
-			*problems = append(*problems, fmt.Errorf("%s is required with CISID_%s_TOKEN or CISID_%s_WEBHOOK_SECRET", urlVar, prefix, prefix))
+		if f.Token != "" || f.WebhookSecret != "" || f.OAuth.Enabled() {
+			*problems = append(*problems, fmt.Errorf("%s is required with the forge's token, webhook secret or OAuth app", urlVar))
 		}
 	default:
 		if u, err := url.Parse(f.URL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
@@ -283,6 +310,16 @@ func Load(getenv func(string) string) (Config, error) {
 		problems = append(problems, fmt.Errorf("CISID_ADMIN_PASSWORD must be at least %d characters", auth.MinPasswordLen))
 	}
 
+	cfg.GitHubOAuth = loadOAuth(getenv, "GITHUB", &problems)
+	cfg.OAuthSignupRole = getenv("CISID_OAUTH_SIGNUP_ROLE")
+	if r := cfg.OAuthSignupRole; r != "" && r != "viewer" && r != "maintainer" {
+		problems = append(problems, fmt.Errorf("CISID_OAUTH_SIGNUP_ROLE must be viewer or maintainer"))
+	}
+	if cfg.PublicURL == "" && (cfg.GitHubOAuth.Enabled() || cfg.Gitea.OAuth.Enabled() || cfg.Forgejo.OAuth.Enabled() ||
+		cfg.GitLab.OAuth.Enabled() || cfg.Bitbucket.OAuth.Enabled()) {
+		problems = append(problems, fmt.Errorf("CISID_PUBLIC_URL is required for signing in through a forge: the forge sends the browser back there"))
+	}
+
 	cfg.LogRetention = defaultLogRetention
 	if v := getenv("CISID_LOG_RETENTION"); v != "" {
 		d, err := parseRetention(v)
@@ -359,5 +396,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Duration("session_ttl", c.SessionTTL),
 		slog.String("admin_user", c.AdminUser),
 		slog.Bool("admin_password_set", c.AdminPassword != ""),
+		slog.Bool("github_sign_in", c.GitHubOAuth.Enabled()),
+		slog.String("oauth_signup_role", c.OAuthSignupRole),
 	)
 }

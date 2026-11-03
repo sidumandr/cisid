@@ -69,6 +69,17 @@
         },
         "adminPassword": {
           "type": "string"
+        },
+        "oauthClientSecrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "github": {"type": "string"},
+            "gitea": {"type": "string"},
+            "forgejo": {"type": "string"},
+            "gitlab": {"type": "string"},
+            "bitbucket": {"type": "string"}
+          }
         }
       }
     },
@@ -164,6 +175,21 @@
         "sessionTTL": {
           "type": "string",
           "pattern": "^([0-9]+d|([0-9]+([.][0-9]+)?(m|h))+)$"
+        },
+        "oauthClientIDs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "github": {"type": "string"},
+            "gitea": {"type": "string"},
+            "forgejo": {"type": "string"},
+            "gitlab": {"type": "string"},
+            "bitbucket": {"type": "string"}
+          }
+        },
+        "oauthSignupRole": {
+          "type": "string",
+          "enum": ["", "viewer", "maintainer"]
         },
         "adminUser": {
           "type": "string",

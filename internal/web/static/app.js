@@ -1117,6 +1117,15 @@ function renderRepo(owner, name) {
 
 // --- account ------------------------------------------------------------------
 
+// SIGNIN_PROBLEMS explain why signing in through a forge sent the browser
+// back here.
+const SIGNIN_PROBLEMS = {
+  expired: "That sign-in took too long or started in another tab. Try again.",
+  denied: "The forge did not let cisid in.",
+  failed: "Signing in through the forge failed. Try again.",
+  unknown: "That forge account has no cisid account. An admin can add your forge login on the Users page.",
+};
+
 // renderAccount shows who is signed in, their password and personal tokens.
 function renderAccount() {
   setNav("account");
@@ -1133,8 +1142,9 @@ function renderAccount() {
     }),
     body);
 
+  const problem = SIGNIN_PROBLEMS[new URLSearchParams(location.search).get("signin")];
   if (!me.user) {
-    body.replaceChildren(note(me.accounts ? "Sign in with your username and password, a forge or a token." : "This server has no accounts; changes need the API token.",
+    body.replaceChildren(note(problem || (me.accounts ? "Sign in with your username and password, a forge or a token." : "This server has no accounts; changes need the API token."),
       el("button", { class: "btn primary small", type: "button", onclick: async () => { if (await signIn({ change: true })) route(); } }, "Sign in")));
     return () => {};
   }
