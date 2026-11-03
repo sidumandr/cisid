@@ -57,6 +57,6 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Secret'ları server tarafında branch'lere sınırlama; sınırlı secret'lar pull request'lere verilmez ([docs/secrets.md](docs/secrets.md)).
 - [x] Okuma erişimi için token (`CISID_READ_TOKEN`, arayüz için oturum cookie'si) ve agent token'ı rotasyonu ([docs/api.md](docs/api.md#okuma-erişimi)).
 - [x] Job'lar arası önbellek: `.cisid.yml`'de `cache`, repo başına Docker volume'ları; fork PR'larına salt okunur ([docs/pipeline.md](docs/pipeline.md#önbellek)).
-- [ ] Elle ve zamanlanmış build'ler.
+- [x] Elle ve zamanlanmış build'ler: API ve arayüzden branch build'i, veritabanında cron zamanlamaları; birden fazla server kopyası aynı çalışmayı iki kez başlatmaz ([docs/api.md](docs/api.md#elle-ve-zamanlanmış-buildler)).
 - [ ] Birden fazla server kopyasının uçtan uca testi.
 - [ ] Sürüm yayımlama: image'lar ve chart.

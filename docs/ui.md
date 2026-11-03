@@ -9,7 +9,8 @@ Server, job'ları izlemek için küçük bir web arayüzü sunar (`internal/web`
 
 - Loglar adım adlarıyla gruplanır. Başarısız ya da iptal edilen adım işaretlenir. stderr satırları farklı renkte gösterilir, ANSI renk kodları temizlenir.
 - Log en alttayken yeni satırlar geldikçe sayfa otomatik kayar. Kullanıcı yukarı kaydırmışsa yerinde kalır.
-- **Cancel** ve **Rerun** butonları API token'ı ister. Token ilk kullanımda sorulur ve sadece o sekmenin oturumunda (`sessionStorage`) tutulur.
+- Job listesindeki **Run build** butonu bir repo ve branch sorar, branch'in son commit'ini hemen derler ([api.md](api.md#elle-ve-zamanlanmış-buildler)).
+- **Run build**, **Cancel** ve **Rerun** butonları API token'ı ister. Token ilk kullanımda sorulur ve sadece o sekmenin oturumunda (`sessionStorage`) tutulur.
 - Açık ve koyu tema, işletim sisteminin ayarına göre seçilir.
 - `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.
 

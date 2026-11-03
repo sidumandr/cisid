@@ -51,6 +51,7 @@ Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapı
 | `GET /agent/ws` | Agent WebSocket bağlantıları ([hub.md](hub.md)) |
 | `GET /api/jobs/...` | Job'lar, loglar ve canlı log akışı ([api.md](api.md)) |
 | `/api/repos/{owner}/{repo}/secrets` | Repo secret'ları ([secrets.md](secrets.md)) |
+| `/api/repos/{owner}/{repo}/builds`, `…/schedules` | Elle ve zamanlanmış build'ler ([api.md](api.md#elle-ve-zamanlanmış-buildler)) |
 | `GET /`, `GET /jobs/{id}` | Web arayüzü ([ui.md](ui.md)) |
 | `GET /metrics` | Prometheus metrikleri ([metrics.md](metrics.md)) |
 | `GET /healthz` | Liveness: süreç ayakta ise `200 {"status":"ok"}` |

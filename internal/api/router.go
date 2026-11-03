@@ -47,6 +47,8 @@ type Handlers struct {
 	// Read guards jobs, logs and metrics and serves /api/login; nil lets
 	// anyone read.
 	Read *ReadAccess
+	// Triggers serves manual builds and schedules; omitted when nil.
+	Triggers *TriggersAPI
 	// TracerProvider traces webhook and API requests; nil traces nothing.
 	TracerProvider trace.TracerProvider
 }
@@ -73,6 +75,9 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	}
 	if h.Read != nil {
 		h.Read.register(limited)
+	}
+	if h.Triggers != nil {
+		h.Triggers.register(limited)
 	}
 	var limitedHandler http.Handler = limited
 	if h.RateLimit != nil {

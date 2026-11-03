@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -89,11 +90,7 @@ func (c *Client) FileContent(ctx context.Context, repo, ref, path string) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	var escaped []string
-	for _, seg := range strings.Split(path, "/") {
-		escaped = append(escaped, url.PathEscape(seg))
-	}
-	u := base + "/contents/" + strings.Join(escaped, "/") + "?" + url.Values{"ref": {ref}}.Encode()
+	u := base + "/contents/" + escapePath(path) + "?" + url.Values{"ref": {ref}}.Encode()
 
 	resp, err := c.do(ctx, http.MethodGet, u, "application/vnd.github.raw+json", nil)
 	if err != nil {
@@ -116,6 +113,75 @@ func (c *Client) FileContent(ctx context.Context, repo, ref, path string) ([]byt
 }
 
 // repoURL returns the API URL of repo ("owner/name").
+// Repository is what building a repository without a webhook needs.
+type Repository struct {
+	CloneURL      string `json:"clone_url"`
+	DefaultBranch string `json:"default_branch"`
+}
+
+// Repository describes repo ("owner/name").
+func (c *Client) Repository(ctx context.Context, repo string) (Repository, error) {
+	u, err := c.repoURL(repo)
+	if err != nil {
+		return Repository{}, err
+	}
+	resp, err := c.do(ctx, http.MethodGet, u, "application/vnd.github+json", nil)
+	if err != nil {
+		return Repository{}, fmt.Errorf("get repository %s: %w", repo, err)
+	}
+	defer resp.Body.Close()
+	if err := checkStatus(resp); err != nil {
+		return Repository{}, fmt.Errorf("get repository %s: %w", repo, err)
+	}
+
+	var r Repository
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxFileBytes)).Decode(&r); err != nil {
+		return Repository{}, fmt.Errorf("%w: decode repository %s: %w", ErrTemporary, repo, err)
+	}
+	if r.CloneURL == "" || r.DefaultBranch == "" {
+		return Repository{}, fmt.Errorf("repository %s has no clone URL or default branch", repo)
+	}
+	return r, nil
+}
+
+// BranchHead returns the SHA of the commit branch of repo points at.
+func (c *Client) BranchHead(ctx context.Context, repo, branch string) (string, error) {
+	base, err := c.repoURL(repo)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.do(ctx, http.MethodGet, base+"/commits/"+escapePath(branch), "application/vnd.github.sha", nil)
+	if err != nil {
+		return "", fmt.Errorf("get head of %s in %s: %w", branch, repo, err)
+	}
+	defer resp.Body.Close()
+	if err := checkStatus(resp); err != nil {
+		return "", fmt.Errorf("get head of %s in %s: %w", branch, repo, err)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 128))
+	if err != nil {
+		return "", fmt.Errorf("%w: read head of %s in %s: %w", ErrTemporary, branch, repo, err)
+	}
+	sha := strings.TrimSpace(string(data))
+	if !shaRe.MatchString(sha) {
+		return "", fmt.Errorf("head of %s in %s: unexpected answer %q", branch, repo, sha)
+	}
+	return sha, nil
+}
+
+// shaRe matches SHA-1 and SHA-256 object IDs.
+var shaRe = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// escapePath escapes each segment of a slash-separated path.
+func escapePath(p string) string {
+	segs := strings.Split(p, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	return strings.Join(segs, "/")
+}
+
 func (c *Client) repoURL(repo string) (string, error) {
 	owner, name, ok := strings.Cut(repo, "/")
 	if !ok || !validRepoPart(owner) || !validRepoPart(name) {

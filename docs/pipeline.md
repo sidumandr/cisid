@@ -37,7 +37,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../.cisid.y
 | `steps[].timeout` | hayır | Go süre formatında (`90s`, `10m`, `1h30m`). Varsayılan `1h`, en fazla `24h`. |
 | `steps[].secrets` | hayır | Adıma ortam değişkeni olarak verilecek repo secret'ları, loglarda maskelenir ([secrets.md](secrets.md)) |
 | `steps[].when.branch` | hayır | Adımı sadece bu branch'lerde çalıştırır; pull request'lerde PR'ın kendi branch'ine bakılır. Tek değer ya da liste olabilir (bkz. [Koşullar](#koşullar)). |
-| `steps[].when.event` | hayır | Adımı sadece bu olaylarda çalıştırır: `push`, `pull_request`. Verilmezse her olayda çalışır. |
+| `steps[].when.event` | hayır | Adımı sadece bu olaylarda çalıştırır: `push`, `pull_request`, `manual`, `schedule`. Verilmezse her olayda çalışır. |
 
 Bilinmeyen alanlar hatadır. Örneğin `command:` yazılırsa job hemen `failed` olur ve hata mesajı yazım hatasını gösterir. Bütün sorunlar tek mesajda listelenir.
 
@@ -66,7 +66,7 @@ steps:
 | `hotfix/**` | `hotfix/a/b` | `hot/fix` |
 | `v?.x` | `v1.x` | `v10.x` |
 
-`when.event` adımı `push` ya da `pull_request` olaylarıyla sınırlar. Birden fazla koşul verilirse hepsinin tutması gerekir.
+`when.event` adımı belirli olaylarla sınırlar: `push`, `pull_request`, elle başlatılan `manual` ve zamanlanmış `schedule` build'leri ([api.md](api.md#elle-ve-zamanlanmış-buildler)). Örneğin uzun bir test yalnızca gece build'inde `event: schedule` ile çalışabilir. Birden fazla koşul verilirse hepsinin tutması gerekir.
 
 Pull request'lerde `when.branch` PR'ın hedef branch'ine değil, **kendi branch'ine** bakar. Deploy gibi adımları yukarıdaki gibi `event: push` ile sınırlayın; yoksa adı `main` olan bir branch'ten açılan PR'da da çalışırlar.
 
@@ -157,7 +157,7 @@ Listedeki her dizin, repo'ya ait isimli bir Docker volume'u olarak bütün adım
 | `CISID_JOB_ID` | Job numarası |
 | `CISID_STEP` | Adım adı |
 | `CISID_REPO` | `owner/name` |
-| `CISID_EVENT` | `push` ya da `pull_request` |
+| `CISID_EVENT` | `push`, `pull_request`, `manual` ya da `schedule` |
 | `CISID_BRANCH` | Pushlanan branch; pull request'lerde PR'ın kendi branch'i |
 | `CISID_COMMIT_SHA` | Derlenen commit |
 | `CISID_PULL_REQUEST` | PR numarası (yalnızca pull request'lerde) |

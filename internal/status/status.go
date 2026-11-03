@@ -196,9 +196,12 @@ func (r *Reporter) report(ctx context.Context, job models.Job) bool {
 // Describe returns the commit status for job, without a target URL.
 func Describe(job models.Job) github.CommitStatus {
 	st := github.CommitStatus{Context: Context}
-	if job.Event == models.EventPullRequest {
-		// Apart from a push build of the same commit.
+	// Apart from a push build of the same commit.
+	switch job.Event {
+	case models.EventPullRequest:
 		st.Context += "/pr"
+	case models.EventManual, models.EventSchedule:
+		st.Context += "/" + job.Event
 	}
 	if label := models.MatrixLabel(job.Matrix); label != "" {
 		// Each combination gets its own status instead of overwriting one.

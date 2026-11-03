@@ -45,7 +45,7 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
 }
 ```
 
-`status`: `pending`, `running`, `success`, `failed`, `canceled`. `event` job'u başlatan olaydır: `push` ya da `pull_request`. Pull request job'larında `pull_request` PR numarası, `target_branch` birleştirileceği branch, `branch` PR'ın kendi branch'i, `fork` ise değişikliğin bir fork'tan geldiğidir. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)). `logs_expired_at` varsa job'un logları saklama süresi dolduğu için o tarihte silinmiştir (`CISID_LOG_RETENTION`, [server.md](server.md)); log uç noktaları boş döner.
+`status`: `pending`, `running`, `success`, `failed`, `canceled`. `event` job'u başlatan olaydır: `push`, `pull_request`, `manual` ya da `schedule`. Pull request job'larında `pull_request` PR numarası, `target_branch` birleştirileceği branch, `branch` PR'ın kendi branch'i, `fork` ise değişikliğin bir fork'tan geldiğidir. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)). `logs_expired_at` varsa job'un logları saklama süresi dolduğu için o tarihte silinmiştir (`CISID_LOG_RETENTION`, [server.md](server.md)); log uç noktaları boş döner.
 
 ### Log parçası
 
@@ -67,6 +67,29 @@ Token yoksa ya da yanlışsa `401` döner. Health check'ler (`/healthz`, `/ready
 ```bash
 curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 ```
+
+## Elle ve zamanlanmış build'ler
+
+Bir branch'in son commit'i push beklemeden derlenebilir. Server commit'i ve clone adresini GitHub API'sinden alır (`CISID_GITHUB_TOKEN` özel repolar için gerekir). Bu uç noktalar API token'ı ister; zamanlamaları listelemek okuma erişimi ister.
+
+| Yol | Açıklama |
+|---|---|
+| `POST /api/repos/{owner}/{repo}/builds` | `{"branch":"main"}` ile branch'in son commit'ini hemen derler; `branch` verilmezse varsayılan branch. `201` ve job döner. Repo ya da branch yoksa `404`, GitHub'a ulaşılamazsa `503`. |
+| `GET /api/repos/{owner}/{repo}/schedules` | Repo'nun zamanlamaları: ad, cron, branch, `next_run_at`, `last_run_at`, `last_job_id` |
+| `PUT /api/repos/{owner}/{repo}/schedules/{name}` | `{"cron":"0 3 * * *","branch":"main"}` ile zamanlamayı oluşturur ya da değiştirir. Sonraki çalışma zamanıyla birlikte zamanlamayı döner. |
+| `DELETE /api/repos/{owner}/{repo}/schedules/{name}` | `204`, yoksa `404` |
+
+```bash
+curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' http://localhost:8080/api/repos/sidumandr/cisid/builds
+```
+
+```bash
+curl -X PUT -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"cron":"CRON_TZ=Europe/Istanbul 0 3 * * *"}' http://localhost:8080/api/repos/sidumandr/cisid/schedules/nightly
+```
+
+- **Cron:** Beş alanlı standart biçim (`dakika saat gün ay haftanın-günü`, ör. `0 3 * * 1-5`) ya da `@hourly`, `@daily`, `@weekly`, `@monthly`. Saatler UTC'dir; başka bir saat dilimi için başa `CRON_TZ=Europe/Istanbul ` ekleyin. Zamanlama adı küçük harf, rakam, `.`, `_` ve `-` içerebilir.
+- **Çalışma:** Server her 30 saniyede vakti gelen zamanlamaları alır ve branch'in son commit'i için bir job açar. Birden fazla server kopyası aynı zamanlamayı iki kez çalıştırmaz: zamanlama, veritabanında kilitlenerek tek bir kopyaya verilir. Server kapalıyken kaçırılan çalışmalar açılınca bir kez yapılır, her kaçırılan zaman için ayrı ayrı değil. GitHub'a ulaşılamazsa o çalışma atlanır, zamanlama sonraki zamanında devam eder.
+- **Job'lar:** `event` elle başlatılanlarda `manual`, zamanlananlarda `schedule` olur. `when.event` ile bunlara özel adımlar yazılabilir. Branch'e sınırlı secret'lar bu job'lara push'taki gibi verilir. Commit status'ları ayrı bağlamlarda görünür: `cisid/manual`, `cisid/schedule` ([commit-status.md](commit-status.md)).
 
 ## İptal ve yeniden çalıştırma
 

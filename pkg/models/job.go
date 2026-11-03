@@ -22,6 +22,10 @@ const (
 const (
 	EventPush        = "push"
 	EventPullRequest = "pull_request"
+	// EventManual is a build started through the API, EventSchedule one
+	// started by a schedule; both build the head of a branch.
+	EventManual   = "manual"
+	EventSchedule = "schedule"
 )
 
 // Finished reports whether s is a terminal status.
@@ -39,7 +43,7 @@ type Job struct {
 	Status    JobStatus `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 
-	// Event is what triggered the job: EventPush or EventPullRequest.
+	// Event is what triggered the job, one of the Event constants.
 	Event string `json:"event"`
 	// For pull requests: the number, the branch it is to be merged into,
 	// and whether the changes come from a fork. Branch is the pull
@@ -72,6 +76,19 @@ type Job struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	// LogsExpiredAt is when the logs were deleted after the retention period.
 	LogsExpiredAt *time.Time `json:"logs_expired_at,omitempty"`
+}
+
+// Schedule builds the head of a branch at the times its cron spec matches.
+type Schedule struct {
+	ID   int64  `json:"-"`
+	Repo string `json:"repo"`
+	Name string `json:"name"`
+	Cron string `json:"cron"`
+	// Branch is empty for the repository's default branch.
+	Branch    string     `json:"branch,omitempty"`
+	NextRunAt time.Time  `json:"next_run_at"`
+	LastRunAt *time.Time `json:"last_run_at,omitempty"`
+	LastJobID *int64     `json:"last_job_id,omitempty"`
 }
 
 // SecretInfo describes a repository secret without its value.

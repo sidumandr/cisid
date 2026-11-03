@@ -33,6 +33,7 @@ import (
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/internal/status"
 	"github.com/sidumandr/cisid/internal/telemetry"
+	"github.com/sidumandr/cisid/internal/trigger"
 	"github.com/sidumandr/cisid/internal/web"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -154,6 +155,12 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			agents.Wake() // dispatches reruns and delivers cancels here at once
 			jobChanged(id)
 		}))
+	queued := func(id int64) {
+		agents.Wake()
+		jobChanged(id)
+	}
+	triggersAPI := api.NewTriggersAPI(store, gh, cfg.APIToken, read, queued, log)
+	scheduler := trigger.NewScheduler(store, gh, trigger.WithLogger(log), trigger.WithQueued(queued))
 
 	srv := &http.Server{
 		Handler: api.NewRouter(api.Handlers{
@@ -165,6 +172,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			RateLimit: rateLimiter(cfg),
 			Metrics:   metrics.Handler(),
 			Read:      read,
+			Triggers:  triggersAPI,
 			DB:        store,
 			// Webhook and API requests start the traces jobs continue.
 			TracerProvider: httpTracing,
@@ -196,6 +204,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		g.Go(func() error { return reporter.Run(gctx) })
 	}
 	g.Go(func() error { return housekeep(gctx, store, cfg.LogRetention, log) })
+	g.Go(func() error { return scheduler.Run(gctx) })
 	g.Go(func() error {
 		return broker.Listen(gctx, func(ctx context.Context) (*pgx.Conn, error) {
 			c, err := pool.Acquire(ctx)

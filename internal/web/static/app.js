@@ -101,7 +101,8 @@ function renderList() {
       el("th", {}, "Duration"), el("th", {}, "Created"))),
     body);
   const card = el("div", { class: "card" }, table);
-  app.replaceChildren(el("h1", {}, "Jobs"), card);
+  const run = el("button", { onclick: (e) => runBuild(e.target) }, "Run build");
+  app.replaceChildren(el("div", { class: "title" }, el("h1", {}, "Jobs"), run), card);
 
   async function refresh() {
     try {
@@ -131,6 +132,24 @@ function renderList() {
   return () => clearInterval(timer);
 }
 
+// runBuild asks for a repository and a branch and builds its head now.
+async function runBuild(button) {
+  const repo = prompt("Repository (owner/name):");
+  if (!repo) return;
+  const branch = prompt("Branch (empty for the default branch):", "");
+  if (branch === null) return;
+  button.disabled = true;
+  try {
+    const path = repo.trim().split("/").map(encodeURIComponent).join("/");
+    const job = await post(`/api/repos/${path}/builds`, { branch: branch.trim() });
+    if (job) navigate("/jobs/" + job.id);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // --- job page ---------------------------------------------------------------
 
 function apiToken(forget) {
@@ -143,11 +162,13 @@ function apiToken(forget) {
   return token;
 }
 
-async function post(url) {
+async function post(url, body) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const token = apiToken(attempt > 0);
     if (!token) return null;
-    const resp = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + token } });
+    const headers = { Authorization: "Bearer " + token };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const resp = await fetch(url, { method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body) });
     if (resp.status === 401) continue;
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(body.reason || resp.statusText);
@@ -201,6 +222,7 @@ function renderJob(id) {
     actions.append(el("button", { onclick: (e) => act(e.target, `/api/jobs/${j.id}/rerun`, true) }, "Rerun"));
 
     const meta = el("div", { class: "meta" },
+      j.event && j.event !== "push" && j.event !== "pull_request" ? el("span", {}, j.event + " build") : null,
       j.matrix ? el("span", {}, matrixLabel(j.matrix)) : null,
       el("span", { class: "mono" }, j.commit_sha),
       j.agent ? el("span", {}, "agent " + j.agent) : null,

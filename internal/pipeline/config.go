@@ -114,7 +114,7 @@ func (s Step) RunsFor(job models.Job) bool {
 }
 
 // events are the values when.event accepts.
-var events = []string{models.EventPush, models.EventPullRequest}
+var events = []string{models.EventPush, models.EventPullRequest, models.EventManual, models.EventSchedule}
 
 type rawConfig struct {
 	Steps    []rawStep             `yaml:"steps"`
