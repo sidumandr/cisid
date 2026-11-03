@@ -78,6 +78,9 @@ type Job struct {
 type SecretInfo struct {
 	Name      string    `json:"name"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// Branches limits the secret to pushes to these branches; empty
+	// means every branch.
+	Branches []string `json:"branches,omitempty"`
 }
 
 // MatrixLabel renders a matrix combination as "A=1, B=2", axes in name

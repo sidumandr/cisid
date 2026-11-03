@@ -360,12 +360,22 @@ func (s *Store) SetJobSteps(ctx context.Context, id int64, names []string) error
 	return nil
 }
 
-// PutSecret stores a sealed secret value, replacing an existing one.
-func (s *Store) PutSecret(ctx context.Context, repo, name string, sealed []byte) error {
+// SealedSecret is a sealed secret value and the branches it is limited to.
+type SealedSecret struct {
+	Value    []byte
+	Branches []string
+}
+
+// PutSecret stores a sealed secret value limited to branches, all branches
+// when empty, replacing an existing one.
+func (s *Store) PutSecret(ctx context.Context, repo, name string, sealed []byte, branches []string) error {
 	const q = `
-		INSERT INTO secrets (repo, name, value) VALUES ($1, $2, $3)
-		ON CONFLICT (repo, name) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, q, repo, name, sealed); err != nil {
+		INSERT INTO secrets (repo, name, value, branches) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (repo, name) DO UPDATE SET value = EXCLUDED.value, branches = EXCLUDED.branches, updated_at = now()`
+	if len(branches) == 0 {
+		branches = nil // stored as NULL
+	}
+	if _, err := s.pool.Exec(ctx, q, repo, name, sealed, branches); err != nil {
 		return fmt.Errorf("store secret %s of %s: %w", name, repo, err)
 	}
 	return nil
@@ -382,7 +392,7 @@ func (s *Store) DeleteSecret(ctx context.Context, repo, name string) (bool, erro
 
 // SecretNames lists the secrets of repo by name, without values.
 func (s *Store) SecretNames(ctx context.Context, repo string) ([]models.SecretInfo, error) {
-	rows, err := s.pool.Query(ctx, "SELECT name, updated_at FROM secrets WHERE repo = $1 ORDER BY name", repo)
+	rows, err := s.pool.Query(ctx, "SELECT name, updated_at, branches FROM secrets WHERE repo = $1 ORDER BY name", repo)
 	if err != nil {
 		return nil, fmt.Errorf("list secrets of %s: %w", repo, err)
 	}
@@ -393,25 +403,24 @@ func (s *Store) SecretNames(ctx context.Context, repo string) ([]models.SecretIn
 	return infos, nil
 }
 
-// SealedSecrets returns the sealed values of the named secrets of repo
-// that exist.
-func (s *Store) SealedSecrets(ctx context.Context, repo string, names []string) (map[string][]byte, error) {
-	rows, err := s.pool.Query(ctx, "SELECT name, value FROM secrets WHERE repo = $1 AND name = ANY($2)", repo, names)
+// SealedSecrets returns the named secrets of repo that exist.
+func (s *Store) SealedSecrets(ctx context.Context, repo string, names []string) (map[string]SealedSecret, error) {
+	rows, err := s.pool.Query(ctx, "SELECT name, value, branches FROM secrets WHERE repo = $1 AND name = ANY($2)", repo, names)
 	if err != nil {
 		return nil, fmt.Errorf("read secrets of %s: %w", repo, err)
 	}
 	defer rows.Close()
 
-	sealed := map[string][]byte{}
+	sealed := map[string]SealedSecret{}
 	for rows.Next() {
 		var (
-			name  string
-			value []byte
+			name   string
+			secret SealedSecret
 		)
-		if err := rows.Scan(&name, &value); err != nil {
+		if err := rows.Scan(&name, &secret.Value, &secret.Branches); err != nil {
 			return nil, fmt.Errorf("read secrets of %s: %w", repo, err)
 		}
-		sealed[name] = value
+		sealed[name] = secret
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read secrets of %s: %w", repo, err)

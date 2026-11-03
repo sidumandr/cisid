@@ -234,23 +234,24 @@ steps:
 
 // fakeSecrets serves fixed secret values.
 type fakeSecrets struct {
-	values map[string]string
-	err    error
-	asked  []string
+	values   map[string]string
+	branches map[string][]string
+	err      error
+	asked    []string
 }
 
-func (f *fakeSecrets) Secrets(_ context.Context, repo string, names []string) (map[string]string, error) {
+func (f *fakeSecrets) Secrets(_ context.Context, repo string, names []string) (map[string]secrets.Secret, error) {
 	f.asked = names
 	if f.err != nil {
 		return nil, f.err
 	}
-	out := map[string]string{}
+	out := map[string]secrets.Secret{}
 	for _, n := range names {
 		v, ok := f.values[n]
 		if !ok {
 			return nil, fmt.Errorf("%w: %s is not set for %s", secrets.ErrNotFound, n, repo)
 		}
-		out[n] = v
+		out[n] = secrets.Secret{Value: v, Branches: f.branches[n]}
 	}
 	return out, nil
 }

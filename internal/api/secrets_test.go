@@ -20,12 +20,16 @@ import (
 
 // memVault is an in-memory SecretVault that applies the real validation.
 type memVault struct {
-	mu     sync.Mutex
-	values map[string]string // "repo name" -> value
+	mu       sync.Mutex
+	values   map[string]string   // "repo name" -> value
+	branches map[string][]string // "repo name" -> branches
 }
 
-func (v *memVault) Set(_ context.Context, repo, name, value string) error {
+func (v *memVault) Set(_ context.Context, repo, name, value string, branches []string) error {
 	if err := secrets.ValidateName(name); err != nil {
+		return err
+	}
+	if err := secrets.ValidateBranches(branches); err != nil {
 		return err
 	}
 	if len(value) > secrets.MaxValueBytes {
@@ -34,9 +38,10 @@ func (v *memVault) Set(_ context.Context, repo, name, value string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.values == nil {
-		v.values = map[string]string{}
+		v.values, v.branches = map[string]string{}, map[string][]string{}
 	}
 	v.values[repo+" "+name] = value
+	v.branches[repo+" "+name] = branches
 	return nil
 }
 
@@ -56,7 +61,7 @@ func (v *memVault) List(_ context.Context, repo string) ([]models.SecretInfo, er
 	var out []models.SecretInfo
 	for k := range v.values {
 		if r, name, _ := strings.Cut(k, " "); r == repo {
-			out = append(out, models.SecretInfo{Name: name, UpdatedAt: time.Unix(0, 0).UTC()})
+			out = append(out, models.SecretInfo{Name: name, UpdatedAt: time.Unix(0, 0).UTC(), Branches: v.branches[k]})
 		}
 	}
 	return out, nil
@@ -99,6 +104,24 @@ func TestSecretsAPI(t *testing.T) {
 
 	assert.Equal(t, http.StatusNoContent, do(h, http.MethodDelete, base+"/DEPLOY_TOKEN", writeToken, "").Code)
 	assert.Equal(t, http.StatusNotFound, do(h, http.MethodDelete, base+"/DEPLOY_TOKEN", writeToken, "").Code)
+}
+
+func TestSecretsAPIBranches(t *testing.T) {
+	vault := &memVault{}
+	h := secretsRouter(vault, writeToken)
+	const base = "/api/repos/sidumandr/cisid/secrets"
+
+	rec := do(h, http.MethodPut, base+"/DEPLOY_TOKEN", writeToken, `{"value":"dep_123","branches":["main","release/*"]}`)
+	require.Equal(t, http.StatusNoContent, rec.Code, rec.Body.String())
+
+	rec = do(h, http.MethodGet, base, writeToken, "")
+	var infos []models.SecretInfo
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &infos))
+	assert.Equal(t, []string{"main", "release/*"}, infos[0].Branches)
+
+	for _, body := range []string{`{"value":"x","branches":[""]}`, `{"value":"x","branches":["a b"]}`} {
+		assert.Equal(t, http.StatusBadRequest, do(h, http.MethodPut, base+"/TOKEN", writeToken, body).Code, body)
+	}
 }
 
 func TestSecretsAPIRejectsBadInput(t *testing.T) {

@@ -45,7 +45,7 @@ var _ ConfigSource = (*github.Client)(nil)
 // SecretSource returns the values of repository secrets.
 // *secrets.Vault satisfies it.
 type SecretSource interface {
-	Secrets(ctx context.Context, repo string, names []string) (map[string]string, error)
+	Secrets(ctx context.Context, repo string, names []string) (map[string]secrets.Secret, error)
 }
 
 var _ SecretSource = (*secrets.Vault)(nil)
@@ -178,7 +178,28 @@ func (p Planner) secretsFor(ctx context.Context, job models.Job, steps []Step) (
 	case err != nil:
 		return nil, fmt.Errorf("%w: read secrets: %w", ErrTemporary, err)
 	}
-	return values, nil
+	allowed := make(map[string]string, len(values))
+	for name, s := range values {
+		if secretAllowed(s.Branches, job) {
+			allowed[name] = s.Value
+		}
+	}
+	return allowed, nil
+}
+
+// secretAllowed reports whether a secret limited to branches may go to job:
+// only to jobs on those branches, never to pull requests, whose changes are
+// not on the branch yet. Unlike when.branch, this is decided by the server,
+// so a branch's .cisid.yml cannot change it.
+func secretAllowed(branches []string, job models.Job) bool {
+	if len(branches) == 0 {
+		return true
+	}
+	if job.Event == models.EventPullRequest {
+		return false
+	}
+	m, err := newBranchMatcher(branches)
+	return err == nil && m.Matches(job.Branch)
 }
 
 // cloneStep fetches exactly the pushed commit into the workspace. Values

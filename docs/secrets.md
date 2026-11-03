@@ -14,7 +14,7 @@ Deploy token'ı gibi gizli değerler repo başına saklanır ve sadece onları i
 ## Secret ekleme ve silme
 
 ```bash
-curl -X PUT -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"value":"..."}' http://localhost:8080/api/repos/sidumandr/cisid/secrets/DEPLOY_TOKEN
+curl -X PUT -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"value":"...","branches":["main"]}' http://localhost:8080/api/repos/sidumandr/cisid/secrets/DEPLOY_TOKEN
 ```
 
 ```bash
@@ -27,14 +27,30 @@ curl -X DELETE -H "Authorization: Bearer $CISID_API_TOKEN" http://localhost:8080
 
 | Uç nokta | Yanıt |
 |---|---|
-| `PUT …/secrets/{name}` | `204`. Var olan değerin üzerine yazar. |
-| `GET …/secrets` | `200 [{"name":"DEPLOY_TOKEN","updated_at":"…"}]`. Değerler **hiçbir zaman** geri dönmez. |
+| `PUT …/secrets/{name}` | `204`. Var olan değerin ve branch listesinin üzerine yazar. `branches` isteğe bağlıdır. |
+| `GET …/secrets` | `200 [{"name":"DEPLOY_TOKEN","updated_at":"…","branches":["main"]}]`. Değerler **hiçbir zaman** geri dönmez. |
 | `DELETE …/secrets/{name}` | `204`, yoksa `404` |
 
 Kurallar:
 
 - Ad bir ortam değişkeni adı olmalıdır: harf, rakam ve `_`, rakamla başlamaz, en fazla 100 karakter. cisid'in adımlara kendi verdiği değişkenler (`CI`, `CISID`, `CISID_JOB_ID`, `CISID_STEP`, `CISID_REPO`, `CISID_BRANCH`, `CISID_COMMIT_SHA`, `CISID_CLONE_URL`) kullanılamaz.
 - Değer en fazla 64 KB olabilir.
+- `branches` en fazla 20 desen alır. Desenler `when.branch` ile aynı söz dizimini kullanır (`main`, `release/*`).
+
+## Secret'ı branch'lere sınırlamak
+
+`branches` verilen bir secret yalnızca bu branch'lerdeki push build'lerine gider, pull request'lere hiç gitmez. Bu kararı server verir.
+
+`when.branch` ise bir güvenlik sınırı değildir. `.cisid.yml` derlenen commit'ten okunur, repoya push edebilen biri koşulu kendi branch'inde silebilir. Deploy token'ı gibi hassas secret'ları korumalı branch'lere `branches` ile sınırlayın:
+
+| Job | `branches` yok | `branches: ["main"]` |
+|---|---|---|
+| `main`'e push | verilir | verilir |
+| `feature/x`'e push | verilir | verilmez |
+| Repodan açılan pull request | verilir | verilmez |
+| Fork'tan pull request | verilmez | verilmez |
+
+Secret'ı alamayan adım yine çalışır, yalnızca o ortam değişkeni tanımlı olmaz.
 
 ## Kullanım
 
@@ -68,5 +84,5 @@ Maskeleme bir güvenlik ağıdır, sınır değildir. Adım değeri dönüştür
 
 - **Saklama:** Değerler AES-256-GCM ile şifrelenir, her değer için rastgele bir nonce kullanılır. Şifreli veri `repo/ad` bilgisine bağlıdır. Veritabanında başka bir satıra taşınan ya da değiştirilen bir değer çözülemez.
 - **Server'da:** Secret değerleri ve API token'ı server loglarına yazılmaz.
-- **Hangi job'lar secret görür:** Push build'leri ve repodaki bir branch'ten açılan pull request'ler, adımlarının istediği secret'ları alır. Fork'tan gelen pull request'lere (`CISID_BUILD_FORKS`) hiçbir secret verilmez; secret isteyen adımlar o değişkenler olmadan çalışır.
+- **Hangi job'lar secret görür:** Push build'leri ve repodaki bir branch'ten açılan pull request'ler, adımlarının istediği secret'ları alır. `branches` ile sınırlanan secret'lar yalnızca o branch'lerdeki push'lara verilir. Fork'tan gelen pull request'lere (`CISID_BUILD_FORKS`) hiçbir secret verilmez; secret isteyen adımlar o değişkenler olmadan çalışır.
 - **Taşıma:** Secret'lar agent'a WebSocket üzerinden gider. Agent ile server arasında TLS (`wss://`) kullanın. Agent'lar token ile doğrulanır ([agent.md](agent.md#kimlik-doğrulama-ve-tls)).

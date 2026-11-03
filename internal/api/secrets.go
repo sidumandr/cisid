@@ -16,7 +16,7 @@ var repoPartRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
 // SecretVault stores repository secrets. *secrets.Vault satisfies it.
 type SecretVault interface {
-	Set(ctx context.Context, repo, name, value string) error
+	Set(ctx context.Context, repo, name, value string, branches []string) error
 	Delete(ctx context.Context, repo, name string) error
 	List(ctx context.Context, repo string) ([]models.SecretInfo, error)
 }
@@ -82,26 +82,27 @@ func (s *SecretsAPI) put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Value *string `json:"value"`
+		Value    *string  `json:"value"`
+		Branches []string `json:"branches"`
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*secrets.MaxValueBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || body.Value == nil {
-		writeError(w, http.StatusBadRequest, `body must be {"value": "..."}`)
+		writeError(w, http.StatusBadRequest, `body must be {"value": "...", "branches": [...]} with branches optional`)
 		return
 	}
 
 	name := r.PathValue("name")
-	err := s.vault.Set(r.Context(), repo, name, *body.Value)
+	err := s.vault.Set(r.Context(), repo, name, *body.Value, body.Branches)
 	switch {
-	case errors.Is(err, secrets.ErrInvalidName):
+	case errors.Is(err, secrets.ErrInvalidName), errors.Is(err, secrets.ErrInvalidBranch):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, secrets.ErrTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 	case err != nil:
 		s.internalError(w, r, "store secret", err)
 	default:
-		s.log.InfoContext(r.Context(), "secret stored", "repo", repo, "name", name)
+		s.log.InfoContext(r.Context(), "secret stored", "repo", repo, "name", name, "branches", body.Branches)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

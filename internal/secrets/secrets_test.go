@@ -98,12 +98,15 @@ func TestVault(t *testing.T) {
 	ctx := context.Background()
 	const repo = "sidumandr/cisid"
 
-	require.NoError(t, v.Set(ctx, repo, "DEPLOY_TOKEN", "abc123"))
-	require.NoError(t, v.Set(ctx, repo, "NPM_TOKEN", "npm_xyz"))
+	require.NoError(t, v.Set(ctx, repo, "DEPLOY_TOKEN", "abc123", []string{"main"}))
+	require.NoError(t, v.Set(ctx, repo, "NPM_TOKEN", "npm_xyz", nil))
 
 	got, err := v.Secrets(ctx, repo, []string{"DEPLOY_TOKEN", "NPM_TOKEN"})
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"DEPLOY_TOKEN": "abc123", "NPM_TOKEN": "npm_xyz"}, got)
+	assert.Equal(t, map[string]Secret{
+		"DEPLOY_TOKEN": {Value: "abc123", Branches: []string{"main"}},
+		"NPM_TOKEN":    {Value: "npm_xyz"},
+	}, got)
 
 	_, err = v.Secrets(ctx, repo, []string{"DEPLOY_TOKEN", "MISSING"})
 	assert.ErrorIs(t, err, ErrNotFound)
@@ -111,7 +114,7 @@ func TestVault(t *testing.T) {
 	// The database only ever holds ciphertext.
 	sealed, err := store.SealedSecrets(ctx, repo, []string{"DEPLOY_TOKEN"})
 	require.NoError(t, err)
-	assert.NotContains(t, string(sealed["DEPLOY_TOKEN"]), "abc123")
+	assert.NotContains(t, string(sealed["DEPLOY_TOKEN"].Value), "abc123")
 
 	infos, err := v.List(ctx, repo)
 	require.NoError(t, err)
@@ -120,8 +123,22 @@ func TestVault(t *testing.T) {
 	require.NoError(t, v.Delete(ctx, repo, "NPM_TOKEN"))
 	assert.ErrorIs(t, v.Delete(ctx, repo, "NPM_TOKEN"), ErrNotFound)
 
-	assert.ErrorIs(t, v.Set(ctx, repo, "BAD-NAME", "x"), ErrInvalidName)
-	assert.ErrorIs(t, v.Set(ctx, repo, "BIG", strings.Repeat("x", MaxValueBytes+1)), ErrTooLarge)
+	assert.ErrorIs(t, v.Set(ctx, repo, "BAD-NAME", "x", nil), ErrInvalidName)
+	assert.ErrorIs(t, v.Set(ctx, repo, "BIG", strings.Repeat("x", MaxValueBytes+1), nil), ErrTooLarge)
+	assert.ErrorIs(t, v.Set(ctx, repo, "TOKEN", "x", []string{""}), ErrInvalidBranch)
+}
+
+func TestValidateBranches(t *testing.T) {
+	for _, ok := range [][]string{nil, {"main"}, {"release/*", "hotfix/**", "v?.x"}} {
+		assert.NoError(t, ValidateBranches(ok), ok)
+	}
+	tooMany := make([]string, maxBranches+1)
+	for i := range tooMany {
+		tooMany[i] = "b"
+	}
+	for _, bad := range [][]string{{""}, {"a b"}, {"main\n"}, {strings.Repeat("x", 256)}, tooMany} {
+		assert.ErrorIs(t, ValidateBranches(bad), ErrInvalidBranch, bad)
+	}
 }
 
 func names(infos []models.SecretInfo) []string {

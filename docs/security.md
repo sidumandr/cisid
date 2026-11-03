@@ -39,7 +39,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 - AES-256-GCM ile şifrelenir. Şifreli veri `repo/ad` bilgisine bağlıdır (AAD), başka bir satıra kopyalanan değer çözülemez. Anahtar `CISID_SECRET_KEY`'dir, veritabanında tutulmaz.
 - API secret değerlerini hiçbir zaman geri döndürmez, yalnızca adlarını listeler.
-- Değerler yalnızca `secrets:` ile isteyen adımlara ortam değişkeni olarak verilir. `when.branch` ile korumalı branch'lerle sınırlanabilir.
+- Değerler yalnızca `secrets:` ile isteyen adımlara ortam değişkeni olarak verilir. Bir secret, server tarafında `branches` ile korumalı branch'lere sınırlanabilir; o zaman pull request'lere de verilmez ([secrets.md](secrets.md#secretı-branchlere-sınırlamak)). `when.branch` bir güvenlik sınırı değildir, çünkü `.cisid.yml` derlenen commit'ten okunur.
 - Agent, adımların çıktısında secret değerlerini `***` ile maskeler, parçalara bölünmüş değerler dahil. 3 karakterden kısa değerler maskelenmez. Maskeleme bir güvenlik sınırı değildir: değeri dönüştürüp (ör. base64) yazdıran bir adımı durdurmaz ([secrets.md](secrets.md)).
 
 ## Step container'ları
@@ -65,7 +65,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - [ ] Okuma uç noktaları, web arayüzü ve `/metrics` erişim kontrolü arkasında.
 - [ ] `CISID_SECRET_KEY` veritabanı yedeklerinden ayrı saklanıyor.
 - [ ] Agent'lar ayrı makinelerde, `CISID_STEP_MEMORY` ve `CISID_STEP_CPUS` tanımlı.
-- [ ] Hassas secret'lar `when.branch` ile korumalı branch'lere sınırlı.
+- [ ] Hassas secret'lar `branches` ile korumalı branch'lere sınırlı.
 
 ## Bilinen eksikler
 

@@ -615,19 +615,29 @@ func TestStoreSecrets(t *testing.T) {
 	ctx := t.Context()
 	const repo = "sidumandr/cisid"
 
-	require.NoError(t, s.PutSecret(ctx, repo, "B_TOKEN", []byte("sealed-b")))
-	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a1")))
-	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a2")))
-	require.NoError(t, s.PutSecret(ctx, "other/repo", "A_TOKEN", []byte("other")))
+	require.NoError(t, s.PutSecret(ctx, repo, "B_TOKEN", []byte("sealed-b"), nil))
+	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a1"), []string{"main"}))
+	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a2"), []string{"main", "release/*"}))
+	require.NoError(t, s.PutSecret(ctx, "other/repo", "A_TOKEN", []byte("other"), nil))
 
 	infos, err := s.SecretNames(ctx, repo)
 	require.NoError(t, err)
 	require.Len(t, infos, 2)
 	assert.Equal(t, []string{"A_TOKEN", "B_TOKEN"}, []string{infos[0].Name, infos[1].Name})
+	assert.Equal(t, []string{"main", "release/*"}, infos[0].Branches, "an update replaces the branches")
+	assert.Nil(t, infos[1].Branches, "no branches: every branch")
 
-	sealed, err := s.SealedSecrets(ctx, repo, []string{"A_TOKEN", "MISSING"})
+	sealed, err := s.SealedSecrets(ctx, repo, []string{"A_TOKEN", "B_TOKEN", "MISSING"})
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]byte{"A_TOKEN": []byte("sealed-a2")}, sealed)
+	assert.Equal(t, map[string]SealedSecret{
+		"A_TOKEN": {Value: []byte("sealed-a2"), Branches: []string{"main", "release/*"}},
+		"B_TOKEN": {Value: []byte("sealed-b")},
+	}, sealed)
+
+	require.NoError(t, s.PutSecret(ctx, repo, "A_TOKEN", []byte("sealed-a3"), []string{}))
+	sealed, err = s.SealedSecrets(ctx, repo, []string{"A_TOKEN"})
+	require.NoError(t, err)
+	assert.Nil(t, sealed["A_TOKEN"].Branches, "an empty list lifts the limit")
 
 	found, err := s.DeleteSecret(ctx, repo, "A_TOKEN")
 	require.NoError(t, err)

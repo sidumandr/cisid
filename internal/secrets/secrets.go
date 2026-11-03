@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/pkg/models"
@@ -31,6 +32,8 @@ var (
 	ErrInvalidKey = errors.New("invalid secret key")
 	// ErrInvalidName is returned for a name that cannot be an environment variable.
 	ErrInvalidName = errors.New("invalid secret name")
+	// ErrInvalidBranch is returned for an unusable branch pattern.
+	ErrInvalidBranch = errors.New("invalid secret branch")
 	// ErrTooLarge is returned for a value over MaxValueBytes.
 	ErrTooLarge = errors.New("secret too large")
 	// ErrNotFound is returned when a secret does not exist.
@@ -116,10 +119,34 @@ func aad(repo, name string) []byte {
 
 // Store keeps sealed values. *db.Store satisfies it.
 type Store interface {
-	PutSecret(ctx context.Context, repo, name string, sealed []byte) error
+	PutSecret(ctx context.Context, repo, name string, sealed []byte, branches []string) error
 	DeleteSecret(ctx context.Context, repo, name string) (bool, error)
 	SecretNames(ctx context.Context, repo string) ([]models.SecretInfo, error)
-	SealedSecrets(ctx context.Context, repo string, names []string) (map[string][]byte, error)
+	SealedSecrets(ctx context.Context, repo string, names []string) (map[string]db.SealedSecret, error)
+}
+
+// Secret is a secret's value and the branches it is limited to.
+type Secret struct {
+	Value string
+	// Branches holds glob patterns like when.branch; empty means every
+	// branch.
+	Branches []string
+}
+
+// maxBranches bounds the branch patterns of one secret.
+const maxBranches = 20
+
+// ValidateBranches checks the branch patterns a secret is limited to.
+func ValidateBranches(patterns []string) error {
+	if len(patterns) > maxBranches {
+		return fmt.Errorf("%w: at most %d patterns, got %d", ErrInvalidBranch, maxBranches, len(patterns))
+	}
+	for _, p := range patterns {
+		if p == "" || len(p) > 255 || strings.ContainsFunc(p, unicode.IsSpace) {
+			return fmt.Errorf("%w: %q", ErrInvalidBranch, p)
+		}
+	}
+	return nil
 }
 
 var _ Store = (*db.Store)(nil)
@@ -136,9 +163,13 @@ func NewVault(store Store, c *Cipher) *Vault {
 	return &Vault{store: store, cipher: c}
 }
 
-// Set stores value as secret name of repo, replacing an existing one.
-func (v *Vault) Set(ctx context.Context, repo, name, value string) error {
+// Set stores value as secret name of repo, limited to branches (every
+// branch when empty), replacing an existing one.
+func (v *Vault) Set(ctx context.Context, repo, name, value string, branches []string) error {
 	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if err := ValidateBranches(branches); err != nil {
 		return err
 	}
 	if len(value) > MaxValueBytes {
@@ -148,7 +179,7 @@ func (v *Vault) Set(ctx context.Context, repo, name, value string) error {
 	if err != nil {
 		return err
 	}
-	return v.store.PutSecret(ctx, repo, name, sealed)
+	return v.store.PutSecret(ctx, repo, name, sealed, branches)
 }
 
 // Delete removes secret name of repo.
@@ -168,24 +199,24 @@ func (v *Vault) List(ctx context.Context, repo string) ([]models.SecretInfo, err
 	return v.store.SecretNames(ctx, repo)
 }
 
-// Secrets returns the values of the named secrets of repo. A missing
-// secret is ErrNotFound.
-func (v *Vault) Secrets(ctx context.Context, repo string, names []string) (map[string]string, error) {
+// Secrets returns the named secrets of repo. A missing secret is
+// ErrNotFound.
+func (v *Vault) Secrets(ctx context.Context, repo string, names []string) (map[string]Secret, error) {
 	sealed, err := v.store.SealedSecrets(ctx, repo, names)
 	if err != nil {
 		return nil, err
 	}
-	values := make(map[string]string, len(names))
+	out := make(map[string]Secret, len(names))
 	for _, name := range names {
 		s, ok := sealed[name]
 		if !ok {
 			return nil, fmt.Errorf("%w: %s is not set for %s", ErrNotFound, name, repo)
 		}
-		value, err := v.cipher.Open(repo, name, s)
+		value, err := v.cipher.Open(repo, name, s.Value)
 		if err != nil {
 			return nil, err
 		}
-		values[name] = value
+		out[name] = Secret{Value: value, Branches: s.Branches}
 	}
-	return values, nil
+	return out, nil
 }
