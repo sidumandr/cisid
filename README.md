@@ -20,6 +20,8 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/agent.md](docs/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
 - [docs/hub.md](docs/hub.md): Server tarafında job dağıtımı, sahiplik kuralları ve graceful shutdown
 - [docs/deployment.md](docs/deployment.md): Docker image'ları ve docker compose ile kurulum
+- [docs/security.md](docs/security.md): Güven sınırları, güvenlik önlemleri ve production kontrol listesi
+- [docs/adr/](docs/adr/): Mimari karar kayıtları (ör. agent protokolü neden gRPC değil)
 
 ## Mimari
 
@@ -39,7 +41,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
         └──────┬─────────────▲──────┘
                │             │
        SQL     │             │  job_assigned ▼ / ▲ job_log, job_result
-               ▼             │  (WebSocket, ileride gRPC: api/proto)
+               ▼             │  (WebSocket, bkz. docs/adr/001)
       ┌────────────────┐     │
       │   PostgreSQL   │     │
       │ pipelines,     │     │

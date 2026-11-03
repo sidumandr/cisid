@@ -69,4 +69,4 @@ Maskeleme bir güvenlik ağıdır, sınır değildir. Adım değeri dönüştür
 - **Saklama:** Değerler AES-256-GCM ile şifrelenir, her değer için rastgele bir nonce kullanılır. Şifreli veri `repo/ad` bilgisine bağlıdır. Veritabanında başka bir satıra taşınan ya da değiştirilen bir değer çözülemez.
 - **Server'da:** Secret değerleri ve API token'ı server loglarına yazılmaz.
 - **Hangi push'lar secret görür:** Secret'lar repoya push edilen her branch'teki adımlara verilebilir. Hassas secret'ları `when.branch` ile korumalı branch'lerle sınırlayın. Pull request build'leri henüz yoktur.
-- **Taşıma:** Secret'lar agent'a WebSocket üzerinden gider. Agent ile server arasında TLS (`wss://`) kullanın. Agent kimlik doğrulaması Faz 4'te.
+- **Taşıma:** Secret'lar agent'a WebSocket üzerinden gider. Agent ile server arasında TLS (`wss://`) kullanın. Agent'lar token ile doğrulanır ([agent.md](agent.md#kimlik-doğrulama-ve-tls)).
