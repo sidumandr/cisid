@@ -1,18 +1,11 @@
-# Development dependencies, and optionally the whole stack.
-#
-# Just the database, for running the server and tests from source:
+# Local development dependencies.
 #
 #   docker compose up -d --wait postgres
 #
-#   Server:   CISID_DATABASE_URL=postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable
-#   DB tests: CISID_TEST_DATABASE_URL=postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable
+# Server:   CISID_DATABASE_URL=postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable
+# DB tests: CISID_TEST_DATABASE_URL=postgres://cisid:cisid@localhost:5432/cisid?sslmode=disable
 #
-# The whole stack (database, server and one agent), built from source:
-#
-#   docker compose --profile stack up -d --build --wait
-#
-# Set at least CISID_GITHUB_WEBHOOK_SECRET and CISID_AGENT_TOKEN in the
-# environment or an .env file; see docs/deployment.md.
+# The whole stack (database, server and an agent) is in compose.stack.yaml.
 services:
   postgres:
     image: postgres:18-alpine
@@ -29,52 +22,6 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
-
-  server:
-    profiles: [stack]
-    build:
-      context: .
-      target: server
-    image: cisid-server:dev
-    environment:
-      CISID_DATABASE_URL: postgres://cisid:cisid@postgres:5432/cisid?sslmode=disable
-      CISID_GITHUB_WEBHOOK_SECRET: ${CISID_GITHUB_WEBHOOK_SECRET:?set CISID_GITHUB_WEBHOOK_SECRET}
-      CISID_AGENT_TOKEN: ${CISID_AGENT_TOKEN:?set CISID_AGENT_TOKEN}
-      CISID_API_TOKEN: ${CISID_API_TOKEN:-}
-      CISID_SECRET_KEY: ${CISID_SECRET_KEY:-}
-      CISID_GITHUB_TOKEN: ${CISID_GITHUB_TOKEN:-}
-      CISID_PUBLIC_URL: ${CISID_PUBLIC_URL:-}
-    ports:
-      - "${CISID_HTTP_PORT:-8080}:8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
-      interval: 2s
-      timeout: 3s
-      retries: 15
-
-  agent:
-    profiles: [stack]
-    build:
-      context: .
-      target: agent
-    image: cisid-agent:dev
-    environment:
-      CISID_SERVER_URL: ws://server:8080/agent/ws
-      # Defaults to the container hostname, so "--scale agent=N" gives
-      # each replica its own name.
-      CISID_AGENT_NAME: ${CISID_AGENT_NAME:-}
-      CISID_AGENT_TOKEN: ${CISID_AGENT_TOKEN:?set CISID_AGENT_TOKEN}
-      CISID_STEP_MEMORY: ${CISID_STEP_MEMORY:-}
-      CISID_STEP_CPUS: ${CISID_STEP_CPUS:-}
-    volumes:
-      # The agent starts step containers on the host's Docker daemon.
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      server:
-        condition: service_healthy
 
 volumes:
   pgdata:

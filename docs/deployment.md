@@ -21,7 +21,7 @@ Binary'ler `CGO_ENABLED=0` ile statik derlenir. Image'larda Go toolchain ve kayn
 
 ## docker compose ile tüm stack
 
-`compose.yaml` içindeki `stack` profili PostgreSQL, server ve bir agent başlatır. Profil verilmezse yalnızca geliştirme için PostgreSQL ayağa kalkar.
+`compose.stack.yaml` PostgreSQL, server ve bir agent başlatır. PostgreSQL tanımını `compose.yaml`'dan alır. `compose.yaml` tek başına yalnızca geliştirme için PostgreSQL'i çalıştırır ve hiçbir değişken istemez.
 
 Proje kökünde bir `.env` dosyası oluşturun (git'e eklemeyin):
 
@@ -34,10 +34,10 @@ CISID_GITHUB_TOKEN=commit-status-için-github-token
 CISID_PUBLIC_URL=https://ci.example.com
 ```
 
-`CISID_GITHUB_WEBHOOK_SECRET` ve `CISID_AGENT_TOKEN` zorunludur, eksikse compose başlamaz. Diğerleri isteğe bağlıdır. Anlamları için [server.md](server.md) ve [secrets.md](secrets.md).
+`CISID_GITHUB_WEBHOOK_SECRET` ve `CISID_AGENT_TOKEN` zorunludur, eksikse compose başlamaz. Diğerleri isteğe bağlıdır, anlamları için [server.md](server.md) ve [secrets.md](secrets.md). Her komutta `-f` yazmamak için `.env`'e `COMPOSE_FILE=compose.stack.yaml` ekleyebilirsiniz.
 
 ```bash
-docker compose --profile stack up -d --build --wait
+docker compose -f compose.stack.yaml up -d --build --wait
 ```
 
 Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile değiştirilir). GitHub webhook adresi `/webhooks/github` yoludur ([webhook.md](webhook.md)).
@@ -45,7 +45,7 @@ Server `http://localhost:8080` adresinde açılır (`CISID_HTTP_PORT` ile deği�
 Daha fazla agent:
 
 ```bash
-docker compose --profile stack up -d --scale agent=3
+docker compose -f compose.stack.yaml up -d --scale agent=3
 ```
 
 Her agent kendi container hostname'ini ad olarak kullanır. Sabit bir ad isterseniz `CISID_AGENT_NAME` verin, ama o zaman `--scale` kullanmayın: aynı adla bağlanan ikinci agent ilkinin bağlantısını devralır.
@@ -53,7 +53,7 @@ Her agent kendi container hostname'ini ad olarak kullanır. Sabit bir ad isterse
 Durdurmak (veritabanı volume'u korunur):
 
 ```bash
-docker compose --profile stack down
+docker compose -f compose.stack.yaml down
 ```
 
 ### Agent ve Docker socket

@@ -7,3 +7,4 @@ Dockerfile
 .dockerignore
 .env
 .env.*
+compose.stack.yaml

@@ -133,7 +133,7 @@ Ayrıntılar: [docs/server.md](docs/server.md), [docs/agent.md](docs/agent.md).
 PostgreSQL, server ve bir agent'tan oluşan stack'i kaynak koddan derleyip başlatır (`.env` içinde en az `CISID_GITHUB_WEBHOOK_SECRET` ve `CISID_AGENT_TOKEN` gerekir):
 
 ```bash
-docker compose --profile stack up -d --build --wait
+docker compose -f compose.stack.yaml up -d --build --wait
 ```
 
 Ayrıntılar: [docs/deployment.md](docs/deployment.md).
