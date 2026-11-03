@@ -73,7 +73,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `agent.replicaCount` | `1` | Agent sayısı. Her agent aynı anda bir job çalıştırır. |
 | `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Adım ve servis container'larının sınırları |
 | `agent.docker.mode` | `dind` | `dind` ya da `hostSocket` |
-| `agent.docker.dind.persistence.enabled` | `false` | Çekilen image'ları agent başına bir volume'da saklar |
+| `agent.docker.dind.persistence.enabled` | `false` | Çekilen image'ları ve job önbelleklerini agent başına bir volume'da saklar |
 | `postgresql.enabled` | `true` | Dahili PostgreSQL. Kapalıysa `database.url` gerekir. |
 | `postgresql.auth.password` | — | Dahili PostgreSQL'in şifresi. Yalnızca harf, rakam ve `. _ ~ -` içerebilir. |
 | `ingress.enabled`, `ingress.hosts`, `ingress.tls` | kapalı | Webhook ve arayüz için dış erişim |

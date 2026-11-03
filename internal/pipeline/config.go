@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -26,7 +27,10 @@ const (
 	maxStepTimeout     = 24 * time.Hour
 	maxConfigBytes     = 64 << 10
 	maxSteps           = 50
-	maxServices        = 10
+	maxCachePaths      = 10
+	// workspacePath is where agents mount the job's checkout.
+	workspacePath = "/workspace"
+	maxServices   = 10
 )
 
 var (
@@ -69,6 +73,8 @@ type Config struct {
 	// environment variable, and images and environment values may use
 	// ${AXIS}.
 	Matrix Matrix
+	// Cache lists absolute paths kept between the repository's jobs.
+	Cache []string
 }
 
 // Service is a container started before the steps and stopped after them.
@@ -114,6 +120,7 @@ type rawConfig struct {
 	Steps    []rawStep             `yaml:"steps"`
 	Services []rawService          `yaml:"services"`
 	Matrix   map[string]stringList `yaml:"matrix"`
+	Cache    []string              `yaml:"cache"`
 }
 
 type rawService struct {
@@ -131,6 +138,28 @@ type rawStep struct {
 	Timeout     string            `yaml:"timeout"`
 	When        rawWhen           `yaml:"when"`
 	Secrets     []string          `yaml:"secrets"`
+}
+
+// validateCache checks the cached paths: clean absolute paths, neither the
+// root nor the workspace itself, each once.
+func validateCache(paths []string) []error {
+	var problems []error
+	if len(paths) > maxCachePaths {
+		problems = append(problems, fmt.Errorf("cache: at most %d paths are allowed, got %d", maxCachePaths, len(paths)))
+	}
+	seen := map[string]bool{}
+	for i, p := range paths {
+		switch {
+		case !path.IsAbs(p) || path.Clean(p) != p:
+			problems = append(problems, fmt.Errorf("cache[%d]: %q must be a clean absolute path", i, p))
+		case p == "/" || p == workspacePath:
+			problems = append(problems, fmt.Errorf("cache[%d]: %q cannot be cached", i, p))
+		case seen[p]:
+			problems = append(problems, fmt.Errorf("cache[%d]: %q is listed twice", i, p))
+		}
+		seen[p] = true
+	}
+	return problems
 }
 
 // ParseConfig parses and validates a .cisid.yml, reporting every problem
@@ -169,6 +198,8 @@ func ParseConfig(data []byte) (Config, error) {
 		}
 		problems = append(problems, cfg.Matrix.validate()...)
 	}
+	problems = append(problems, validateCache(raw.Cache)...)
+	cfg.Cache = raw.Cache
 	for i, rs := range raw.Steps {
 		bad := func(format string, args ...any) {
 			problems = append(problems, fmt.Errorf("steps[%d]: "+format, append([]any{i}, args...)...))

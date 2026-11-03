@@ -29,6 +29,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../.cisid.y
 | `steps` | evet | 1 ile 50 arası adım, yazıldıkları sırayla çalışır |
 | `services` | hayır | Adımlardan önce başlatılan en fazla 10 servis ([Servisler](#servisler)) |
 | `matrix` | hayır | Pipeline'ı her değer kombinasyonu için ayrı bir job olarak çalıştırır ([Matrix](#matrix)) |
+| `cache` | hayır | Repo'nun job'ları arasında saklanacak en fazla 10 dizin, mutlak yol olarak ([Önbellek](#önbellek)) |
 | `steps[].name` | evet | Harf, rakam, `.`, `_`, `-`. En fazla 63 karakter, benzersiz olmalı. `clone` adı ayrılmıştır. |
 | `steps[].image` | evet | Adımın çalışacağı Docker image'ı. `/bin/sh` içermeli. |
 | `steps[].commands` | evet | Shell komutları |
@@ -126,6 +127,21 @@ steps:
 - En fazla 8 eksen ve 16 kombinasyon olabilir. Eksen adları ortam değişkeni adı olmalıdır, ayrılmış adlar kullanılamaz ve bir adımın `environment` alanıyla çakışamaz.
 - Her kombinasyon GitHub'da kendi commit status'unu alır, örneğin `cisid (GO_VERSION=1.27, POSTGRES=18)` ([commit-status.md](commit-status.md)).
 - Bir matrix job'u yeniden çalıştırılırsa sadece kendi kombinasyonu tekrar koşar.
+
+## Önbellek
+
+```yaml
+cache:
+  - /go/pkg/mod
+  - /root/.cache/go-build
+```
+
+Listedeki her dizin, repo'ya ait isimli bir Docker volume'u olarak bütün adımlara bağlanır. Volume job bitince silinmez; aynı Docker host'unda çalışan bir sonraki job onu hazır bulur. Bağımlılıkları her job'da baştan indirmek gerekmez.
+
+- Yollar temiz ve mutlak olmalıdır. `/` ve `/workspace` önbelleğe alınamaz, workspace içindeki bir dizin (ör. `/workspace/node_modules`) alınabilir.
+- Önbellek repo başınadır ve her agent'ın Docker host'unda ayrı tutulur. Aynı host'taki eşzamanlı job'lar aynı volume'u paylaşır; Go'nun modül ve derleme önbellekleri buna uygundur.
+- Fork'tan gelen pull request'ler önbelleği salt okunur görür. Böylece repo'nun kendi build'lerine dosya bırakamazlar.
+- Volume'lar `cisid.cache=<anahtar>` etiketini taşır. Hepsini silmek için: `docker volume prune -a --filter label=cisid.cache` ([agent.md](agent.md#önbellek-volumeları)).
 
 ## Çalışma şekli
 

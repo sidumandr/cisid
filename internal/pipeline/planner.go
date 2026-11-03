@@ -5,6 +5,8 @@ package pipeline
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -114,7 +116,7 @@ func (p Planner) Plan(ctx context.Context, job models.Job) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	plan.Assignment = models.JobAssignment{Steps: steps, Services: services}
+	plan.Assignment = models.JobAssignment{Steps: steps, Services: services, Cache: cacheSpec(job, cfg.Cache)}
 	return plan, nil
 }
 
@@ -185,6 +187,16 @@ func (p Planner) secretsFor(ctx context.Context, job models.Job, steps []Step) (
 		}
 	}
 	return allowed, nil
+}
+
+// cacheSpec names the repository's caches. Forks may read them but not
+// write them, so they cannot plant files for the repository's own builds.
+func cacheSpec(job models.Job, paths []string) *models.CacheSpec {
+	if len(paths) == 0 {
+		return nil
+	}
+	sum := sha256.Sum256([]byte(job.Repo))
+	return &models.CacheSpec{Key: hex.EncodeToString(sum[:6]), Paths: paths, ReadOnly: job.Fork}
 }
 
 // secretAllowed reports whether a secret limited to branches may go to job:

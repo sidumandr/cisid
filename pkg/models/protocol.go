@@ -87,6 +87,18 @@ type JobAssignment struct {
 	// TraceParent is the W3C traceparent the agent's spans continue;
 	// empty when the server does not trace.
 	TraceParent string `json:"trace_parent,omitempty"`
+	// Cache lists the directories kept between the repository's jobs.
+	Cache *CacheSpec `json:"cache,omitempty"`
+}
+
+// CacheSpec names a repository's caches: one Docker volume per path on each
+// agent's Docker host, mounted into every step.
+type CacheSpec struct {
+	// Key identifies the repository in volume names.
+	Key   string   `json:"key"`
+	Paths []string `json:"paths"`
+	// ReadOnly mounts the caches without write access, for untrusted jobs.
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 
 // ServiceSpec is a container running alongside the steps of a job; steps

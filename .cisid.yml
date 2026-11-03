@@ -2,6 +2,11 @@
 # the PostgreSQL integration tests against a service container. Tests that
 # need Docker skip themselves here. Then the Helm chart is rendered and
 # checked (a module of its own, see deployments/helm/charttest).
+# Go's module and build caches survive between jobs on each agent.
+cache:
+  - /go/pkg/mod
+  - /root/.cache/go-build
+
 services:
   - name: postgres
     image: postgres:18-alpine

@@ -124,6 +124,16 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 
 - Agent 5 dakikadan (lease) uzun süre bağlanamazsa job'u başka bir agent'a verilir. Geri döndüğünde ilk job'un sonucu atılır (bkz. [hub.md](hub.md#canlılık-ve-lease)).
 
+## Önbellek volume'ları
+
+Atamada `cache` varsa agent her yol için `cisid-cache-<repo anahtarı>-<yol özeti>` adlı bir volume'u bütün adımlara bağlar ([pipeline.md](pipeline.md#önbellek)). Docker volume'u ilk kullanımda `cisid.cache` ve `cisid.cache.path` etiketleriyle oluşturur. Agent bu volume'ları silmez; job'lar arasında kalmaları amaçtır. Disk dolarsa etiketle temizlenebilir:
+
+```bash
+docker volume prune -a --filter label=cisid.cache
+```
+
+Kubernetes'te Docker-in-Docker sidecar'ının verileri pod'la birlikte silinir. Önbelleğin pod yeniden başlayınca da kalması için chart'ta `agent.docker.dind.persistence.enabled=true` verin.
+
 ## Testler
 
 | Test | Senaryo |
@@ -132,6 +142,8 @@ Writer ve reader bir `errgroup` içinde çalışır. Biri hata verirse diğeri d
 | `TestAgentReportsFailedStep` | 0 dışı exit kodu, sonraki adım çalışmaz |
 | `TestAgentReportsRunnerError` | Image pull hatası |
 | `TestAgentFailsInvalidAssignment` | Adım, image ya da komut eksik |
+| `TestAgentMountsCaches`, `TestAgentRejectsBadCaches` | Önbellek volume'larının adı, etiketi, salt okunur bağlanması; geçersiz anahtar ve yollar |
+| `TestDockerIntegrationCache` | Gerçek Docker: sonraki job önbelleği bulur, salt okunur job yazamaz |
 | `TestAgentRejectsJobWhileBusy` | İkinci atama reddedilir |
 | `TestAgentReconnectsAfterConnectionLoss` | Server bağlantıyı kapatır, agent yeniden bağlanır |
 | `TestAgentRetriesWhileServerUnavailable` | Handshake 3 kez 503 alır, 4. denemede bağlanır |

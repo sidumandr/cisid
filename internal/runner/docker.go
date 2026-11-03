@@ -81,6 +81,8 @@ type Mount struct {
 	Source   string
 	Target   string
 	ReadOnly bool
+	// Labels are set on a volume Docker creates for the mount.
+	Labels map[string]string
 }
 
 // PullProgress is one progress update while pulling an image.
@@ -400,12 +402,16 @@ func createOptions(step Step) client.ContainerCreateOptions {
 		if m.Type == MountVolume {
 			typ = mount.TypeVolume
 		}
-		mounts = append(mounts, mount.Mount{
+		mm := mount.Mount{
 			Type:     typ,
 			Source:   m.Source,
 			Target:   m.Target,
 			ReadOnly: m.ReadOnly,
-		})
+		}
+		if typ == mount.TypeVolume && len(m.Labels) > 0 {
+			mm.VolumeOptions = &mount.VolumeOptions{Labels: m.Labels}
+		}
+		mounts = append(mounts, mm)
 	}
 
 	return client.ContainerCreateOptions{

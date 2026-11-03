@@ -3,10 +3,13 @@ package agent
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -143,13 +146,14 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 		}
 	}
 
+	caches := cacheMounts(job.Cache)
 	var seq atomic.Int64
 	for i, spec := range job.Steps {
 		// Secrets are masked before output leaves the agent.
 		stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}, spec.Secrets)
 		stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}, spec.Secrets)
 
-		code, err := a.runStep(ctx, i, spec, toRunnerStep(job.JobID, spec, workspace, network), stdout, stderr)
+		code, err := a.runStep(ctx, i, spec, toRunnerStep(job.JobID, spec, workspace, network, caches), stdout, stderr)
 		_ = stdout.Flush()
 		_ = stderr.Flush()
 		if err == nil && code == 0 {
@@ -254,12 +258,44 @@ func validateJob(job models.JobAssignment) error {
 			return fmt.Errorf("%w %d: service %d needs a name and an image", ErrInvalidJob, job.JobID, i)
 		}
 	}
+	if c := job.Cache; c != nil {
+		if !cacheKeyRe.MatchString(c.Key) {
+			return fmt.Errorf("%w %d: cache key %q", ErrInvalidJob, job.JobID, c.Key)
+		}
+		for _, p := range c.Paths {
+			if !path.IsAbs(p) || path.Clean(p) != p || p == "/" || p == workspacePath {
+				return fmt.Errorf("%w %d: cache path %q", ErrInvalidJob, job.JobID, p)
+			}
+		}
+	}
 	return nil
+}
+
+var cacheKeyRe = regexp.MustCompile(`^[0-9a-z]{1,32}$`)
+
+// cacheMounts mounts a job's caches: per path, a volume named after the
+// repository's key, kept between its jobs on this Docker host.
+func cacheMounts(c *models.CacheSpec) []runner.Mount {
+	if c == nil {
+		return nil
+	}
+	mounts := make([]runner.Mount, 0, len(c.Paths))
+	for _, p := range c.Paths {
+		sum := sha256.Sum256([]byte(p))
+		mounts = append(mounts, runner.Mount{
+			Type:     runner.MountVolume,
+			Source:   fmt.Sprintf("cisid-cache-%s-%x", c.Key, sum[:4]),
+			Target:   p,
+			ReadOnly: c.ReadOnly,
+			Labels:   map[string]string{"cisid.cache": c.Key, "cisid.cache.path": p},
+		})
+	}
+	return mounts
 }
 
 // toRunnerStep runs the step's commands as one shell script that stops at
 // the first failing command and echoes each command before running it.
-func toRunnerStep(jobID int64, spec models.StepSpec, workspace, network string) runner.Step {
+func toRunnerStep(jobID int64, spec models.StepSpec, workspace, network string, caches []runner.Mount) runner.Step {
 	env := maps.Clone(spec.Env)
 	if env == nil {
 		env = map[string]string{}
@@ -277,7 +313,7 @@ func toRunnerStep(jobID int64, spec models.StepSpec, workspace, network string) 
 		Cmd:        []string{"set -ex\n" + strings.Join(spec.Commands, "\n")},
 		Env:        env,
 		WorkingDir: workspacePath,
-		Mounts:     []runner.Mount{{Type: runner.MountVolume, Source: workspace, Target: workspacePath}},
+		Mounts:     append([]runner.Mount{{Type: runner.MountVolume, Source: workspace, Target: workspacePath}}, caches...),
 		Network:    network,
 		Timeout:    time.Duration(spec.TimeoutSeconds) * time.Second,
 	}
