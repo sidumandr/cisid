@@ -32,7 +32,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [ ] Service container'ları (ör. test için PostgreSQL).
 - [ ] Secret yönetimi (şifreli saklama, env olarak enjekte, loglarda maskeleme).
 - [ ] Branch / event filtreleri, matrix build.
-- [ ] GitHub commit status raporlama.
+- [x] GitHub commit status raporlama ([docs/commit-status.md](docs/commit-status.md)).
 - [ ] Job iptal / yeniden çalıştırma API'si, basit web arayüzü veya CLI.
 
 ## Faz 4 — Production

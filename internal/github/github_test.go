@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -149,4 +150,44 @@ func TestFileContentRejectsBadRepo(t *testing.T) {
 		_, err := c.FileContent(t.Context(), repo, sha, ".cisid.yml")
 		assert.ErrorIs(t, err, ErrInvalidRepo, "repo %q", repo)
 	}
+}
+
+func TestCreateStatus(t *testing.T) {
+	c := newClient(t, "ghp_test", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/repos/sidumandr/cisid/statuses/"+sha, r.URL.Path)
+		assert.Equal(t, "Bearer ghp_test", r.Header.Get("Authorization"))
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		var got CommitStatus
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		assert.Equal(t, CommitStatus{
+			State: "success", TargetURL: "https://ci.example.com/jobs/42",
+			Description: "Passed in 12s", Context: "cisid",
+		}, got)
+		w.WriteHeader(http.StatusCreated)
+	})
+
+	err := c.CreateStatus(t.Context(), "sidumandr/cisid", sha, CommitStatus{
+		State: "success", TargetURL: "https://ci.example.com/jobs/42", Description: "Passed in 12s", Context: "cisid",
+	})
+	require.NoError(t, err)
+}
+
+func TestCreateStatusErrors(t *testing.T) {
+	forbidden := newClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Resource not accessible by personal access token", http.StatusForbidden)
+	})
+	err := forbidden.CreateStatus(t.Context(), "sidumandr/cisid", sha, CommitStatus{State: "pending", Context: "cisid"})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrTemporary)
+	assert.Contains(t, err.Error(), "Resource not accessible")
+
+	down := newClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unicorn", http.StatusServiceUnavailable)
+	})
+	err = down.CreateStatus(t.Context(), "sidumandr/cisid", sha, CommitStatus{State: "pending", Context: "cisid"})
+	assert.ErrorIs(t, err, ErrTemporary)
+
+	err = forbidden.CreateStatus(t.Context(), "not-a-repo", sha, CommitStatus{})
+	assert.ErrorIs(t, err, ErrInvalidRepo)
 }

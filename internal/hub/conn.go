@@ -324,6 +324,7 @@ func (h *Hub) handleResult(ctx context.Context, a *agentConn, res models.JobResu
 	default:
 		h.log.InfoContext(ctx, "job finished", "job_id", res.JobID, "agent", a.name,
 			"status", res.Status, "exit_code", res.ExitCode)
+		h.jobChanged(res.JobID)
 	}
 
 	h.mu.Lock()

@@ -160,6 +160,35 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]models.Job, error) {
 	return jobs, nil
 }
 
+// UnreportedJobs returns up to limit jobs, oldest first, whose current
+// status has not been reported to GitHub yet. Jobs older than a day are
+// left alone.
+func (s *Store) UnreportedJobs(ctx context.Context, limit int) ([]models.Job, error) {
+	q := "SELECT " + jobColumns + ` FROM jobs
+		WHERE reported_status IS DISTINCT FROM status AND created_at > now() - interval '1 day'
+		ORDER BY id
+		LIMIT $1`
+
+	rows, err := s.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unreported jobs: %w", err)
+	}
+	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (models.Job, error) { return scanJob(row) })
+	if err != nil {
+		return nil, fmt.Errorf("list unreported jobs: %w", err)
+	}
+	return jobs, nil
+}
+
+// MarkReported records that status of job id has been reported. If the job
+// has moved on since, it shows up in UnreportedJobs again.
+func (s *Store) MarkReported(ctx context.Context, id int64, status models.JobStatus) error {
+	if _, err := s.pool.Exec(ctx, "UPDATE jobs SET reported_status = $2 WHERE id = $1", id, status); err != nil {
+		return fmt.Errorf("mark status of job %d reported: %w", id, err)
+	}
+	return nil
+}
+
 // RenewLeases extends the leases of all jobs running on the given agents,
 // which are known to be connected, and returns how many it renewed.
 func (s *Store) RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error) {

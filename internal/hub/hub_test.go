@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -575,4 +576,32 @@ func TestHubAcknowledgesMessages(t *testing.T) {
 	a.sendID(t, 7, models.MsgJobResult, models.JobResult{JobID: 42, Status: models.JobStatusSuccess})
 	a.expectAck(t, 7)
 	f.store.AssertNumberOfCalls(t, "FinishJob", 1)
+}
+
+func TestHubReportsJobChanges(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		changes []int64
+	)
+	finished := make(chan struct{}, 1)
+	f := newFixture(t, func(s *mockStore, p *mockPlanner) {
+		s.On("ClaimJob", mock.Anything, "agent-1", mock.Anything).Return(job(42), nil).Once()
+		s.On("FinishJob", mock.Anything, "agent-1", mock.Anything).Return(nil).Run(signal(finished)).Once()
+	}, WithJobChanged(func(id int64) {
+		mu.Lock()
+		defer mu.Unlock()
+		changes = append(changes, id)
+	}))
+
+	a := f.connect(t, "agent-1", 0)
+	a.expectAssignment(t)
+	a.send(t, models.MsgJobResult, models.JobResult{JobID: 42, Status: models.JobStatusSuccess})
+	waitFor(t, finished, "result")
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(changes) == 2
+	}, testTimeout, 5*time.Millisecond)
+	assert.Equal(t, []int64{42, 42}, changes, "assigned, then finished")
 }

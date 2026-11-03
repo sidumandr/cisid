@@ -28,6 +28,7 @@ import (
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/db/dbtest"
+	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/runner"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -144,15 +145,38 @@ func (stepRunner) Run(_ context.Context, step runner.Step, stdout, _ io.Writer) 
 }
 
 // fakeGitHub serves .cisid.yml for any repository and ref.
-func fakeGitHub(t *testing.T) string {
+// fakeGitHub serves .cisid.yml and records the commit statuses it receives.
+func fakeGitHub(t *testing.T) (url string, statuses func() []github.CommitStatus) {
 	t.Helper()
+	const sha = "6113728f27ae82c7b1a177c8d03f9e96e0adf246"
+	var (
+		mu       sync.Mutex
+		received []github.CommitStatus
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/repos/sidumandr/cisid/contents/.cisid.yml", r.URL.Path)
-		assert.Equal(t, "6113728f27ae82c7b1a177c8d03f9e96e0adf246", r.URL.Query().Get("ref"))
-		_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n")
+		assert.Equal(t, "Bearer e2e-token", r.Header.Get("Authorization"))
+		switch r.URL.Path {
+		case "/repos/sidumandr/cisid/contents/.cisid.yml":
+			assert.Equal(t, sha, r.URL.Query().Get("ref"))
+			_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n")
+		case "/repos/sidumandr/cisid/statuses/" + sha:
+			var st github.CommitStatus
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&st))
+			mu.Lock()
+			received = append(received, st)
+			mu.Unlock()
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Errorf("unexpected GitHub request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv.URL
+	return srv.URL, func() []github.CommitStatus {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]github.CommitStatus(nil), received...)
+	}
 }
 
 func (stepRunner) RemoveVolume(context.Context, string) error { return nil }
@@ -168,12 +192,15 @@ func TestRunEndToEnd(t *testing.T) {
 	addr := ln.Addr().String()
 	require.NoError(t, ln.Close())
 
+	ghURL, statuses := fakeGitHub(t)
 	env := map[string]string{
 		"CISID_HTTP_ADDR":             addr,
 		"CISID_DATABASE_URL":          dbURL,
 		"CISID_GITHUB_WEBHOOK_SECRET": secret,
 		"CISID_SHUTDOWN_TIMEOUT":      "5s",
-		"CISID_GITHUB_API_URL":        fakeGitHub(t),
+		"CISID_GITHUB_API_URL":        ghURL,
+		"CISID_GITHUB_TOKEN":          "e2e-token",
+		"CISID_PUBLIC_URL":            "https://ci.example.com",
 	}
 	var logs syncBuffer
 	ctx, cancel := context.WithCancel(t.Context())
@@ -247,6 +274,18 @@ func TestRunEndToEnd(t *testing.T) {
 		"clone in alpine/git:2.52.0 at " + sha + "\n",
 		"test in golang:1.27 at " + sha + "\n",
 	}, lines, "the clone step runs first, then the steps of .cisid.yml")
+
+	// GitHub sees the commit go from pending to success, linked to the job.
+	require.Eventually(t, func() bool {
+		sts := statuses()
+		return len(sts) > 0 && sts[len(sts)-1].State == "success"
+	}, testTimeout, 20*time.Millisecond, "success status not reported")
+	sts := statuses()
+	assert.Equal(t, "pending", sts[0].State)
+	last := sts[len(sts)-1]
+	assert.Equal(t, "cisid", last.Context)
+	assert.Equal(t, fmt.Sprintf("https://ci.example.com/api/jobs/%d", queued.JobID), last.TargetURL)
+	assert.True(t, strings.HasPrefix(last.Description, "Passed in "), last.Description)
 
 	// The API serves the job and replays its logs as a finished stream.
 	listResp, err := http.Get(base + "/api/jobs")

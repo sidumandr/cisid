@@ -51,9 +51,11 @@ func TestLoadOverrides(t *testing.T) {
 		"CISID_LOG_LEVEL":        "debug",
 		"CISID_GITHUB_API_URL":   "https://ghe.example.com/api/v3",
 		"CISID_GITHUB_TOKEN":     "ghp_secret",
+		"CISID_PUBLIC_URL":       "https://ci.example.com/",
 	})))
 
 	require.NoError(t, err)
+	assert.Equal(t, "https://ci.example.com", cfg.PublicURL, "trailing slash is dropped")
 	assert.Equal(t, "127.0.0.1:9000", cfg.HTTPAddr)
 	assert.Equal(t, 45*time.Second, cfg.ShutdownTimeout)
 	assert.Equal(t, slog.LevelDebug, cfg.LogLevel)
@@ -91,6 +93,11 @@ func TestLoadErrors(t *testing.T) {
 			name: "GitHub API URL is not http",
 			vars: with(map[string]string{"CISID_GITHUB_API_URL": "ftp://github.example.com"}),
 			want: []string{"CISID_GITHUB_API_URL must be an http(s) URL"},
+		},
+		{
+			name: "public URL is not http",
+			vars: with(map[string]string{"CISID_PUBLIC_URL": "ci.example.com"}),
+			want: []string{"CISID_PUBLIC_URL must be an http(s) URL"},
 		},
 		{
 			name: "database URL is not postgres",

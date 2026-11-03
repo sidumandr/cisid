@@ -461,3 +461,28 @@ func TestStoreNotifiesJobEvents(t *testing.T) {
 	require.True(t, ok, "a finished job is announced")
 	assert.Equal(t, want, payload)
 }
+
+func TestStoreUnreportedJobs(t *testing.T) {
+	s, _ := newStore(t)
+	ctx := t.Context()
+	ids := createJobs(t, s, 2)
+
+	jobs, err := s.UnreportedJobs(ctx, 10)
+	require.NoError(t, err)
+	assert.Len(t, jobs, 2, "new jobs are unreported")
+
+	require.NoError(t, s.MarkReported(ctx, ids[0], models.JobStatusPending))
+	jobs, err = s.UnreportedJobs(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, ids[1], jobs[0].ID)
+
+	// A status change makes the job unreported again.
+	_, err = s.ClaimJob(ctx, "agent-1", time.Minute)
+	require.NoError(t, err)
+	jobs, err = s.UnreportedJobs(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	assert.Equal(t, ids[0], jobs[0].ID)
+	assert.Equal(t, models.JobStatusRunning, jobs[0].Status)
+}

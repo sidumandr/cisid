@@ -72,6 +72,13 @@ func WithLease(d time.Duration) Option {
 	return func(h *Hub) { h.lease = d }
 }
 
+// WithJobChanged registers a callback run after the hub changes a job's
+// status (assigned, finished, failed), e.g. to report it elsewhere. It must
+// not block.
+func WithJobChanged(f func(jobID int64)) Option {
+	return func(h *Hub) { h.jobChanged = f }
+}
+
 // Hub dispatches jobs to connected agents. Serve agents with ServeHTTP and
 // run the dispatcher with Run.
 type Hub struct {
@@ -81,6 +88,7 @@ type Hub struct {
 	pollInterval time.Duration
 	drainTimeout time.Duration
 	lease        time.Duration
+	jobChanged   func(jobID int64)
 	wake         chan struct{}
 
 	mu      sync.Mutex
@@ -118,6 +126,7 @@ func New(store Store, planner Planner, opts ...Option) *Hub {
 		pollInterval: defaultPollInterval,
 		drainTimeout: defaultDrainTimeout,
 		lease:        defaultLease,
+		jobChanged:   func(int64) {},
 		wake:         make(chan struct{}, 1),
 		agents:       map[string]*agentConn{},
 		closing:      make(chan struct{}),
@@ -230,6 +239,7 @@ func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 
 		if h.assign(a, models.JobAssignment{JobID: job.ID, Steps: steps}) {
 			h.log.InfoContext(ctx, "job assigned", "job_id", job.ID, "agent", a.name, "steps", len(steps))
+			h.jobChanged(job.ID)
 			return true
 		}
 		// The agent went away or became busy since idleAgents.
@@ -255,7 +265,9 @@ func (h *Hub) failJob(ctx context.Context, agent string, jobID int64, reason str
 	})
 	if err != nil {
 		h.log.ErrorContext(ctx, "record job failure", "job_id", jobID, "error", err)
+		return
 	}
+	h.jobChanged(jobID)
 }
 
 // assign queues the assignment on a's connection if a is still the

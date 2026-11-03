@@ -2,7 +2,9 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -47,38 +49,52 @@ type Client struct {
 	HTTP *http.Client
 }
 
-// FileContent returns the raw content of path in repo ("owner/name") at ref.
-func (c *Client) FileContent(ctx context.Context, repo, ref, path string) ([]byte, error) {
-	owner, name, ok := strings.Cut(repo, "/")
-	if !ok || !validRepoPart(owner) || !validRepoPart(name) {
-		return nil, fmt.Errorf("%w: %q", ErrInvalidRepo, repo)
+// CommitStatus is a status shown next to a commit on GitHub.
+type CommitStatus struct {
+	State       string `json:"state"` // error, failure, pending or success
+	TargetURL   string `json:"target_url,omitempty"`
+	Description string `json:"description,omitempty"`
+	Context     string `json:"context"`
+}
+
+// CreateStatus sets a commit status on sha in repo. It needs a token with
+// write access to commit statuses.
+func (c *Client) CreateStatus(ctx context.Context, repo, sha string, st CommitStatus) error {
+	base, err := c.repoURL(repo)
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(st)
+	if err != nil {
+		return fmt.Errorf("encode commit status: %w", err)
 	}
 
-	base := c.APIURL
-	if base == "" {
-		base = DefaultAPIURL
+	resp, err := c.do(ctx, http.MethodPost, base+"/statuses/"+url.PathEscape(sha), "application/vnd.github+json", body)
+	if err != nil {
+		return fmt.Errorf("set status of %s@%s: %w", repo, sha, err)
+	}
+	defer resp.Body.Close()
+	if err := checkStatus(resp); err != nil {
+		return fmt.Errorf("set status of %s@%s: %w", repo, sha, err)
+	}
+	return nil
+}
+
+// FileContent returns the raw content of path in repo ("owner/name") at ref.
+func (c *Client) FileContent(ctx context.Context, repo, ref, path string) ([]byte, error) {
+	base, err := c.repoURL(repo)
+	if err != nil {
+		return nil, err
 	}
 	var escaped []string
 	for _, seg := range strings.Split(path, "/") {
 		escaped = append(escaped, url.PathEscape(seg))
 	}
-	u := strings.TrimSuffix(base, "/") + "/repos/" + owner + "/" + name + "/contents/" +
-		strings.Join(escaped, "/") + "?" + url.Values{"ref": {ref}}.Encode()
+	u := base + "/contents/" + strings.Join(escaped, "/") + "?" + url.Values{"ref": {ref}}.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	resp, err := c.do(ctx, http.MethodGet, u, "application/vnd.github.raw+json", nil)
 	if err != nil {
-		return nil, fmt.Errorf("build request for %s: %w", path, err)
-	}
-	req.Header.Set("Accept", "application/vnd.github.raw+json")
-	req.Header.Set("X-GitHub-Api-Version", apiVersion)
-	req.Header.Set("User-Agent", "cisid")
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
-
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%w: get %s from %s: %w", ErrTemporary, path, repo, err)
+		return nil, fmt.Errorf("get %s from %s: %w", path, repo, err)
 	}
 	defer resp.Body.Close()
 
@@ -94,6 +110,46 @@ func (c *Client) FileContent(ctx context.Context, repo, ref, path string) ([]byt
 		return nil, fmt.Errorf("%w: %s in %s is over %d bytes", ErrTooLarge, path, repo, maxFileBytes)
 	}
 	return data, nil
+}
+
+// repoURL returns the API URL of repo ("owner/name").
+func (c *Client) repoURL(repo string) (string, error) {
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || !validRepoPart(owner) || !validRepoPart(name) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidRepo, repo)
+	}
+	base := c.APIURL
+	if base == "" {
+		base = DefaultAPIURL
+	}
+	return strings.TrimSuffix(base, "/") + "/repos/" + owner + "/" + name, nil
+}
+
+// do sends an API request. A transport failure is ErrTemporary.
+func (c *Client) do(ctx context.Context, method, u, accept string, body []byte) (*http.Response, error) {
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, r)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Accept", accept)
+	req.Header.Set("X-GitHub-Api-Version", apiVersion)
+	req.Header.Set("User-Agent", "cisid")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrTemporary, err)
+	}
+	return resp, nil
 }
 
 func (c *Client) httpClient() *http.Client {
