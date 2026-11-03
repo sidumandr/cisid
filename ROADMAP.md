@@ -58,5 +58,5 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Okuma erişimi için token (`CISID_READ_TOKEN`, arayüz için oturum cookie'si) ve agent token'ı rotasyonu ([docs/api.md](docs/api.md#okuma-erişimi)).
 - [x] Job'lar arası önbellek: `.cisid.yml`'de `cache`, repo başına Docker volume'ları; fork PR'larına salt okunur ([docs/pipeline.md](docs/pipeline.md#önbellek)).
 - [x] Elle ve zamanlanmış build'ler: API ve arayüzden branch build'i, veritabanında cron zamanlamaları; birden fazla server kopyası aynı çalışmayı iki kez başlatmaz ([docs/api.md](docs/api.md#elle-ve-zamanlanmış-buildler)).
-- [ ] Birden fazla server kopyasının uçtan uca testi.
+- [x] Birden fazla server kopyasının uçtan uca testi: aynı veritabanında iki server, kopyalar arası dağıtım, canlı log ve iptal (`TestRunTwoServers`).
 - [ ] Sürüm yayımlama: image'lar ve chart.

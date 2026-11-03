@@ -70,9 +70,10 @@ Her `running` job'un bir **lease** süresi vardır (`jobs.lease_expires_at`, var
 
 Bütün zamanlar veritabanının saatine göre hesaplanır (`now()`). Server'ların saatleri arasındaki farklar sonucu etkilemez.
 
-## Bilinen sınırlamalar (Faz 2)
+## Bilinen sınırlamalar
 
 - Her log parçası ayrı bir `INSERT` ile yazılır. Yoğun log üreten job'larda toplu yazma (batch) gerekebilir.
+- Birden fazla server kopyasında, bir kopyaya gelen job'u başka kopyaya bağlı agent'lar ancak o kopyanın bir sonraki yoklamasında (en fazla 5 saniye) alır. Uyandırma yalnızca job'un geldiği kopyada anında olur.
 
 ## Testler
 
