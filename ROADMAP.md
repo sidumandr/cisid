@@ -39,7 +39,7 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
 ## Faz 4 — Production
 
-- [ ] Agent ↔ server iletişimini gRPC'ye taşı (`api/proto`).
+- [ ] ~~Agent ↔ server iletişimini gRPC'ye taşı (`api/proto`).~~ Ertelendi, protokol WebSocket'te kalıyor: [ADR 001](docs/adr/001-agent-protokolu-websocket.md).
 - [x] Agent kimlik doğrulama (ortak token) ve TLS (`CISID_TLS_*`, agent'ta `wss://` ve özel CA).
 - [x] Gözlemlenebilirlik: `slog` yapılandırılmış log ve Prometheus metrikleri ([docs/metrics.md](docs/metrics.md)).
 - [ ] OpenTelemetry trace.
