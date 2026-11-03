@@ -477,6 +477,7 @@ func TestAgentDeliversResultAfterReconnect(t *testing.T) {
 	r.On("RemoveVolume", mock.Anything, mock.Anything).Return(nil).Once()
 
 	startAgent(t, fs, r)
+	a := lastStarted
 	first := fs.accept(t)
 	assert.Zero(t, first.hello.RunningJobID)
 	first.send(t, models.MsgJobAssigned, models.JobAssignment{
@@ -492,7 +493,10 @@ func TestAgentDeliversResultAfterReconnect(t *testing.T) {
 	_, res := second.collectJob(t, 11)
 	assert.Equal(t, models.JobStatusSuccess, res.Status)
 
-	// Once the result has been sent, the agent no longer claims the job.
+	// Once the result has been acknowledged, the agent no longer claims the
+	// job. The ack is written after the result is read, so wait for it.
+	require.Eventually(t, func() bool { return a.runningJob.Load() == 0 },
+		testTimeout, 5*time.Millisecond, "the result was not acknowledged")
 	require.NoError(t, second.conn.Close(websocket.StatusGoingAway, "server restarting"))
 	third := fs.accept(t)
 	assert.Zero(t, third.hello.RunningJobID)
