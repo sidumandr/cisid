@@ -108,6 +108,9 @@
             "null"
           ]
         },
+        "buildForks": {
+          "type": "boolean"
+        },
         "githubAPIURL": {
           "type": "string",
           "pattern": "^$|^https?://"

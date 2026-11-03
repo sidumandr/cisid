@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sidumandr/cisid/pkg/models"
 )
 
 func TestParseConfig(t *testing.T) {
@@ -138,7 +140,7 @@ steps:
 `))
 	require.NoError(t, err)
 
-	runs := func(step int, branch string) bool { return cfg.Steps[step].RunsOn(branch) }
+	runs := func(step int, branch string) bool { return cfg.Steps[step].RunsFor(models.Job{Branch: branch}) }
 	assert.True(t, runs(0, "anything/at/all"), "no when: every branch")
 	assert.True(t, runs(1, "main"))
 	assert.False(t, runs(1, "mainline"), "patterns match the whole name")
@@ -150,7 +152,8 @@ steps:
 
 func TestParseConfigWhenErrors(t *testing.T) {
 	for name, yml := range map[string]string{
-		"unknown condition": "steps:\n  - {name: a, image: x, commands: [true], when: {event: push}}\n",
+		"unknown condition": "steps:\n  - {name: a, image: x, commands: [true], when: {tag: v1}}\n",
+		"unknown event":     "steps:\n  - {name: a, image: x, commands: [true], when: {event: tag}}\n",
 		"empty pattern":     "steps:\n  - {name: a, image: x, commands: [true], when: {branch: [\"\"]}}\n",
 	} {
 		t.Run(name, func(t *testing.T) {

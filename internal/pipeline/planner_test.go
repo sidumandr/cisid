@@ -47,6 +47,7 @@ func TestPlanClonesTheCommit(t *testing.T) {
 		},
 		Env: map[string]string{
 			"CISID_REPO":          "sidumandr/cisid",
+			"CISID_EVENT":         "push",
 			"CISID_CLONE_URL":     "https://github.com/sidumandr/cisid.git",
 			"CISID_BRANCH":        "feature/webhook",
 			"CISID_COMMIT_SHA":    "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
@@ -94,6 +95,7 @@ steps:
 		Env: map[string]string{
 			"CGO_ENABLED":      "0",
 			"CISID_REPO":       "sidumandr/cisid",
+			"CISID_EVENT":      "push",
 			"CISID_BRANCH":     "feature/webhook",
 			"CISID_COMMIT_SHA": job.CommitSHA,
 		},

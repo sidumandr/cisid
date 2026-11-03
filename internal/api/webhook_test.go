@@ -41,6 +41,12 @@ func (m *mockJobCreator) QueueJob(ctx context.Context, job models.Job, payloadSH
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *mockJobCreator) CancelPullRequest(ctx context.Context, repo string, number int) ([]int64, error) {
+	args := m.Called(ctx, repo, number)
+	ids, _ := args.Get(0).([]int64)
+	return ids, args.Error(1)
+}
+
 func loadPayload(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", name))
@@ -91,6 +97,7 @@ func TestWebhookHandler(t *testing.T) {
 					Branch:    "main",
 					CommitSHA: "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
 					Status:    models.JobStatusPending,
+					Event:     models.EventPush,
 				}, mock.Anything, mock.Anything).
 					Return(int64(42), nil).Once()
 			},
@@ -108,6 +115,7 @@ func TestWebhookHandler(t *testing.T) {
 					Branch:    "feature/webhook",
 					CommitSHA: "a3f1c9e2b7d4085f6e1a2b3c4d5e6f708192a3b4",
 					Status:    models.JobStatusPending,
+					Event:     models.EventPush,
 				}, mock.Anything, mock.Anything).
 					Return(int64(7), nil).Once()
 			},

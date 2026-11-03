@@ -46,6 +46,15 @@ func TestLoadDefaults(t *testing.T) {
 	}, cfg)
 }
 
+func TestLoadBuildForks(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{"CISID_BUILD_FORKS": "true"})))
+	require.NoError(t, err)
+	assert.True(t, cfg.BuildForks)
+
+	_, err = Load(env(with(map[string]string{"CISID_BUILD_FORKS": "sometimes"})))
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+}
+
 func TestLoadLogRetention(t *testing.T) {
 	for v, want := range map[string]time.Duration{
 		"30d": 30 * 24 * time.Hour,

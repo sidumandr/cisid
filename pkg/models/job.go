@@ -18,6 +18,12 @@ const (
 	JobStatusCanceled JobStatus = "canceled"
 )
 
+// Events that trigger jobs.
+const (
+	EventPush        = "push"
+	EventPullRequest = "pull_request"
+)
+
 // Finished reports whether s is a terminal status.
 func (s JobStatus) Finished() bool {
 	return s == JobStatusSuccess || s == JobStatusFailed || s == JobStatusCanceled
@@ -32,6 +38,15 @@ type Job struct {
 	CommitSHA string    `json:"commit_sha"`
 	Status    JobStatus `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
+
+	// Event is what triggered the job: EventPush or EventPullRequest.
+	Event string `json:"event"`
+	// For pull requests: the number, the branch it is to be merged into,
+	// and whether the changes come from a fork. Branch is the pull
+	// request's own branch and CommitSHA its head commit.
+	PullRequest  int    `json:"pull_request,omitempty"`
+	TargetBranch string `json:"target_branch,omitempty"`
+	Fork         bool   `json:"fork,omitempty"`
 
 	// Set once the job has been claimed by an agent. The job goes back to
 	// the queue if its lease expires without being renewed.

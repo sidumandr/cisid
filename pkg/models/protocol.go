@@ -148,7 +148,8 @@ type JobResult struct {
 // for steps itself, which a pipeline or secret cannot use.
 func ReservedEnv(name string) bool {
 	switch name {
-	case "CI", "CISID", "CISID_JOB_ID", "CISID_STEP", "CISID_REPO", "CISID_BRANCH", "CISID_COMMIT_SHA", "CISID_CLONE_URL":
+	case "CI", "CISID", "CISID_JOB_ID", "CISID_STEP", "CISID_REPO", "CISID_BRANCH", "CISID_COMMIT_SHA", "CISID_CLONE_URL",
+		"CISID_EVENT", "CISID_PULL_REQUEST", "CISID_TARGET_BRANCH":
 		return true
 	}
 	return false

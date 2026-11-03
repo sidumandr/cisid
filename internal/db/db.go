@@ -2,6 +2,7 @@
 package db
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sidumandr/cisid/pkg/models"
@@ -48,10 +50,26 @@ const requeueSet = `
 // CancelReason is the error recorded for a job canceled through the API.
 const CancelReason = "canceled by request"
 
+// cancelSet cancels a pending job at once and asks the agent of a running
+// one to stop it (see CancelRequestedJobs).
+const cancelSet = `
+	status = CASE WHEN status = 'pending' THEN 'canceled' ELSE status END,
+	finished_at = CASE WHEN status = 'pending' THEN now() ELSE finished_at END,
+	error = CASE WHEN status = 'pending' THEN '` + CancelReason + `' ELSE error END,
+	cancel_requested_at = COALESCE(cancel_requested_at, now()),
+	updated_at = now()`
+
+// querier runs statements on the pool or in a transaction.
+type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
 // jobColumns is the column list scanned by scanJob.
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at, step_names,
-	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent, logs_expired_at`
+	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent, logs_expired_at,
+	event, COALESCE(pull_request, 0), COALESCE(target_branch, ''), fork`
 
 // leaseUntil is the SQL expression for a lease of $N seconds from now,
 // measured on the database clock so servers need not agree on the time.
@@ -77,16 +95,22 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
+// insertJob is the statement CreateJob and QueueJob insert a job with.
+const insertJob = `
+	INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, trace_parent,
+		event, pull_request, target_branch, fork)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, 0), NULLIF($9, ''), $10)
+	RETURNING id`
+
+func insertJobArgs(job models.Job) []any {
+	return []any{job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status, job.TraceParent,
+		cmp.Or(job.Event, models.EventPush), job.PullRequest, job.TargetBranch, job.Fork}
+}
+
 // CreateJob inserts job and returns its generated ID.
 func (s *Store) CreateJob(ctx context.Context, job models.Job) (int64, error) {
-	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, trace_parent)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id`
-
 	var id int64
-	err := s.pool.QueryRow(ctx, q, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status, job.TraceParent).Scan(&id)
-	if err != nil {
+	if err := s.pool.QueryRow(ctx, insertJob, insertJobArgs(job)...).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert job for %s@%s: %w", job.Repo, job.CommitSHA, err)
 	}
 	return id, nil
@@ -113,12 +137,14 @@ func (s *Store) QueueJob(ctx context.Context, job models.Job, payloadSHA256, del
 	}
 
 	var id int64
-	err = tx.QueryRow(ctx, `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, trace_parent)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id`, job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status, job.TraceParent).Scan(&id)
-	if err != nil {
+	if err := tx.QueryRow(ctx, insertJob, insertJobArgs(job)...).Scan(&id); err != nil {
 		return 0, fmt.Errorf("insert job for %s@%s: %w", job.Repo, job.CommitSHA, err)
+	}
+	if job.PullRequest > 0 {
+		// A new commit supersedes the pull request's earlier jobs.
+		if _, err := cancelPullRequestJobs(ctx, tx, job.Repo, job.PullRequest, id); err != nil {
+			return 0, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("queue job: %w", err)
@@ -235,13 +261,7 @@ func (s *Store) RequeueAgentJobs(ctx context.Context, agent string, keep int64) 
 // stopped by its agent (see CancelRequestedJobs). It returns the job after
 // the change, ErrJobNotFound, or ErrJobConflict if the job already finished.
 func (s *Store) CancelJob(ctx context.Context, id int64) (models.Job, error) {
-	q := `
-		UPDATE jobs SET
-			status = CASE WHEN status = 'pending' THEN 'canceled' ELSE status END,
-			finished_at = CASE WHEN status = 'pending' THEN now() ELSE finished_at END,
-			error = CASE WHEN status = 'pending' THEN '` + CancelReason + `' ELSE error END,
-			cancel_requested_at = COALESCE(cancel_requested_at, now()),
-			updated_at = now()
+	q := `UPDATE jobs SET` + cancelSet + `
 		WHERE id = $1 AND status IN ('pending', 'running')
 		RETURNING ` + jobColumns
 
@@ -282,13 +302,43 @@ func (s *Store) CancelRequestedJobs(ctx context.Context, agents []string) ([]mod
 	return jobs, nil
 }
 
+// CancelPullRequest cancels the unfinished jobs of pull request number in
+// repo, e.g. when it is closed, and returns their IDs.
+func (s *Store) CancelPullRequest(ctx context.Context, repo string, number int) ([]int64, error) {
+	return cancelPullRequestJobs(ctx, s.pool, repo, number, 0)
+}
+
+// cancelPullRequestJobs cancels the unfinished jobs of a pull request, only
+// those older than job before unless it is 0, and announces each change.
+func cancelPullRequestJobs(ctx context.Context, q querier, repo string, number int, before int64) ([]int64, error) {
+	rows, err := q.Query(ctx, `UPDATE jobs SET`+cancelSet+`
+		WHERE repo = $1 AND pull_request = $2 AND ($3 = 0 OR id < $3) AND status IN ('pending', 'running')
+		RETURNING id`, repo, number, before)
+	if err != nil {
+		return nil, fmt.Errorf("cancel jobs of %s#%d: %w", repo, number, err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, fmt.Errorf("cancel jobs of %s#%d: %w", repo, number, err)
+	}
+	for _, id := range ids {
+		if _, err := q.Exec(ctx, "SELECT pg_notify($1, $2)", JobEventsChannel, strconv.FormatInt(id, 10)); err != nil {
+			return nil, fmt.Errorf("announce canceled job %d: %w", id, err)
+		}
+	}
+	return ids, nil
+}
+
 // RerunJob queues a new job for the same commit as job id and returns it.
 // traceParent is the trace the new job belongs to (see models.Job).
 func (s *Store) RerunJob(ctx context.Context, id int64, traceParent string) (models.Job, error) {
 	// A matrix job reruns its own combination only.
 	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id, trace_parent)
-		SELECT repo, clone_url, branch, commit_sha, 'pending', matrix, parent_id, $2 FROM jobs WHERE id = $1
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id, trace_parent,
+			event, pull_request, target_branch, fork)
+		SELECT repo, clone_url, branch, commit_sha, 'pending', matrix, parent_id, $2,
+			event, pull_request, target_branch, fork
+		FROM jobs WHERE id = $1
 		RETURNING id`
 
 	var newID int64
@@ -389,8 +439,11 @@ func (s *Store) ExpandMatrix(ctx context.Context, id int64, combo map[string]str
 	}
 
 	const q = `
-		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id, trace_parent)
-		SELECT repo, clone_url, branch, commit_sha, 'pending', $2, id, trace_parent FROM jobs WHERE id = $1
+		INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, matrix, parent_id, trace_parent,
+			event, pull_request, target_branch, fork)
+		SELECT repo, clone_url, branch, commit_sha, 'pending', $2, id, trace_parent,
+			event, pull_request, target_branch, fork
+		FROM jobs WHERE id = $1
 		RETURNING id`
 	ids := make([]int64, 0, len(siblings))
 	for _, sib := range siblings {
@@ -611,6 +664,7 @@ func scanJob(row pgx.Row) (models.Job, error) {
 	var j models.Job
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
 		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt,
-		&j.Matrix, &j.ParentID, &j.TraceParent, &j.LogsExpiredAt)
+		&j.Matrix, &j.ParentID, &j.TraceParent, &j.LogsExpiredAt,
+		&j.Event, &j.PullRequest, &j.TargetBranch, &j.Fork)
 	return j, err
 }

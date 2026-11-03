@@ -26,6 +26,7 @@ func (l *stringList) UnmarshalYAML(n *yaml.Node) error {
 
 type rawWhen struct {
 	Branch stringList `yaml:"branch"`
+	Event  stringList `yaml:"event"`
 }
 
 // branchMatcher matches branch names against glob patterns: "*" matches

@@ -48,3 +48,14 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Dağıtım: Docker image'ları ve docker compose stack'i ([docs/deployment.md](docs/deployment.md)).
 - [x] Helm chart: server, Docker-in-Docker sidecar'lı agent'lar, isteğe bağlı PostgreSQL, TLS, ingress; testleri Helm SDK ile ([deployments/helm/cisid](deployments/helm/cisid/README.md)).
 - [x] cisid'in kendi CI'ını cisid üzerinde çalıştırmak (`.cisid.yml`).
+
+## Faz 5 — Kullanıma hazırlık
+
+- [x] MIT lisansı.
+- [x] Log saklama süresi: biten job'ların logları `CISID_LOG_RETENTION` sonunda silinir ([docs/server.md](docs/server.md)).
+- [x] Pull request build'leri: PR'a yeni commit gelince eski build'ler iptal edilir; fork'lar isteğe bağlıdır ve secret almaz ([docs/webhook.md](docs/webhook.md#pull-requestler)).
+- [ ] Okuma erişimi için token, agent token'ı rotasyonu.
+- [ ] Job'lar arası önbellek.
+- [ ] Elle ve zamanlanmış build'ler.
+- [ ] Birden fazla server kopyasının uçtan uca testi.
+- [ ] Sürüm yayımlama: image'lar ve chart.

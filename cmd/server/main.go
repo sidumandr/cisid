@@ -137,7 +137,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	webhook, err := api.NewWebhookHandler([]byte(cfg.WebhookSecret), wakeOnCreate{store, func(id int64) {
 		agents.Wake()
 		jobChanged(id)
-	}}, log)
+	}}, log, api.WithForkBuilds(cfg.BuildForks))
 	if err != nil {
 		return fmt.Errorf("create webhook handler: %w", err)
 	}
@@ -211,8 +211,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	return nil
 }
 
-// wakeOnCreate calls wake whenever the webhook queues a job, so it is
-// dispatched and reported right away instead of on the next poll.
+// wakeOnCreate calls wake whenever the webhook queues or cancels a job, so
+// the change is dispatched and reported right away instead of on the next
+// poll.
 type wakeOnCreate struct {
 	jobs api.JobCreator
 	wake func(jobID int64)
@@ -224,6 +225,14 @@ func (w wakeOnCreate) QueueJob(ctx context.Context, job models.Job, payloadSHA25
 		w.wake(id)
 	}
 	return id, err
+}
+
+func (w wakeOnCreate) CancelPullRequest(ctx context.Context, repo string, number int) ([]int64, error) {
+	ids, err := w.jobs.CancelPullRequest(ctx, repo, number)
+	for _, id := range ids {
+		w.wake(id) // delivers the cancels and reports them at once
+	}
+	return ids, err
 }
 
 // rateLimiter returns the configured limiter, or nil when disabled.

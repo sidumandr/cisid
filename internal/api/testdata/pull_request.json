@@ -1,0 +1,50 @@
+{
+  "action": "opened",
+  "number": 7,
+  "pull_request": {
+    "url": "https://api.github.com/repos/sidumandr/cisid/pulls/7",
+    "html_url": "https://github.com/sidumandr/cisid/pull/7",
+    "number": 7,
+    "state": "open",
+    "title": "Build pull requests",
+    "draft": false,
+    "created_at": "2026-11-03T10:14:59Z",
+    "updated_at": "2026-11-03T10:15:00Z",
+    "user": {"login": "sidumandr", "id": 12345678, "type": "User"},
+    "head": {
+      "label": "sidumandr:feature/pr-builds",
+      "ref": "feature/pr-builds",
+      "sha": "b5e4d3c2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6",
+      "repo": {
+        "id": 912345678,
+        "name": "cisid",
+        "full_name": "sidumandr/cisid",
+        "private": false,
+        "clone_url": "https://github.com/sidumandr/cisid.git"
+      }
+    },
+    "base": {
+      "label": "sidumandr:main",
+      "ref": "main",
+      "sha": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+      "repo": {
+        "id": 912345678,
+        "name": "cisid",
+        "full_name": "sidumandr/cisid",
+        "private": false,
+        "clone_url": "https://github.com/sidumandr/cisid.git"
+      }
+    }
+  },
+  "repository": {
+    "id": 912345678,
+    "name": "cisid",
+    "full_name": "sidumandr/cisid",
+    "private": false,
+    "html_url": "https://github.com/sidumandr/cisid",
+    "clone_url": "https://github.com/sidumandr/cisid.git",
+    "default_branch": "main",
+    "pushed_at": "2026-11-03T10:14:58Z"
+  },
+  "sender": {"login": "sidumandr", "id": 12345678, "type": "User"}
+}

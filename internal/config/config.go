@@ -37,6 +37,7 @@ type Config struct {
 	RateLimit       float64       // CISID_RATE_LIMIT, requests per second per client, default 10, 0 disables
 	TrustProxy      bool          // CISID_TRUST_PROXY, take the client from X-Forwarded-For
 	LogRetention    time.Duration // CISID_LOG_RETENTION, how long finished jobs keep their logs, default 90 days, 0 forever
+	BuildForks      bool          // CISID_BUILD_FORKS, build pull requests from forks (without secrets)
 }
 
 // defaultLogRetention matches GitHub Actions' default.
@@ -137,6 +138,14 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	if v := getenv("CISID_BUILD_FORKS"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("CISID_BUILD_FORKS: %w", err))
+		}
+		cfg.BuildForks = b
+	}
+
 	cfg.LogRetention = defaultLogRetention
 	if v := getenv("CISID_LOG_RETENTION"); v != "" {
 		d, err := parseRetention(v)
@@ -201,5 +210,6 @@ func (c Config) LogValue() slog.Value {
 		slog.Float64("rate_limit", c.RateLimit),
 		slog.Bool("trust_proxy", c.TrustProxy),
 		slog.Duration("log_retention", c.LogRetention),
+		slog.Bool("build_forks", c.BuildForks),
 	)
 }

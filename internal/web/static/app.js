@@ -29,6 +29,14 @@ function matrixLabel(m) {
   return Object.keys(m || {}).sort().map((k) => `${k}=${m[k]}`).join(", ");
 }
 
+// branchLabel shows a pull request as "#7 feature → main", a push as its branch.
+function branchLabel(j) {
+  if (!j.pull_request) return j.branch;
+  return el("span", {},
+    el("span", { class: "muted" }, `#${j.pull_request} `), `${j.branch} → ${j.target_branch}`,
+    j.fork ? el("span", { class: "muted small" }, " (fork)") : null);
+}
+
 function shortSHA(sha) {
   return (sha || "").slice(0, 8);
 }
@@ -87,7 +95,7 @@ function renderList() {
         el("td", {}, badge(j.status)),
         el("td", { class: "wrap" }, j.repo,
           j.matrix ? el("div", { class: "muted small" }, matrixLabel(j.matrix)) : null),
-        el("td", { class: "wrap" }, j.branch),
+        el("td", { class: "wrap" }, branchLabel(j)),
         el("td", { class: "mono" }, shortSHA(j.commit_sha)),
         el("td", { class: "muted" }, j.agent || ""),
         el("td", { class: "muted" }, duration(j)),
@@ -180,7 +188,7 @@ function renderJob(id) {
 
     // replaceChildren would print a null child as "null", so drop it.
     summary.replaceChildren(...[
-      el("div", { class: "title" }, `#${j.id}`, badge(j.status), `${j.repo} @ ${j.branch}`, actions),
+      el("div", { class: "title" }, `#${j.id}`, badge(j.status), `${j.repo} @ `, branchLabel(j), actions),
       meta,
       j.error ? el("div", { class: "error" }, j.error) : null,
     ].filter(Boolean));

@@ -48,6 +48,9 @@ server:
   # Take client IPs from X-Forwarded-For. Unset (null): true with an
   # ingress, whose controller sets the header, false otherwise.
   trustProxy: null
+  # Build pull requests from forks too. They run code from outside the
+  # repository on the agents, and get no secrets.
+  buildForks: false
   # The GitHub Enterprise Server API, e.g. https://ghe.example.com/api/v3.
   githubAPIURL: ""
   # How long finished jobs keep their logs, e.g. 30d or 72h; 0 keeps them.

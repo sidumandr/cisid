@@ -70,6 +70,8 @@ spec:
               value: {{ include "cisid.trustProxy" . | quote }}
             - name: CISID_LOG_RETENTION
               value: {{ .Values.server.logRetention | quote }}
+            - name: CISID_BUILD_FORKS
+              value: {{ .Values.server.buildForks | quote }}
             {{- with .Values.server.githubAPIURL }}
             - name: CISID_GITHUB_API_URL
               value: {{ . | quote }}

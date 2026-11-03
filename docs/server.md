@@ -36,6 +36,7 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_API_TOKEN` | — | İptal ve yeniden çalıştırma uç noktalarını açar, en az 16 karakter ([api.md](api.md#iptal-ve-yeniden-çalıştırma)) |
 | `CISID_SECRET_KEY` | — | Secret'ları şifreleyen 32 byte'lık anahtar, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | Kullanıcıların server'a eriştiği adres. Commit status bağlantılarında kullanılır ([commit-status.md](commit-status.md)). |
+| `CISID_BUILD_FORKS` | `false` | `true` ise fork'lardan gelen pull request'ler de derlenir; bu job'lara secret verilmez ([webhook.md](webhook.md#pull-requestler)) |
 | `CISID_LOG_RETENTION` | `90d` | Biten job'ların loglarının saklanma süresi (`30d`, `72h` gibi). `0` logları sonsuza dek saklar. Süresi dolan loglar saatlik temizlikte silinir, job kaydı kalır. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` vb. | — | Trace'lerin gönderileceği OTLP/HTTP collector. Verilmezse trace kapalıdır ([tracing.md](tracing.md)). |
 

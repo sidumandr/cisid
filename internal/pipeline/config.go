@@ -2,10 +2,12 @@ package pipeline
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -86,18 +88,27 @@ type Step struct {
 	Commands    []string
 	Environment map[string]string
 	Timeout     time.Duration
-	// Branches limits the step to pushes to matching branches; nil runs
-	// it for every branch.
+	// Branches limits the step to jobs on matching branches (a pull
+	// request's own branch); nil runs it for every branch.
 	Branches *branchMatcher
+	// Events limits the step to jobs triggered by these events; nil runs
+	// it for every event.
+	Events []string
 	// Secrets names the repository secrets the step gets as environment
 	// variables.
 	Secrets []string
 }
 
-// RunsOn reports whether the step runs for a push to branch.
-func (s Step) RunsOn(branch string) bool {
-	return s.Branches.Matches(branch)
+// RunsFor reports whether the step runs for job, by its event and branch.
+func (s Step) RunsFor(job models.Job) bool {
+	if s.Events != nil && !slices.Contains(s.Events, cmp.Or(job.Event, models.EventPush)) {
+		return false
+	}
+	return s.Branches.Matches(job.Branch)
 }
+
+// events are the values when.event accepts.
+var events = []string{models.EventPush, models.EventPullRequest}
 
 type rawConfig struct {
 	Steps    []rawStep             `yaml:"steps"`
@@ -244,6 +255,11 @@ func ParseConfig(data []byte) (Config, error) {
 			}
 			branches = m
 		}
+		for _, e := range rs.When.Event {
+			if !slices.Contains(events, e) {
+				bad("when.event %q is not one of %s", e, strings.Join(events, ", "))
+			}
+		}
 
 		cfg.Steps = append(cfg.Steps, Step{
 			Name:        rs.Name,
@@ -252,6 +268,7 @@ func ParseConfig(data []byte) (Config, error) {
 			Environment: rs.Environment,
 			Timeout:     timeout,
 			Branches:    branches,
+			Events:      rs.When.Event,
 			Secrets:     rs.Secrets,
 		})
 	}

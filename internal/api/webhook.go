@@ -33,38 +33,57 @@ var (
 	// ErrEmptySecret is returned when a webhook handler is created without a secret.
 	ErrEmptySecret = errors.New("webhook secret must not be empty")
 
-	errInvalidPush = errors.New("invalid push payload")
+	errInvalidPayload = errors.New("invalid payload")
 )
 
 // maxPayloadAge rejects pushes older than this, so a captured signed
 // payload cannot be replayed once its dedupe record is pruned.
 const maxPayloadAge = 7 * 24 * time.Hour
 
-// JobCreator queues the job of a webhook delivery, once per signed body.
-// *db.Store satisfies it.
+// JobCreator queues the job of a webhook delivery, once per signed body,
+// and cancels the jobs of closed pull requests. *db.Store satisfies it.
 type JobCreator interface {
 	QueueJob(ctx context.Context, job models.Job, payloadSHA256, deliveryID string) (int64, error)
+	CancelPullRequest(ctx context.Context, repo string, number int) ([]int64, error)
 }
 
+// pullRequestActions are the pull request events that queue a job: a pull
+// request opened or reopened, and new commits pushed to it.
+var pullRequestActions = map[string]bool{"opened": true, "reopened": true, "synchronize": true}
+
 // WebhookHandler handles GitHub webhook deliveries and queues a job for
-// every push to a branch.
+// every push to a branch and every change to a pull request.
 type WebhookHandler struct {
-	secret []byte
-	jobs   JobCreator
-	log    *slog.Logger
-	now    func() time.Time
+	secret     []byte
+	jobs       JobCreator
+	log        *slog.Logger
+	now        func() time.Time
+	buildForks bool
+}
+
+// WebhookOption configures a WebhookHandler.
+type WebhookOption func(*WebhookHandler)
+
+// WithForkBuilds builds pull requests from forks too, without secrets.
+// They run code from outside the repository on the agents.
+func WithForkBuilds(enabled bool) WebhookOption {
+	return func(h *WebhookHandler) { h.buildForks = enabled }
 }
 
 // NewWebhookHandler returns a handler that verifies deliveries with secret and
 // stores jobs in jobs. A nil log falls back to slog.Default().
-func NewWebhookHandler(secret []byte, jobs JobCreator, log *slog.Logger) (*WebhookHandler, error) {
+func NewWebhookHandler(secret []byte, jobs JobCreator, log *slog.Logger, opts ...WebhookOption) (*WebhookHandler, error) {
 	if len(secret) == 0 {
 		return nil, ErrEmptySecret
 	}
 	if log == nil {
 		log = slog.Default()
 	}
-	return &WebhookHandler{secret: secret, jobs: jobs, log: log, now: time.Now}, nil
+	h := &WebhookHandler{secret: secret, jobs: jobs, log: log, now: time.Now}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h, nil
 }
 
 // webhookResponse is the JSON body returned for every delivery.
@@ -72,6 +91,8 @@ type webhookResponse struct {
 	Status string `json:"status"`
 	JobID  int64  `json:"job_id,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Canceled lists the jobs a closed pull request stopped.
+	Canceled []int64 `json:"canceled,omitempty"`
 }
 
 // pushPayload holds the fields of a GitHub push event that cisid uses.
@@ -84,6 +105,31 @@ type pushPayload struct {
 		CloneURL string `json:"clone_url"`
 		// PushedAt is a Unix time in push events (a string elsewhere).
 		PushedAt json.RawMessage `json:"pushed_at"`
+	} `json:"repository"`
+}
+
+// pullRequestPayload holds the fields of a GitHub pull_request event that
+// cisid uses.
+type pullRequestPayload struct {
+	Action      string `json:"action"`
+	Number      int    `json:"number"`
+	PullRequest struct {
+		UpdatedAt time.Time `json:"updated_at"`
+		Head      struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+			// Repo is null when the fork has been deleted.
+			Repo *struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+	} `json:"pull_request"`
+	Repository struct {
+		FullName string `json:"full_name"`
+		CloneURL string `json:"clone_url"`
 	} `json:"repository"`
 }
 
@@ -118,7 +164,10 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		writeJSON(w, http.StatusOK, webhookResponse{Status: "pong"})
 	case "push":
-		h.handlePush(w, r, body, delivery)
+		job, reason, err := jobFromPush(body, h.now())
+		h.queue(w, r, body, delivery, "push", job, reason, err)
+	case "pull_request":
+		h.handlePullRequest(w, r, body, delivery)
 	default:
 		writeJSON(w, http.StatusOK, webhookResponse{
 			Status: "ignored",
@@ -127,14 +176,45 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body []byte, delivery string) {
-	ctx := r.Context()
+func (h *WebhookHandler) handlePullRequest(w http.ResponseWriter, r *http.Request, body []byte, delivery string) {
+	var p pullRequestPayload
+	if err := json.Unmarshal(body, &p); err != nil {
+		h.queue(w, r, body, delivery, "pull request", models.Job{}, "", fmt.Errorf("decode pull request payload: %w", err))
+		return
+	}
+	if p.Action != "closed" {
+		job, reason, err := jobFromPullRequest(p, h.now(), h.buildForks)
+		h.queue(w, r, body, delivery, "pull request", job, reason, err)
+		return
+	}
 
-	job, reason, err := jobFromPush(body, h.now())
+	// A closed pull request needs no more builds.
+	ctx := r.Context()
+	ids, err := h.jobs.CancelPullRequest(ctx, p.Repository.FullName, p.Number)
+	if err != nil {
+		metrics.Webhooks.WithLabelValues("error").Inc()
+		h.log.ErrorContext(ctx, "cancel jobs of closed pull request", "delivery", delivery,
+			"repo", p.Repository.FullName, "pull_request", p.Number, "error", err)
+		writeError(w, http.StatusInternalServerError, "could not cancel jobs")
+		return
+	}
+	metrics.Webhooks.WithLabelValues("canceled").Inc()
+	if len(ids) > 0 {
+		h.log.InfoContext(ctx, "pull request closed, jobs canceled", "delivery", delivery,
+			"repo", p.Repository.FullName, "pull_request", p.Number, "jobs", ids)
+	}
+	writeJSON(w, http.StatusOK, webhookResponse{Status: "canceled", Reason: "pull request closed", Canceled: ids})
+}
+
+// queue queues job, built from a delivery of the given kind, unless
+// building it failed (err) or the delivery triggers nothing (reason).
+func (h *WebhookHandler) queue(w http.ResponseWriter, r *http.Request, body []byte, delivery, kind string,
+	job models.Job, reason string, err error) {
+	ctx := r.Context()
 	if err != nil {
 		metrics.Webhooks.WithLabelValues("invalid_payload").Inc()
-		h.log.WarnContext(ctx, "rejected push payload", "delivery", delivery, "error", err)
-		writeError(w, http.StatusBadRequest, "invalid push payload")
+		h.log.WarnContext(ctx, "rejected "+kind+" payload", "delivery", delivery, "error", err)
+		writeError(w, http.StatusBadRequest, "invalid "+kind+" payload")
 		return
 	}
 	if reason != "" {
@@ -147,6 +227,9 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(telemetry.AttrDeliveryID.String(delivery), telemetry.AttrRepo.String(job.Repo),
 		telemetry.AttrBranch.String(job.Branch), telemetry.AttrCommit.String(job.CommitSHA))
+	if job.PullRequest > 0 {
+		span.SetAttributes(telemetry.AttrPullRequest.Int(job.PullRequest))
+	}
 	job.TraceParent = telemetry.TraceParent(ctx)
 
 	sum := sha256.Sum256(body)
@@ -166,8 +249,8 @@ func (h *WebhookHandler) handlePush(w http.ResponseWriter, r *http.Request, body
 
 	metrics.Webhooks.WithLabelValues("queued").Inc()
 	span.SetAttributes(telemetry.AttrJobID.Int64(id))
-	h.log.InfoContext(ctx, "job queued", "delivery", delivery, "job_id", id,
-		"repo", job.Repo, "branch", job.Branch, "commit", job.CommitSHA)
+	h.log.InfoContext(ctx, "job queued", "delivery", delivery, "job_id", id, "event", job.Event,
+		"repo", job.Repo, "branch", job.Branch, "commit", job.CommitSHA, "pull_request", job.PullRequest)
 	writeJSON(w, http.StatusAccepted, webhookResponse{Status: "queued", JobID: id})
 }
 
@@ -193,11 +276,11 @@ func jobFromPush(body []byte, now time.Time) (models.Job, string, error) {
 
 	switch {
 	case p.Repository.FullName == "":
-		return models.Job{}, "", fmt.Errorf("%w: repository.full_name is empty", errInvalidPush)
+		return models.Job{}, "", fmt.Errorf("%w: repository.full_name is empty", errInvalidPayload)
 	case p.Repository.CloneURL == "":
-		return models.Job{}, "", fmt.Errorf("%w: repository.clone_url is empty", errInvalidPush)
+		return models.Job{}, "", fmt.Errorf("%w: repository.clone_url is empty", errInvalidPayload)
 	case !validCommitSHA(p.After):
-		return models.Job{}, "", fmt.Errorf("%w: commit SHA %q", errInvalidPush, p.After)
+		return models.Job{}, "", fmt.Errorf("%w: commit SHA %q", errInvalidPayload, p.After)
 	}
 
 	return models.Job{
@@ -206,6 +289,50 @@ func jobFromPush(body []byte, now time.Time) (models.Job, string, error) {
 		Branch:    branch,
 		CommitSHA: p.After,
 		Status:    models.JobStatusPending,
+		Event:     models.EventPush,
+	}, "", nil
+}
+
+// jobFromPullRequest builds a pending job for the head commit of a pull
+// request. A non-empty reason means the event triggers no job. The commit is
+// fetched from the base repository, which serves every pull request's
+// commits, so a fork's own URL is never used.
+func jobFromPullRequest(p pullRequestPayload, now time.Time, buildForks bool) (models.Job, string, error) {
+	if !pullRequestActions[p.Action] {
+		return models.Job{}, fmt.Sprintf("pull request action %q does not build", p.Action), nil
+	}
+	if updated := p.PullRequest.UpdatedAt; !updated.IsZero() && now.Sub(updated) > maxPayloadAge {
+		return models.Job{}, "stale delivery", nil
+	}
+
+	head, base := p.PullRequest.Head, p.PullRequest.Base
+	switch {
+	case p.Number <= 0:
+		return models.Job{}, "", fmt.Errorf("%w: pull request number %d", errInvalidPayload, p.Number)
+	case p.Repository.FullName == "":
+		return models.Job{}, "", fmt.Errorf("%w: repository.full_name is empty", errInvalidPayload)
+	case p.Repository.CloneURL == "":
+		return models.Job{}, "", fmt.Errorf("%w: repository.clone_url is empty", errInvalidPayload)
+	case head.Ref == "" || base.Ref == "":
+		return models.Job{}, "", fmt.Errorf("%w: head or base branch is empty", errInvalidPayload)
+	case !validCommitSHA(head.SHA):
+		return models.Job{}, "", fmt.Errorf("%w: commit SHA %q", errInvalidPayload, head.SHA)
+	}
+
+	fork := head.Repo == nil || head.Repo.FullName != p.Repository.FullName
+	if fork && !buildForks {
+		return models.Job{}, "pull request from a fork (CISID_BUILD_FORKS is off)", nil
+	}
+	return models.Job{
+		Repo:         p.Repository.FullName,
+		CloneURL:     p.Repository.CloneURL,
+		Branch:       head.Ref,
+		CommitSHA:    head.SHA,
+		Status:       models.JobStatusPending,
+		Event:        models.EventPullRequest,
+		PullRequest:  p.Number,
+		TargetBranch: base.Ref,
+		Fork:         fork,
 	}, "", nil
 }
 

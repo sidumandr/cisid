@@ -10,7 +10,7 @@ Server, Prometheus metriklerini `GET /metrics` adresinde sunar (`internal/metric
 | `cisid_jobs_finished_total` | counter | `status` | Bu server'da biten job'lar |
 | `cisid_agents_connected` | gauge | — | Bu server'a bağlı agent'lar |
 | `cisid_log_chunks_total` | counter | — | Agent'lardan gelen log parçaları |
-| `cisid_webhook_deliveries_total` | counter | `result` | `queued`, `ignored`, `duplicate`, `invalid_signature`, `invalid_payload`, `error` |
+| `cisid_webhook_deliveries_total` | counter | `result` | `queued`, `ignored`, `duplicate`, `canceled` (kapanan PR), `invalid_signature`, `invalid_payload`, `error` |
 | `cisid_commit_statuses_total` | counter | `result` | `sent`, `retry` (GitHub erişilemedi), `failed` |
 | `go_*`, `process_*` | | | Go runtime ve süreç metrikleri |
 

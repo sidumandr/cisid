@@ -3,11 +3,13 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/secrets"
@@ -122,7 +124,7 @@ func (p Planner) steps(ctx context.Context, job models.Job, cfg Config, combo ma
 	steps []models.StepSpec) ([]models.StepSpec, []models.ServiceSpec, error) {
 	var run []Step
 	for _, s := range cfg.Steps {
-		if s.RunsOn(job.Branch) {
+		if s.RunsFor(job) {
 			run = append(run, s)
 		}
 	}
@@ -161,7 +163,8 @@ func (p Planner) secretsFor(ctx context.Context, job models.Job, steps []Step) (
 	for _, s := range steps {
 		names = append(names, s.Secrets...)
 	}
-	if len(names) == 0 {
+	if len(names) == 0 || job.Fork {
+		// Code from a fork never sees the repository's secrets.
 		return nil, nil
 	}
 	if p.Secrets == nil {
@@ -218,20 +221,29 @@ func userStep(job models.Job, s Step, secretValues, combo map[string]string) mod
 		Env:            env,
 		TimeoutSeconds: int(s.Timeout.Seconds()),
 	}
-	if len(s.Secrets) > 0 {
-		spec.Secrets = make(map[string]string, len(s.Secrets))
-		for _, name := range s.Secrets {
-			spec.Secrets[name] = secretValues[name]
+	for _, name := range s.Secrets {
+		// A secret withheld from the job (e.g. a fork's) is left out.
+		if v, ok := secretValues[name]; ok {
+			if spec.Secrets == nil {
+				spec.Secrets = make(map[string]string, len(s.Secrets))
+			}
+			spec.Secrets[name] = v
 		}
 	}
 	return spec
 }
 
-// jobEnv describes the pushed commit to every step.
+// jobEnv describes the commit being built to every step.
 func jobEnv(job models.Job) map[string]string {
-	return map[string]string{
+	env := map[string]string{
 		"CISID_REPO":       job.Repo,
 		"CISID_BRANCH":     job.Branch,
 		"CISID_COMMIT_SHA": job.CommitSHA,
+		"CISID_EVENT":      cmp.Or(job.Event, models.EventPush),
 	}
+	if job.PullRequest > 0 {
+		env["CISID_PULL_REQUEST"] = strconv.Itoa(job.PullRequest)
+		env["CISID_TARGET_BRANCH"] = job.TargetBranch
+	}
+	return env
 }

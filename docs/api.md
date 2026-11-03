@@ -28,6 +28,10 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
   "commit_sha": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
   "status": "failed",
   "created_at": "2026-11-03T10:45:01Z",
+  "event": "pull_request",
+  "pull_request": 7,
+  "target_branch": "main",
+  "fork": true,
   "agent": "worker-1",
   "started_at": "2026-11-03T10:45:01Z",
   "steps": ["clone", "test"],
@@ -41,7 +45,7 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
 }
 ```
 
-`status`: `pending`, `running`, `success`, `failed`, `canceled`. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)). `logs_expired_at` varsa job'un logları saklama süresi dolduğu için o tarihte silinmiştir (`CISID_LOG_RETENTION`, [server.md](server.md)); log uç noktaları boş döner.
+`status`: `pending`, `running`, `success`, `failed`, `canceled`. `event` job'u başlatan olaydır: `push` ya da `pull_request`. Pull request job'larında `pull_request` PR numarası, `target_branch` birleştirileceği branch, `branch` PR'ın kendi branch'i, `fork` ise değişikliğin bir fork'tan geldiğidir. `steps`, job'a planlanan adımların adlarıdır, job bir agent'a verilince dolar. `failed_step` ve log parçalarındaki `step` bu listedeki sırayı gösterir (`0` her zaman clone). `when` ile atlanan adımlar listede yer almaz. `matrix` job'un çalıştırdığı kombinasyondur, `parent_id` ise onu oluşturan ilk matrix job'udur ([pipeline.md](pipeline.md#matrix)). `logs_expired_at` varsa job'un logları saklama süresi dolduğu için o tarihte silinmiştir (`CISID_LOG_RETENTION`, [server.md](server.md)); log uç noktaları boş döner.
 
 ### Log parçası
 

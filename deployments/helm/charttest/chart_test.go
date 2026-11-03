@@ -55,6 +55,7 @@ func TestDefaultInstall(t *testing.T) {
 		env(c, "CISID_DATABASE_URL").Value)
 	assert.Equal(t, "false", env(c, "CISID_TRUST_PROXY").Value, "no proxy in front without an ingress")
 	assert.Equal(t, "90d", env(c, "CISID_LOG_RETENTION").Value)
+	assert.Equal(t, "false", env(c, "CISID_BUILD_FORKS").Value)
 	assert.Nil(t, env(c, "CISID_PUBLIC_URL"))
 	assert.Nil(t, env(c, "CISID_TLS_CERT_FILE"))
 	assert.Nil(t, env(c, "OTEL_EXPORTER_OTLP_ENDPOINT"))

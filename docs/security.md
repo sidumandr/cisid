@@ -20,6 +20,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - Gövde en fazla 25 MB okunur.
 - Aynı imzalı gövde bir kez job oluşturur. Tekilleştirme anahtarı gövdenin SHA-256 özetidir, kayıt job ile aynı transaction'da yazılır. `repository.pushed_at` 7 günden eskiyse istek reddedilir. Kayıtlar 8 gün sonra silinir ([webhook.md](webhook.md#tekrar-replay-koruması)).
 - Tüm repolar tek bir webhook secret'ı kullanır.
+- Pull request'ler de derlenir. Fork'tan gelenler varsayılan olarak derlenmez; `CISID_BUILD_FORKS=true` ile derlenir ama hiçbir secret almaz ([webhook.md](webhook.md#pull-requestler)).
 
 ## Agent bağlantısı
 
@@ -71,4 +72,3 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - Okuma uç noktalarında ve web arayüzünde kimlik doğrulama yok.
 - Kullanıcı ya da rol kavramı yok: API token'ı olan her şeyi yapabilir.
 - Agent başına kimlik yok, token iptali server'ı yeniden başlatmayı gerektirir.
-- Pull request build'leri yok. Eklendiğinde fork'lardan gelen PR'lara secret verilmemesi gerekir.

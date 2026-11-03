@@ -1,6 +1,6 @@
 # GitHub Commit Status
 
-cisid her job'un durumunu pushlanan commit'e GitHub **commit status** olarak yazar (`internal/status`). Commit'in yanında, pull request'lerde ve branch protection kurallarında `cisid` adıyla görünür.
+cisid her job'un durumunu derlenen commit'e GitHub **commit status** olarak yazar (`internal/status`). Commit'in yanında, pull request'lerde ve branch protection kurallarında `cisid` adıyla görünür.
 
 | Job durumu | GitHub durumu | Açıklama |
 |---|---|---|
@@ -11,6 +11,8 @@ cisid her job'un durumunu pushlanan commit'e GitHub **commit status** olarak yaz
 | `canceled` | `error` | Canceled |
 
 Matrix job'larının her biri kendi bağlamını alır, örneğin `cisid (GO_VERSION=1.27)`. Böylece kombinasyonların durumları birbirinin üzerine yazılmaz ve branch protection'da tek tek zorunlu tutulabilir.
+
+Pull request build'leri `cisid/pr` bağlamını kullanır (matrix'te `cisid/pr (GO_VERSION=1.27)`). Aynı commit hem bir branch'e push edilip hem bir PR'da derlendiğinde iki sonuç birbirini ezmez. Merge'den önce testlerin geçmesini şart koşmak için branch protection'da `cisid/pr`'ı zorunlu tutun.
 
 ## Kurulum
 

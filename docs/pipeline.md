@@ -35,7 +35,8 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../.cisid.y
 | `steps[].environment` | hayır | Ortam değişkenleri. Sayı ve bool değerler string'e çevrilir. cisid'in kendi tanımladığı değişkenler (aşağıdaki tablo) ayrılmıştır. |
 | `steps[].timeout` | hayır | Go süre formatında (`90s`, `10m`, `1h30m`). Varsayılan `1h`, en fazla `24h`. |
 | `steps[].secrets` | hayır | Adıma ortam değişkeni olarak verilecek repo secret'ları, loglarda maskelenir ([secrets.md](secrets.md)) |
-| `steps[].when.branch` | hayır | Adımı sadece bu branch'lere yapılan push'larda çalıştırır. Tek değer ya da liste olabilir (bkz. [Koşullar](#koşullar)). |
+| `steps[].when.branch` | hayır | Adımı sadece bu branch'lerde çalıştırır; pull request'lerde PR'ın kendi branch'ine bakılır. Tek değer ya da liste olabilir (bkz. [Koşullar](#koşullar)). |
+| `steps[].when.event` | hayır | Adımı sadece bu olaylarda çalıştırır: `push`, `pull_request`. Verilmezse her olayda çalışır. |
 
 Bilinmeyen alanlar hatadır. Örneğin `command:` yazılırsa job hemen `failed` olur ve hata mesajı yazım hatasını gösterir. Bütün sorunlar tek mesajda listelenir.
 
@@ -51,6 +52,7 @@ steps:
     image: alpine:3.22
     commands: [./deploy.sh]
     when:
+      event: push
       branch: [main, "release/*"]
 ```
 
@@ -63,7 +65,11 @@ steps:
 | `hotfix/**` | `hotfix/a/b` | `hot/fix` |
 | `v?.x` | `v1.x` | `v10.x` |
 
-Eşleşmeyen adımlar job'a hiç eklenmez, sonraki adımlar normal sırayla çalışır. `when` altında şimdilik sadece `branch` desteklenir. Başka bir anahtar (ör. `event`) yazılırsa dosya geçersiz sayılır.
+`when.event` adımı `push` ya da `pull_request` olaylarıyla sınırlar. Birden fazla koşul verilirse hepsinin tutması gerekir.
+
+Pull request'lerde `when.branch` PR'ın hedef branch'ine değil, **kendi branch'ine** bakar. Deploy gibi adımları yukarıdaki gibi `event: push` ile sınırlayın; yoksa adı `main` olan bir branch'ten açılan PR'da da çalışırlar.
+
+Eşleşmeyen adımlar job'a hiç eklenmez, sonraki adımlar normal sırayla çalışır. `when` altında `branch` ve `event` desteklenir. Başka bir anahtar yazılırsa dosya geçersiz sayılır.
 
 ## Servisler
 
@@ -123,7 +129,7 @@ steps:
 
 ## Çalışma şekli
 
-- **Clone:** İlk adım her zaman `clone`'dur. Pushlanan commit `alpine/git:2.52.0` ile `/workspace` altına çekilir (`--depth=1`). Branch adı yerel branch olarak ayarlanır.
+- **Clone:** İlk adım her zaman `clone`'dur. Derlenen commit `alpine/git:2.52.0` ile `/workspace` altına çekilir (`--depth=1`): push'larda pushlanan commit, pull request'lerde PR'ın son commit'i. Branch adı yerel branch olarak ayarlanır.
 - **Workspace:** Bütün adımlar aynı job volume'unu `/workspace` altında paylaşır ve orada çalışır. Bir adımın ürettiği dosyalar sonraki adımlarda görünür.
 - **Komutlar:** Bir adımın komutları tek bir `/bin/sh` script'i olarak çalışır (`set -ex`). İlk hatalı komutta adım durur ve her komut çalışmadan önce stderr'a yazılır.
 - **Başarısızlık:** Bir adım başarısız olursa sonraki adımlar çalışmaz.
@@ -135,12 +141,15 @@ steps:
 | `CISID_JOB_ID` | Job numarası |
 | `CISID_STEP` | Adım adı |
 | `CISID_REPO` | `owner/name` |
-| `CISID_BRANCH` | Pushlanan branch |
-| `CISID_COMMIT_SHA` | Pushlanan commit |
+| `CISID_EVENT` | `push` ya da `pull_request` |
+| `CISID_BRANCH` | Pushlanan branch; pull request'lerde PR'ın kendi branch'i |
+| `CISID_COMMIT_SHA` | Derlenen commit |
+| `CISID_PULL_REQUEST` | PR numarası (yalnızca pull request'lerde) |
+| `CISID_TARGET_BRANCH` | PR'ın birleştirileceği branch (yalnızca pull request'lerde) |
 
 ## Dosyanın okunması
 
-Server, job'u bir agent'a vermeden hemen önce `.cisid.yml`'yi **pushlanan commit'ten** GitHub API ile okur (`internal/github`). Agent dosyayla hiç uğraşmaz.
+Server, job'u bir agent'a vermeden hemen önce `.cisid.yml`'yi **derlenen commit'ten** GitHub API ile okur (`internal/github`). Agent dosyayla hiç uğraşmaz.
 
 | Durum | Sonuç |
 |---|---|
