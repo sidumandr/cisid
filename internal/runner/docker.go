@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -50,6 +51,7 @@ type DockerClient interface {
 	ContainerWait(ctx context.Context, id string, opts client.ContainerWaitOptions) client.ContainerWaitResult
 	ContainerStop(ctx context.Context, id string, opts client.ContainerStopOptions) (client.ContainerStopResult, error)
 	ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	VolumeRemove(ctx context.Context, id string, opts client.VolumeRemoveOptions) (client.VolumeRemoveResult, error)
 }
 
 var _ DockerClient = (*client.Client)(nil)
@@ -82,7 +84,9 @@ type PullProgress struct {
 
 // Step describes a single container to run.
 type Step struct {
-	Image      string
+	Image string
+	// Entrypoint overrides the image entrypoint when set.
+	Entrypoint []string
 	Cmd        []string
 	Env        map[string]string
 	WorkingDir string
@@ -345,6 +349,16 @@ func (r *DockerRunner) cleanup(ctx context.Context, id string, stopFirst bool) {
 	}
 }
 
+// RemoveVolume force-removes a named volume, e.g. a job workspace. Removing a
+// volume that does not exist is not an error.
+func (r *DockerRunner) RemoveVolume(ctx context.Context, name string) error {
+	_, err := r.cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: true})
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("remove volume %s: %w", name, err)
+	}
+	return nil
+}
+
 func createOptions(step Step) client.ContainerCreateOptions {
 	var env []string
 	for _, k := range slices.Sorted(maps.Keys(step.Env)) {
@@ -368,6 +382,7 @@ func createOptions(step Step) client.ContainerCreateOptions {
 	return client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:      step.Image,
+			Entrypoint: step.Entrypoint,
 			Cmd:        step.Cmd,
 			Env:        env,
 			WorkingDir: step.WorkingDir,

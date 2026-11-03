@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/mount"
@@ -66,6 +68,11 @@ func (m *mockDocker) ContainerStop(ctx context.Context, id string, opts client.C
 func (m *mockDocker) ContainerRemove(ctx context.Context, id string, opts client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
 	args := m.Called(ctx, id, opts)
 	return args.Get(0).(client.ContainerRemoveResult), args.Error(1)
+}
+
+func (m *mockDocker) VolumeRemove(ctx context.Context, id string, opts client.VolumeRemoveOptions) (client.VolumeRemoveResult, error) {
+	args := m.Called(ctx, id, opts)
+	return args.Get(0).(client.VolumeRemoveResult), args.Error(1)
 }
 
 // fakePull is an ImagePullResponse that replays msgs and then fails with err.
@@ -168,6 +175,7 @@ func TestRunHappyPath(t *testing.T) {
 	m := &mockDocker{}
 	step := Step{
 		Image:      testImage,
+		Entrypoint: []string{"/bin/sh", "-c"},
 		Cmd:        []string{"sh", "-c", "echo hello; echo warn >&2"},
 		Env:        map[string]string{"CI": "true", "BRANCH": "main"},
 		WorkingDir: "/workspace",
@@ -190,6 +198,7 @@ func TestRunHappyPath(t *testing.T) {
 	m.On("ContainerCreate", mock.Anything, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:      testImage,
+			Entrypoint: []string{"/bin/sh", "-c"},
 			Cmd:        []string{"sh", "-c", "echo hello; echo warn >&2"},
 			Env:        []string{"BRANCH=main", "CI=true"},
 			WorkingDir: "/workspace",
@@ -472,6 +481,38 @@ func TestStartFailures(t *testing.T) {
 		require.ErrorIs(t, err, daemonErr)
 		m.AssertExpectations(t)
 	})
+}
+
+func TestRemoveVolume(t *testing.T) {
+	daemonErr := errors.New("volume is in use")
+	opts := client.VolumeRemoveOptions{Force: true}
+
+	tests := []struct {
+		name    string
+		err     error
+		wantErr error
+	}{
+		{name: "removed"},
+		{name: "missing volume is not an error", err: fmt.Errorf("get cisid-ws: %w", cerrdefs.ErrNotFound)},
+		{name: "daemon error is returned", err: daemonErr, wantErr: daemonErr},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &mockDocker{}
+			m.On("VolumeRemove", mock.Anything, "cisid-ws", opts).
+				Return(client.VolumeRemoveResult{}, tt.err).Once()
+
+			err := newTestRunner(m).RemoveVolume(t.Context(), "cisid-ws")
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			m.AssertExpectations(t)
+		})
+	}
 }
 
 func TestRunWaitError(t *testing.T) {
