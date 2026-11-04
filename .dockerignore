@@ -9,3 +9,4 @@ Dockerfile
 .env.*
 compose.stack.yaml
 deployments
+web/node_modules
