@@ -101,13 +101,8 @@ func TestLoadOAuth(t *testing.T) {
 		"CISID_GITEA_OAUTH_CLIENT_ID":      "gt-id",
 		"CISID_GITEA_OAUTH_CLIENT_SECRET":  "gt-secret",
 		"CISID_OAUTH_SIGNUP_ROLE":          "viewer",
-		"CISID_GOOGLE_OAUTH_CLIENT_ID":     "go-id",
-		"CISID_GOOGLE_OAUTH_CLIENT_SECRET": "go-secret",
-		"CISID_GOOGLE_DOMAIN":              " Example.com ",
 	})))
 	require.NoError(t, err)
-	assert.Equal(t, OAuthApp{ClientID: "go-id", ClientSecret: "go-secret"}, cfg.GoogleOAuth)
-	assert.Equal(t, "example.com", cfg.GoogleDomain)
 	assert.Equal(t, OAuthApp{ClientID: "gh-id", ClientSecret: "gh-secret"}, cfg.GitHubOAuth)
 	assert.Equal(t, OAuthApp{ClientID: "gt-id", ClientSecret: "gt-secret"}, cfg.Gitea.OAuth)
 	assert.False(t, cfg.GitLab.OAuth.Enabled())
@@ -117,14 +112,10 @@ func TestLoadOAuth(t *testing.T) {
 		vars map[string]string
 		want string
 	}{
-		"no public URL":         {map[string]string{"CISID_GITLAB_OAUTH_CLIENT_ID": "id", "CISID_GITLAB_OAUTH_CLIENT_SECRET": "s"}, "CISID_PUBLIC_URL is required"},
-		"half an app":           {map[string]string{"CISID_PUBLIC_URL": "https://ci.example.com", "CISID_GITHUB_OAUTH_CLIENT_ID": "id"}, "must be set together"},
-		"no Gitea URL":          {map[string]string{"CISID_PUBLIC_URL": "https://ci.example.com", "CISID_FORGEJO_OAUTH_CLIENT_ID": "id", "CISID_FORGEJO_OAUTH_CLIENT_SECRET": "s"}, "CISID_FORGEJO_URL is required"},
-		"admin on signup":       {map[string]string{"CISID_OAUTH_SIGNUP_ROLE": "admin"}, "viewer or maintainer"},
-		"Google, no public URL": {map[string]string{"CISID_GOOGLE_OAUTH_CLIENT_ID": "id", "CISID_GOOGLE_OAUTH_CLIENT_SECRET": "s"}, "CISID_PUBLIC_URL is required"},
-		"domain without Google": {map[string]string{"CISID_GOOGLE_DOMAIN": "example.com"}, "CISID_GOOGLE_DOMAIN needs"},
-		"domain that is an email": {map[string]string{"CISID_PUBLIC_URL": "https://ci.example.com", "CISID_GOOGLE_OAUTH_CLIENT_ID": "id",
-			"CISID_GOOGLE_OAUTH_CLIENT_SECRET": "s", "CISID_GOOGLE_DOMAIN": "me@example.com"}, "must be a domain"},
+		"no public URL":   {map[string]string{"CISID_GITLAB_OAUTH_CLIENT_ID": "id", "CISID_GITLAB_OAUTH_CLIENT_SECRET": "s"}, "CISID_PUBLIC_URL is required"},
+		"half an app":     {map[string]string{"CISID_PUBLIC_URL": "https://ci.example.com", "CISID_GITHUB_OAUTH_CLIENT_ID": "id"}, "must be set together"},
+		"no Gitea URL":    {map[string]string{"CISID_PUBLIC_URL": "https://ci.example.com", "CISID_FORGEJO_OAUTH_CLIENT_ID": "id", "CISID_FORGEJO_OAUTH_CLIENT_SECRET": "s"}, "CISID_FORGEJO_URL is required"},
+		"admin on signup": {map[string]string{"CISID_OAUTH_SIGNUP_ROLE": "admin"}, "viewer or maintainer"},
 	} {
 		_, err := Load(env(with(tc.vars)))
 		assert.ErrorContains(t, err, tc.want, name)

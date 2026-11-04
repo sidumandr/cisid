@@ -154,6 +154,4 @@ func TestSignupNames(t *testing.T) {
 	assert.Equal(t, []string{"ahmet.y", "ahmet.y-gitea"}, signupNames(auth.Identity{Forge: "gitea", Login: "Ahmet.Y"}))
 	assert.Equal(t, []string{"ahmet-y-z", "ahmet-y-z-github"}, signupNames(auth.Identity{Forge: "github", Login: "ahmet y@z"}))
 	assert.Equal(t, []string{"x-bitbucket"}, signupNames(auth.Identity{Forge: "bitbucket", Login: "_x"})[1:])
-	assert.Equal(t, []string{"ayse.k", "ayse.k-google"}, signupNames(auth.Identity{Forge: "google", Login: "ayse.k@example.com"}),
-		"a Google user is named after the email's local part")
 }

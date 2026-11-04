@@ -68,8 +68,6 @@ func TestProvidersSignIn(t *testing.T) {
 			`{"id":42,"username":"ahmet"}`, false, Identity{"gitlab", "42", "ahmet"}},
 		{"bitbucket", func(b string) *Provider { return BitbucketProvider(b, "client-id", "client-secret") },
 			`{"uuid":"{a1b2}","username":"ahmet"}`, true, Identity{"bitbucket", "{a1b2}", "ahmet"}},
-		{"google", func(string) *Provider { return GoogleProvider("client-id", "client-secret", "") },
-			`{"sub":"1180","email":"Ahmet@Example.com","email_verified":true}`, false, Identity{"google", "1180", "ahmet@example.com"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -106,44 +104,4 @@ func TestAuthCodeURL(t *testing.T) {
 	assert.Equal(t, "code", q.Get("response_type"))
 	assert.Equal(t, "read_user", q.Get("scope"))
 	assert.NotContains(t, u.String(), "client-secret")
-}
-
-func TestGoogleChecksTheAccount(t *testing.T) {
-	tests := []struct {
-		name, domain, user string
-		ok                 bool
-	}{
-		{"verified", "", `{"sub":"1","email":"a@gmail.com","email_verified":true}`, true},
-		{"unverified email", "", `{"sub":"1","email":"a@gmail.com","email_verified":false}`, false},
-		{"in the domain", "Example.com", `{"sub":"1","email":"a@example.com","email_verified":true,"hd":"example.com"}`, true},
-		{"outside the domain", "example.com", `{"sub":"1","email":"a@gmail.com","email_verified":true}`, false},
-		{"another domain", "example.com", `{"sub":"1","email":"a@other.com","email_verified":true,"hd":"other.com"}`, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := fakeForge(t, tt.user, false)
-			p := point(GoogleProvider("client-id", "client-secret", tt.domain), srv.URL)
-			_, err := p.SignIn(t.Context(), "good", redirect)
-			if tt.ok {
-				assert.NoError(t, err)
-			} else {
-				assert.ErrorIs(t, err, ErrOAuth)
-			}
-		})
-	}
-}
-
-func TestGoogleAuthCodeURL(t *testing.T) {
-	u, err := url.Parse(GoogleProvider("client-id", "client-secret", "Example.com").AuthCodeURL("state-123", redirect))
-	require.NoError(t, err)
-	assert.Equal(t, "accounts.google.com", u.Host)
-	q := u.Query()
-	assert.Equal(t, "openid email", q.Get("scope"))
-	assert.Equal(t, "example.com", q.Get("hd"), "Google is told the domain")
-	assert.Equal(t, "select_account", q.Get("prompt"))
-	assert.Equal(t, "state-123", q.Get("state"))
-
-	u, err = url.Parse(GoogleProvider("client-id", "client-secret", "").AuthCodeURL("s", redirect))
-	require.NoError(t, err)
-	assert.False(t, u.Query().Has("hd"))
 }

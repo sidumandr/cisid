@@ -36,8 +36,6 @@ type Provider struct {
 	TokenURL     string
 	UserURL      string
 	Scopes       []string
-	// Params go along to AuthURL, such as Google's hosted domain hint.
-	Params url.Values
 	// BasicAuth sends the client's credentials to TokenURL as HTTP Basic
 	// auth, as Bitbucket wants, instead of in the form.
 	BasicAuth bool
@@ -58,9 +56,6 @@ func (p *Provider) AuthCodeURL(state, redirectURI string) string {
 	}
 	if len(p.Scopes) > 0 {
 		q.Set("scope", strings.Join(p.Scopes, " "))
-	}
-	for k, v := range p.Params {
-		q[k] = v
 	}
 	sep := "?"
 	if strings.Contains(p.AuthURL, "?") {
@@ -221,47 +216,5 @@ func BitbucketProvider(apiURL, clientID, secret string) *Provider {
 		Name: "bitbucket", ClientID: clientID, ClientSecret: secret,
 		AuthURL: "https://bitbucket.org/site/oauth2/authorize", TokenURL: "https://bitbucket.org/site/oauth2/access_token",
 		UserURL: apiURL + "/user", Scopes: []string{"account"}, BasicAuth: true, user: bitbucketUser,
-	}
-}
-
-// GoogleProvider signs in with a Google account, through Google's OpenID
-// Connect endpoints. The identity is the account's subject and its email
-// address, which must be verified. A non-empty domain lets in only the
-// accounts of that Google Workspace domain.
-func GoogleProvider(clientID, secret, domain string) *Provider {
-	p := &Provider{
-		Name: "google", ClientID: clientID, ClientSecret: secret,
-		AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
-		TokenURL: "https://oauth2.googleapis.com/token",
-		UserURL:  "https://openidconnect.googleapis.com/v1/userinfo",
-		Scopes:   []string{"openid", "email"},
-		Params:   url.Values{"prompt": {"select_account"}},
-		user:     googleUser(strings.ToLower(domain)),
-	}
-	if domain != "" {
-		p.Params.Set("hd", strings.ToLower(domain)) // only a hint: the answer is checked too
-	}
-	return p
-}
-
-// googleUser reads OpenID Connect's userinfo answer.
-func googleUser(domain string) func([]byte) (string, string, error) {
-	return func(data []byte) (string, string, error) {
-		var u struct {
-			Subject       string `json:"sub"`
-			Email         string `json:"email"`
-			EmailVerified bool   `json:"email_verified"`
-			Domain        string `json:"hd"`
-		}
-		if err := json.Unmarshal(data, &u); err != nil {
-			return "", "", err
-		}
-		if !u.EmailVerified {
-			return "", "", fmt.Errorf("the email address %q is not verified", u.Email)
-		}
-		if domain != "" && strings.ToLower(u.Domain) != domain {
-			return "", "", fmt.Errorf("%q is not an account of %s", u.Email, domain)
-		}
-		return u.Subject, strings.ToLower(u.Email), nil
 	}
 }

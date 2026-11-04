@@ -44,8 +44,7 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_READ_ACCESS` | read token varsa `signed-in`, yoksa `public` | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister ([accounts.md](accounts.md#okuma-erişimi)) |
 | `CISID_ADMIN_USER`, `CISID_ADMIN_PASSWORD` | `admin`, — | Şifre verilirse server açılışta bu admin'i oluşturur (varsa dokunmaz); şifre en az 10 karakter |
 | `CISID_SESSION_TTL` | `7d` | Bir girişin süresi (`12h`, `30d` gibi) |
-| `CISID_<SAĞLAYICI>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sağlayıcıyla ya da Google ile giriş: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`, `GOOGLE`; `CISID_PUBLIC_URL` gerekir ([accounts.md](accounts.md#sağlayıcıyla-giriş)) |
-| `CISID_GOOGLE_DOMAIN` | yok | Google ile yalnızca bu Google Workspace alan adının hesapları girer |
+| `CISID_<SAĞLAYICI>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sağlayıcıyla giriş: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; `CISID_PUBLIC_URL` gerekir ([accounts.md](accounts.md#sağlayıcıyla-giriş)) |
 | `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına hesap açılır |
 | `CISID_SIGNUP_ROLE` | yok | `viewer` ya da `maintainer`: herkes şifreyle hesap açabilir. Tanımlı değilse kayıtla yalnızca hiç kullanıcısı olmayan server'ın ilk hesabı (admin) açılır ([accounts.md](accounts.md#kaydolmak)) |
 | `CISID_SECRET_KEY` | — | Secret'ları şifreleyen 32 byte'lık anahtar, base64 ([secrets.md](secrets.md)) |

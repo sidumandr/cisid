@@ -75,7 +75,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo'nun token'ı ve webhook secret'ı (`server.forgejoURL` ile) |
 | `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab'ın token'ı ve webhook secret'ı |
 | `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud'un token'ı ve webhook secret'ı |
-| `secrets.oauthClientSecrets.<sağlayıcı>` | — | Sağlayıcıyla (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) ya da Google ile (`google`) giriş için OAuth uygulamasının client secret'ı |
+| `secrets.oauthClientSecrets.<sağlayıcı>` | — | Sağlayıcıyla giriş için OAuth uygulamasının client secret'ı (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
 | `secrets.adminPassword` | — | İlk açılışta `server.adminUser`'ı admin olarak oluşturur, en az 10 karakter ([hesaplar](../../../docs/tr/accounts.md)) |
 | `secrets.smtpPassword` | yok | `server.smtp.username`'in şifresi |
 | `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
@@ -86,7 +86,6 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.sessionTTL` | `7d` | Bir girişin süresi |
 | `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
 | `server.oauthClientIDs.<sağlayıcı>` | — | OAuth uygulamasının client id'si; secret'ı ve `server.publicURL` (ya da ingress) gerekir |
-| `server.googleDomain` | yok | Google ile yalnızca bu Google Workspace alan adının hesapları girer |
 | `server.oauthSignupRole` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte hesap açılır |
 | `agent.labels` | `[]` | Bu agent'ların sunduğu etiketler (`CISID_AGENT_LABELS`); farklı etiketler için chart'ı her agent türü için ayrı kurun ([pipeline](../../../docs/tr/pipeline.md#etiketler)) |
 | `server.artifactMaxSize` | `100MB` | Server'ın kabul ettiği en büyük artifact; artifact'lar PostgreSQL'de saklanır ([pipeline](../../../docs/tr/pipeline.md#artifactlar)) |

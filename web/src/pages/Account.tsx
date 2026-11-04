@@ -107,7 +107,7 @@ export function Account() {
       <dl className="facts" style={{ "--n": 4 } as CSSProperties}>
         <Fact name="Username">{user.username}</Fact>
         <Fact name="Role">{me.role}</Fact>
-        <Fact name="Linked logins">{forges}</Fact>
+        <Fact name="Forges">{forges}</Fact>
         <Fact name="Password">{user.has_password ? "Set" : "None, signs in through a forge"}</Fact>
       </dl>
       <div className="toolbar">

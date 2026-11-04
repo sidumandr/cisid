@@ -131,7 +131,7 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-// ProviderLink starts a sign-in through a forge or Google, coming back to next.
+// ProviderLink starts a sign-in through a forge, coming back to next.
 export function ProviderLink({ provider, verb, next }: { provider: string; verb: string; next: string }) {
   return (
     <a className="btn provider" href={`/auth/${provider}/login?next=${encodeURIComponent(next)}`}>

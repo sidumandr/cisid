@@ -43,9 +43,8 @@ export function Mark({ size = 24 }: { size?: number }) {
   );
 }
 
-// ProviderMark is the mark of a service one signs in with: GitHub's and
-// GitLab's in the text colour, Google's in its own colours, as its
-// guidelines ask; the other forges get a plain person.
+// ProviderMark is the mark of a forge one signs in with: GitHub's and
+// GitLab's in the text colour; the other forges get a plain person.
 export function ProviderMark({ provider }: { provider: string }) {
   switch (provider) {
     case "github":
@@ -58,15 +57,6 @@ export function ProviderMark({ provider }: { provider: string }) {
       return (
         <svg className="brand" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
           <path className="fill" d="m23.6 9.593-.033-.086L20.3.98a.851.851 0 0 0-.336-.405.875.875 0 0 0-1 .054.875.875 0 0 0-.29.44l-2.205 6.748H7.538L5.332 1.07a.857.857 0 0 0-.29-.441.875.875 0 0 0-1-.054.859.859 0 0 0-.336.405L.433 9.502l-.032.086a6.066 6.066 0 0 0 2.012 7.01l.011.009.03.021 4.976 3.727 2.462 1.863 1.5 1.132a1.009 1.009 0 0 0 1.22 0l1.499-1.132 2.462-1.863 5.006-3.749.012-.01a6.068 6.068 0 0 0 2.01-7.003z" />
-        </svg>
-      );
-    case "google":
-      return (
-        <svg className="brand google" viewBox="0 0 48 48" width="18" height="18" aria-hidden="true">
-          <path className="g-red" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-          <path className="g-blue" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-          <path className="g-yellow" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-          <path className="g-green" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
         </svg>
       );
     default:

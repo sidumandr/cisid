@@ -379,16 +379,10 @@ func TestUsersAPI(t *testing.T) {
 		"bad username": `{"username":"Ahmet Y","role":"viewer"}`,
 		"weak":         `{"username":"x","role":"viewer","password":"short"}`,
 		"bad forge":    `{"username":"x","role":"viewer","identities":{"svn":"x"}}`,
-		"not an email": `{"username":"x","role":"viewer","identities":{"google":"ahmet"}}`,
 	} {
 		assert.Equal(t, http.StatusBadRequest, as(h, c, http.MethodPost, "/api/users", body, true).Code, name)
 	}
 	assert.Equal(t, http.StatusConflict, as(h, c, http.MethodPost, "/api/users", `{"username":"ahmet","role":"viewer"}`, true).Code)
-
-	rec = as(h, c, http.MethodPost, "/api/users", `{"username":"ayse","role":"viewer","identities":{"google":"Ayse@Example.com"}}`, true)
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	assert.Contains(t, rec.Body.String(), `"google":"ayse@example.com"`, "Google logins are kept as Google sends them")
-	require.Equal(t, http.StatusNoContent, as(h, c, http.MethodDelete, "/api/users/ayse", "", true).Code)
 
 	rec = as(h, c, http.MethodPatch, "/api/users/ahmet", `{"role":"viewer","disabled":true}`, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())

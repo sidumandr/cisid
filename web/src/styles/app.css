@@ -271,11 +271,6 @@ select { font: inherit; }
 /* ---------- sign-in through a forge ---------- */
 .providers { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
 .btn.provider { flex: 1 1 auto; justify-content: center; gap: 10px; text-decoration: none; }
-svg.brand.google path { stroke: none; }
-svg.brand.google .g-red { fill: #ea4335; }
-svg.brand.google .g-blue { fill: #4285f4; }
-svg.brand.google .g-yellow { fill: #fbbc05; }
-svg.brand.google .g-green { fill: #34a853; }
 .toolbar-actions { display: flex; gap: 8px; }
 
 /* ---------- tabs: the selected one carries the orange line ---------- */

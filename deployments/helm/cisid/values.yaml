@@ -39,15 +39,13 @@ secrets:
   gitlabWebhookSecret: ""
   bitbucketToken: ""
   bitbucketWebhookSecret: ""
-  # Client secrets of the OAuth apps users sign in through, by forge, and
-  # of the Google OAuth client.
+  # Client secrets of the OAuth apps users sign in through, by forge.
   oauthClientSecrets:
     github: ""
     gitea: ""
     forgejo: ""
     gitlab: ""
     bitbucket: ""
-    google: ""
   # Creates server.adminUser as an admin on the first start, 10+
   # characters. Change the password in the UI afterwards.
   adminPassword: ""
@@ -101,19 +99,14 @@ server:
   sessionTTL: 7d
   # The account secrets.adminPassword creates.
   adminUser: admin
-  # Client ids of the OAuth apps users sign in through, by forge, and of
-  # the Google OAuth client; each needs its secret in
-  # secrets.oauthClientSecrets and publicURL set.
+  # Client ids of the OAuth apps users sign in through, by forge; each
+  # needs its secret in secrets.oauthClientSecrets and publicURL set.
   oauthClientIDs:
     github: ""
     gitea: ""
     forgejo: ""
     gitlab: ""
     bitbucket: ""
-    google: ""
-  # Only accounts of this Google Workspace domain (e.g. example.com) sign in
-  # with Google. Empty: any Google account an admin linked.
-  googleDomain: ""
   # viewer or maintainer: forge users without an account get one on their
   # first sign-in. Empty: only users an admin linked sign in.
   oauthSignupRole: ""

@@ -161,7 +161,7 @@ CISID_BITBUCKET_TOKEN: bitbucket-token
 CISID_BITBUCKET_WEBHOOK_SECRET: bitbucket-webhook-secret
 CISID_ADMIN_PASSWORD: admin-password
 CISID_SMTP_PASSWORD: smtp-password
-{{- range $forge := list "github" "gitea" "forgejo" "gitlab" "bitbucket" "google" }}
+{{- range $forge := list "github" "gitea" "forgejo" "gitlab" "bitbucket" }}
 CISID_{{ upper $forge }}_OAUTH_CLIENT_SECRET: {{ $forge }}-oauth-client-secret
 {{- end }}
 {{- end }}

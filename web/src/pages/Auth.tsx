@@ -11,8 +11,7 @@ import { Mark } from "../ui/Icon";
 import { ProviderLink, Strip } from "../ui/parts";
 import type { Job } from "../lib/types";
 
-// SIGNIN_PROBLEMS explain why signing in through a forge or Google came
-// back here.
+// SIGNIN_PROBLEMS explain why signing in through a forge came back here.
 const SIGNIN_PROBLEMS: Record<string, string> = {
   expired: "That sign-in took too long or started in another tab. Try again.",
   denied: "The sign-in was turned down on the other side, so cisid did not get in.",

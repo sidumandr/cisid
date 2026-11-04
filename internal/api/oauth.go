@@ -167,13 +167,8 @@ func (a *Access) forgeUser(ctx context.Context, id auth.Identity) (models.User, 
 }
 
 // signupNames are the usernames a forge user may get: their login made a
-// valid username, then with the forge's name added. A Google login is an
-// email address, and its local part is used.
+// valid username, then with the forge's name added.
 func signupNames(id auth.Identity) []string {
-	login := id.Login
-	if id.Forge == "google" {
-		login, _, _ = strings.Cut(login, "@")
-	}
 	base := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
@@ -182,7 +177,7 @@ func signupNames(id auth.Identity) []string {
 			return r + ('a' - 'A')
 		}
 		return '-'
-	}, login)
+	}, id.Login)
 	base = strings.TrimLeft(base, ".-_")
 	var names []string
 	for _, n := range []string{base, base + "-" + id.Forge} {
