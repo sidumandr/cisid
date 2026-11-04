@@ -28,7 +28,9 @@ If a request carries a Bearer token that is not accepted, cookies are not checke
 
 ## The first admin
 
-There are two ways to create the first account on a new server:
+There are three ways to create the first account on a new server:
+
+- **Sign up.** While a server has no users, the first person to sign up on the **Register** page (or with `POST /api/register`) becomes an admin. Until then anyone who reaches the server can be that person, so create the first account before the server is reachable from outside, or use one of the ways below.
 
 - Set `CISID_ADMIN_PASSWORD`. At startup the server creates an admin named `CISID_ADMIN_USER` (default `admin`); if the user already exists, the server leaves it alone and does not change its password. Change the password in the UI afterwards.
 - Or call the user API with `CISID_API_TOKEN`; the API token is an admin:
@@ -38,6 +40,17 @@ curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" \
   -d '{"username":"ahmet","role":"admin","password":"at-least-10-characters"}' \
   http://localhost:8080/api/users
 ```
+
+## Signing up
+
+`POST /api/register` with `{"username":"...","password":"..."}` opens an account and signs the browser in (`201`, the user). The UI's **Register** page uses it.
+
+- The first account on a server with no users is an admin, whatever else is set. Servers sharing the database agree on which account was first.
+- After that, sign-up is closed (`403`) unless `CISID_SIGNUP_ROLE` is `viewer` or `maintainer`: then anyone who reaches the server can open an account with that role. Nobody signs up as an admin.
+- Usernames are lowercased; the rules for names and passwords are those of the user API. A taken name gets `409`.
+- `GET /api/me` tells the UI what to offer: `signup` is `first` while the server has no users, `open` when anyone can sign up, and absent otherwise; `provider_signup` says forge users without an account get one on their first sign-in through their forge (`CISID_OAUTH_SIGNUP_ROLE`).
+
+With `CISID_READ_ACCESS=signed-in`, open sign-up as `viewer` lets anyone who can reach the server read its jobs and logs.
 
 ## Read access
 

@@ -82,6 +82,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 ## Production checklist
 
 - [ ] Long, random values for `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` and `CISID_API_TOKEN`.
+- [ ] The first account exists before the server is reachable from outside: until then, whoever signs up first becomes an admin ([accounts.md](accounts.md#the-first-admin)).
 - [ ] The server runs with TLS or behind a reverse proxy that terminates TLS. Agents connect with `wss://`.
 - [ ] `CISID_READ_ACCESS=signed-in` (or `CISID_READ_TOKEN` set), or the server is behind a reverse proxy with access control.
 - [ ] If the first admin was created, `CISID_ADMIN_PASSWORD` is removed from the environment and the password is changed in the UI.

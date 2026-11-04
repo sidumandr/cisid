@@ -82,6 +82,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 ## Production kontrol listesi
 
 - [ ] `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` ve `CISID_API_TOKEN` için uzun, rastgele değerler.
+- [ ] İlk hesap, server dışarıdan erişilebilir olmadan önce açılmış: o ana kadar ilk kaydolan admin olur ([accounts.md](accounts.md#ilk-admin)).
 - [ ] Server TLS ile ya da TLS sonlandıran bir reverse proxy arkasında. Agent'lar `wss://` ile bağlanıyor.
 - [ ] `CISID_READ_ACCESS=signed-in` (ya da `CISID_READ_TOKEN` tanımlı), veya server erişim kontrolü olan bir reverse proxy arkasında.
 - [ ] İlk admin oluşturulduysa `CISID_ADMIN_PASSWORD` ortamdan kaldırıldı ve şifre arayüzden değiştirildi.

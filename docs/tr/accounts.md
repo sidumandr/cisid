@@ -28,7 +28,9 @@ Bir istek kabul edilmeyen bir Bearer token taşıyorsa cookie'lere bakılmaz. Ki
 
 ## İlk admin
 
-Yeni bir server'da ilk hesabı açmanın iki yolu var:
+Yeni bir server'da ilk hesabı açmanın üç yolu var:
+
+- **Kaydolmak.** Server'da hiç kullanıcı yokken **Register** sayfasından (ya da `POST /api/register` ile) ilk kaydolan admin olur. O ana kadar server'a ulaşabilen herkes bu kişi olabilir; bu yüzden ilk hesabı server dışarıdan erişilebilir olmadan önce açın ya da aşağıdaki yollardan birini kullanın.
 
 - `CISID_ADMIN_PASSWORD` verin. Server açılışta `CISID_ADMIN_USER` (varsayılan `admin`) adlı bir admin oluşturur; kullanıcı zaten varsa dokunmaz, şifresini değiştirmez. Şifreyi sonra arayüzden değiştirin.
 - Ya da `CISID_API_TOKEN` ile kullanıcı API'sini çağırın; API token'ı admin'dir:
@@ -38,6 +40,17 @@ curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" \
   -d '{"username":"ahmet","role":"admin","password":"en-az-10-karakter"}' \
   http://localhost:8080/api/users
 ```
+
+## Kaydolmak
+
+`POST /api/register`, `{"username":"...","password":"..."}` ile bir hesap açar ve tarayıcıda oturumu başlatır (`201`, kullanıcı). Arayüzdeki **Register** sayfası bunu kullanır.
+
+- Hiç kullanıcısı olmayan bir server'da ilk hesap, başka hiçbir ayara bakılmadan admin olur. Aynı veritabanını paylaşan server'lar hangi hesabın ilk olduğunda anlaşır.
+- Sonrasında kayıt kapalıdır (`403`); `CISID_SIGNUP_ROLE` `viewer` ya da `maintainer` ise server'a ulaşabilen herkes o rolle hesap açabilir. Kimse kayıtla admin olamaz.
+- Kullanıcı adları küçük harfe çevrilir; ad ve şifre kuralları kullanıcı API'sindekilerle aynıdır. Alınmış bir ad `409` alır.
+- `GET /api/me` arayüze neyi sunacağını söyler: `signup`, server'da hiç kullanıcı yokken `first`, herkes kaydolabiliyorsa `open`, aksi hâlde yoktur; `provider_signup`, hesabı olmayan sağlayıcı kullanıcılarına ilk girişlerinde hesap açıldığını söyler (`CISID_OAUTH_SIGNUP_ROLE`).
+
+`CISID_READ_ACCESS=signed-in` ile `viewer` olarak açık kayıt, server'a ulaşabilen herkesin job'ları ve logları okuyabilmesi demektir.
 
 ## Okuma erişimi
 

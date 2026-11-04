@@ -29,6 +29,7 @@ func (a *Access) register(mux *http.ServeMux) {
 	if a.cfg.Accounts == nil {
 		return
 	}
+	mux.HandleFunc("POST /api/register", a.registerUser)
 	mux.HandleFunc("GET /auth/{forge}/login", a.oauthLogin)
 	mux.HandleFunc("GET /auth/{forge}/callback", a.oauthCallback)
 	mux.HandleFunc("PUT /api/me/password", a.require(auth.RoleViewer, a.changePassword))
@@ -159,10 +160,26 @@ type meResponse struct {
 	Accounts bool `json:"accounts"`
 	// Providers are the forges one can sign in through.
 	Providers []string `json:"providers,omitempty"`
+	// Signup says who can open an account: "first" while the server has no
+	// users (the first becomes an admin), "open" when anyone can, empty
+	// when only admins create accounts.
+	Signup string `json:"signup,omitempty"`
+	// ProviderSignup says forge users without an account get one when they
+	// first sign in through their forge.
+	ProviderSignup bool `json:"provider_signup,omitempty"`
 }
 
 func (a *Access) me(w http.ResponseWriter, r *http.Request) {
 	resp := meResponse{PublicRead: a.cfg.PublicRead, Accounts: a.cfg.Accounts != nil, Providers: a.providerNames()}
+	if a.cfg.Accounts != nil {
+		switch {
+		case !a.usersExist(r.Context()):
+			resp.Signup = "first"
+		case a.cfg.SignupRole != "":
+			resp.Signup = "open"
+		}
+		resp.ProviderSignup = a.cfg.OAuth.SignupRole != "" && len(resp.Providers) > 0
+	}
 	if p, ok := a.who(r); ok {
 		resp.User, resp.Role = p.user, string(p.role)
 		switch {
@@ -175,6 +192,64 @@ func (a *Access) me(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// usersExist reports whether the server has any user. Once it has, it is
+// remembered until the server restarts, sparing a query per page.
+func (a *Access) usersExist(ctx context.Context) bool {
+	if a.someUsers.Load() {
+		return true
+	}
+	if a.hasUsers(ctx) {
+		a.someUsers.Store(true)
+		return true
+	}
+	return false
+}
+
+// registerUser opens an account for whoever asks, when the server takes
+// sign-ups or has no users yet, and signs them in (201, the user).
+func (a *Access) registerUser(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !decode(w, r, &body) {
+		writeError(w, http.StatusBadRequest, `body must be {"username": "...", "password": "..."}`)
+		return
+	}
+	username := strings.ToLower(strings.TrimSpace(body.Username))
+	if !auth.ValidUsername(username) {
+		writeError(w, http.StatusBadRequest, "username may only contain a-z, 0-9, '.', '_' and '-', up to 39 characters")
+		return
+	}
+	if len(body.Password) < auth.MinPasswordLen {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("password must be at least %d characters", auth.MinPasswordLen))
+		return
+	}
+	hash, err := auth.HashPassword(body.Password)
+	if err != nil {
+		a.internalError(w, r, "hash password", err)
+		return
+	}
+	ctx := r.Context()
+	u, first, err := a.cfg.Accounts.RegisterUser(ctx, username, hash, string(a.cfg.SignupRole))
+	switch {
+	case errors.Is(err, db.ErrSignupClosed):
+		writeError(w, http.StatusForbidden, "sign-up is closed on this server: ask an admin for an account")
+		return
+	case errors.Is(err, db.ErrUserExists):
+		writeError(w, http.StatusConflict, "that username is taken")
+		return
+	case err != nil:
+		a.internalError(w, r, "register user", err)
+		return
+	}
+	a.someUsers.Store(true)
+	a.log.InfoContext(ctx, "user signed up", "username", u.Username, "role", u.Role, "first", first, "remote_addr", r.RemoteAddr)
+	if a.startSession(w, r, u) {
+		writeJSON(w, http.StatusCreated, u)
+	}
 }
 
 // signedInUser is the user behind a request that require let through, or

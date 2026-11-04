@@ -179,6 +179,15 @@ func TestLoadSMTP(t *testing.T) {
 	}
 }
 
+func TestLoadSignupRole(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{"CISID_SIGNUP_ROLE": "viewer"})))
+	require.NoError(t, err)
+	assert.Equal(t, "viewer", cfg.SignupRole)
+
+	_, err = Load(env(with(map[string]string{"CISID_SIGNUP_ROLE": "admin"})))
+	assert.ErrorContains(t, err, "CISID_SIGNUP_ROLE must be viewer or maintainer", "nobody signs up as an admin")
+}
+
 func TestLoadPublicBadges(t *testing.T) {
 	cfg, err := Load(env(with(map[string]string{"CISID_PUBLIC_BADGES": "true", "CISID_READ_ACCESS": "signed-in"})))
 	require.NoError(t, err)

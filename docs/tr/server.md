@@ -46,6 +46,7 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_SESSION_TTL` | `7d` | Bir girişin süresi (`12h`, `30d` gibi) |
 | `CISID_<SAĞLAYICI>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sağlayıcıyla giriş: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; `CISID_PUBLIC_URL` gerekir ([accounts.md](accounts.md#sağlayıcıyla-giriş)) |
 | `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına hesap açılır |
+| `CISID_SIGNUP_ROLE` | yok | `viewer` ya da `maintainer`: herkes şifreyle hesap açabilir. Tanımlı değilse kayıtla yalnızca hiç kullanıcısı olmayan server'ın ilk hesabı (admin) açılır ([accounts.md](accounts.md#kaydolmak)) |
 | `CISID_SECRET_KEY` | — | Secret'ları şifreleyen 32 byte'lık anahtar, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | Kullanıcıların server'a eriştiği adres. Commit status bağlantılarında kullanılır ([commit-status.md](commit-status.md)). |
 | `CISID_BUILD_FORKS` | `false` | `true` ise fork'lardan gelen pull request'ler de derlenir; bu job'lara secret verilmez. `approve` ise her birini bir maintainer onaylayınca derler ([webhook.md](webhook.md#pull-requestler)) |

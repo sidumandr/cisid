@@ -62,6 +62,52 @@ func (s *Store) CreateUser(ctx context.Context, u models.User, passwordHash stri
 	return created, nil
 }
 
+// ErrSignupClosed is returned for a sign-up on a server that takes none.
+var ErrSignupClosed = errors.New("sign-up is closed")
+
+// registrationLock serialises sign-ups, so servers sharing the database
+// agree on which account is the first.
+const registrationLock = 0x63697369 // "cisi"
+
+// RegisterUser creates the account of someone signing up. The first account
+// on a server with no users becomes an admin; later ones get role, and none
+// is created when role is empty (ErrSignupClosed). It reports whether the
+// account is the first.
+func (s *Store) RegisterUser(ctx context.Context, username, passwordHash, role string) (models.User, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return models.User{}, false, fmt.Errorf("register %s: %w", username, err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", registrationLock); err != nil {
+		return models.User{}, false, fmt.Errorf("register %s: %w", username, err)
+	}
+	var first bool
+	if err := tx.QueryRow(ctx, "SELECT NOT EXISTS (SELECT 1 FROM users)").Scan(&first); err != nil {
+		return models.User{}, false, fmt.Errorf("register %s: %w", username, err)
+	}
+	if first {
+		role = "admin"
+	}
+	if role == "" {
+		return models.User{}, false, ErrSignupClosed
+	}
+	created, err := scanUser(tx.QueryRow(ctx, `
+		INSERT INTO users AS u (username, role, password_hash) VALUES ($1, $2, $3)
+		RETURNING `+userColumns, username, role, passwordHash))
+	if uniqueViolation(err) {
+		return models.User{}, false, fmt.Errorf("%w: %s", ErrUserExists, username)
+	}
+	if err != nil {
+		return models.User{}, false, fmt.Errorf("register %s: %w", username, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.User{}, false, fmt.Errorf("register %s: %w", username, err)
+	}
+	return created, first, nil
+}
+
 // setIdentities replaces a user's forge logins. A login that stays keeps
 // the subject it was bound to.
 func setIdentities(ctx context.Context, tx pgx.Tx, userID int64, identities map[string]string) error {

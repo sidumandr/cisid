@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sidumandr/cisid/internal/auth"
@@ -42,6 +43,7 @@ type AccountStore interface {
 	CreateUser(ctx context.Context, u models.User, passwordHash string) (models.User, error)
 	UpdateUser(ctx context.Context, username string, upd db.UserUpdate) (models.User, error)
 	DeleteUser(ctx context.Context, username string) (bool, error)
+	RegisterUser(ctx context.Context, username, passwordHash, role string) (models.User, bool, error)
 	UserByIdentity(ctx context.Context, forge, subject, login string) (models.User, error)
 	CreateSession(ctx context.Context, digest string, userID int64, expires time.Time) error
 	SessionUser(ctx context.Context, digest string) (models.User, error)
@@ -68,7 +70,11 @@ type AccessConfig struct {
 	SessionTTL time.Duration
 	// OAuth signs users in through their forges; see oauth.go.
 	OAuth OAuthConfig
-	Log   *slog.Logger
+	// SignupRole lets anyone open an account with a password, getting this
+	// role; empty takes no sign-ups, except the first account of a server
+	// with no users, which becomes an admin.
+	SignupRole auth.Role
+	Log        *slog.Logger
 }
 
 // Access decides who may do what. A caller is known by
@@ -81,10 +87,12 @@ type AccessConfig struct {
 //
 // Log streams rely on the cookies: an EventSource cannot send headers.
 type Access struct {
-	cfg     AccessConfig
-	digests []string // of the tokens, as the read cookie holds them
-	log     *slog.Logger
-	now     func() time.Time
+	cfg AccessConfig
+	// someUsers is set once the server is known to have a user.
+	someUsers atomic.Bool
+	digests   []string // of the tokens, as the read cookie holds them
+	log       *slog.Logger
+	now       func() time.Time
 }
 
 // NewAccess returns the access rules cfg describes.

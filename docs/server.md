@@ -46,6 +46,7 @@ To run PostgreSQL, the server and the agent together as containers, see [deploym
 | `CISID_SESSION_TTL` | `7d` | How long a sign-in lasts (such as `12h`, `30d`) |
 | `CISID_<FORGE>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sign-in through a forge: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; requires `CISID_PUBLIC_URL` ([accounts.md](accounts.md#signing-in-through-a-forge)) |
 | `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` or `maintainer`: forge users without an account get one |
+| `CISID_SIGNUP_ROLE` | none | `viewer` or `maintainer`: anyone may open an account with a password. Unset, only the first account of a server with no users (an admin) is opened by sign-up ([accounts.md](accounts.md#signing-up)) |
 | `CISID_SECRET_KEY` | — | 32-byte key that encrypts secrets, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | The URL users reach the server at. Used in commit status links ([commit-status.md](commit-status.md)). |
 | `CISID_BUILD_FORKS` | `false` | If `true`, pull requests from forks are built too; these jobs get no secrets. `approve` builds them once a maintainer approves each ([webhook.md](webhook.md#pull-requests)) |

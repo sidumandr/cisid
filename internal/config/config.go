@@ -49,6 +49,7 @@ type Config struct {
 	AdminPassword   string        // CISID_ADMIN_PASSWORD, optional: creates AdminUser as an admin if it does not exist
 	GitHubOAuth     OAuthApp      // CISID_GITHUB_OAUTH_CLIENT_ID, CISID_GITHUB_OAUTH_CLIENT_SECRET: sign in through GitHub
 	OAuthSignupRole string        // CISID_OAUTH_SIGNUP_ROLE, viewer or maintainer: forge users without an account get one; empty: only linked users sign in
+	SignupRole      string        // CISID_SIGNUP_ROLE, viewer or maintainer: anyone may open an account with a password; empty: only the first account (an admin) and admins create accounts
 	PublicBadges    bool          // CISID_PUBLIC_BADGES, lets anyone see build badges even when reading needs a sign-in
 	ArtifactMaxSize int64         // CISID_ARTIFACT_MAX_SIZE, the largest artifact accepted, default 100MB
 	SMTP            SMTP          // CISID_SMTP_*: the relay notifications are emailed through
@@ -386,6 +387,10 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg.GitHubOAuth = loadOAuth(getenv, "GITHUB", &problems)
+	cfg.SignupRole = getenv("CISID_SIGNUP_ROLE")
+	if r := cfg.SignupRole; r != "" && r != "viewer" && r != "maintainer" {
+		problems = append(problems, fmt.Errorf("CISID_SIGNUP_ROLE must be viewer or maintainer"))
+	}
 	cfg.OAuthSignupRole = getenv("CISID_OAUTH_SIGNUP_ROLE")
 	if r := cfg.OAuthSignupRole; r != "" && r != "viewer" && r != "maintainer" {
 		problems = append(problems, fmt.Errorf("CISID_OAUTH_SIGNUP_ROLE must be viewer or maintainer"))
@@ -523,6 +528,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("admin_password_set", c.AdminPassword != ""),
 		slog.Bool("github_sign_in", c.GitHubOAuth.Enabled()),
 		slog.String("oauth_signup_role", c.OAuthSignupRole),
+		slog.String("signup_role", c.SignupRole),
 		slog.Bool("public_badges", c.PublicBadges),
 		slog.Int64("artifact_max_size", c.ArtifactMaxSize),
 		slog.Any("smtp", c.SMTP.logValue()),

@@ -195,7 +195,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	broker := events.New(log)
 	access := api.NewAccess(api.AccessConfig{
 		APIToken: cfg.APIToken, ReadToken: cfg.ReadToken, PublicRead: cfg.PublicRead,
-		Accounts: store, SessionTTL: cfg.SessionTTL, Log: log,
+		Accounts: store, SessionTTL: cfg.SessionTTL, Log: log, SignupRole: auth.Role(cfg.SignupRole),
 		OAuth: api.OAuthConfig{Providers: oauthProviders(cfg, forgeHTTP), PublicURL: cfg.PublicURL, SignupRole: auth.Role(cfg.OAuthSignupRole)},
 	})
 	jobsAPI := api.NewJobsAPI(store, broker, log,
