@@ -94,7 +94,7 @@ func (a *Access) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail := func(reason string) {
-		http.Redirect(w, r, "/account?signin="+url.QueryEscape(reason), http.StatusFound)
+		http.Redirect(w, r, "/login?signin="+url.QueryEscape(reason), http.StatusFound)
 	}
 
 	c, err := r.Cookie(oauthCookie)

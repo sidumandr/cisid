@@ -4,7 +4,7 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1–8 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/tr/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.tr.md).
+> Durum: Faz 1–9 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/tr/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.tr.md).
 
 ## Dokümanlar
 
@@ -108,7 +108,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   ├── status/      # Commit status raporlama
 │   ├── telemetry/   # OpenTelemetry trace kurulumu ve trace bağlamı taşıma
 │   ├── trigger/     # Elle, zamanlanmış ve yoklanan (polling) build'ler
-│   ├── web/         # Gömülü web arayüzü
+│   ├── web/         # Gömülü web arayüzü derlemesini sunar
 │   ├── runner/      # Docker entegrasyonu
 │   └── db/          # PostgreSQL erişimi (pgx)
 │       ├── dbtest/      # Testler için geçici veritabanları
@@ -121,6 +121,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 │   └── helm/
 │       ├── cisid/       # Helm chart
 │       └── charttest/   # Chart testleri (ayrı Go modülü)
+├── web/             # Web arayüzünün kaynağı (React, TypeScript, Vite)
 └── docs/            # Modül dokümanları
 ```
 
@@ -129,6 +130,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - Go 1.25+
 - PostgreSQL 14+
 - Docker (runner ve agent için)
+- Node.js 20.19+ yalnızca web arayüzünü değiştirmek için; derlemesi repodadır
 
 ## Yerelde çalıştırma
 
@@ -200,6 +202,12 @@ Helm chart testleri ayrı bir Go modülündedir (Helm SDK'sı ana modüle bağı
 
 ```bash
 cd deployments/helm/charttest && go test ./...
+```
+
+Web arayüzünün kendi denetimleri vardır; `npm run build` server'ın gömdüğü derlemeyi yazar ([docs/ui.md](docs/tr/ui.md#arayüzü-değiştirmek)):
+
+```bash
+cd web && npm ci && npm run typecheck && npm test && npm run build
 ```
 
 ## Lisans

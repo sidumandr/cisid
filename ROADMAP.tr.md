@@ -83,3 +83,8 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Artifact'lar: `.cisid.yml`'de `artifacts`; adımlar geçince toplanır, agent yükler, loglarla birlikte PostgreSQL'de saklanır ve job sayfasından indirilir ([docs/pipeline.md](docs/tr/pipeline.md#artifactlar)).
 - [x] Agent etiketleri: `.cisid.yml`'de `labels`, agent'larda `CISID_AGENT_LABELS`; job yalnızca bütün etiketlere sahip agent'lara gider ([docs/pipeline.md](docs/tr/pipeline.md#etiketler)).
 - [x] Fork'lardan gelen pull request'ler için onay: `CISID_BUILD_FORKS=approve` ile her fork commit'ini çalışmadan önce bir maintainer onaylar ([docs/webhook.md](docs/tr/webhook.md#pull-requestler)).
+
+## Faz 9: Ön kapı
+
+- [x] Kaydolmak: yeni bir server'da açılan ilk hesap admin olur; `CISID_SIGNUP_ROLE` başkalarının viewer ya da maintainer olarak kaydolmasına izin verir ([docs/accounts.md](docs/tr/accounts.md#kaydolmak)).
+- [x] Web arayüzü React ve TypeScript ile yeniden yazıldı; ziyaretçiler için bir tanıtım sayfası, giriş ve kayıt için ayrı sayfalar ([docs/ui.md](docs/tr/ui.md)).

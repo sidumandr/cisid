@@ -22,3 +22,6 @@ coverage.*
 
 # Design skill working files
 .taste-skill/
+
+# The web UI's dependencies; its build output in internal/web/static is committed.
+web/node_modules/

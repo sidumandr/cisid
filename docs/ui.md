@@ -2,18 +2,22 @@
 
 **English** · [Türkçe](tr/ui.md)
 
-The server serves a web UI for watching and managing jobs (`internal/web`). The UI is embedded in the binary. It loads no CDN, library or font from outside; it gets all its data from the [Job API](api.md).
+The server serves a web UI that introduces cisid and is used to watch and manage jobs. Its source is a React and TypeScript app in [`web/`](../web), built with Vite; the build is committed under `internal/web/static` and embedded in the binary, so running the server needs no Node.js. The UI loads no CDN, library or font from outside; it gets all its data from the [Job API](api.md).
 
 ## Screens
 
 | Page | Content |
 |---|---|
-| `/` | The last 200 jobs. At the top, one sentence sums up the state: how many jobs are running, how many failed in the last 24 hours, and at which step the latest one failed. Tabs (All, Running, Failed, Pull requests) with their counts; filter by repository, branch or commit. Refreshes every 5 seconds. |
+| `/` | For visitors who have not signed in, an introduction to cisid: what it is, the four moves of a build, the repository's own `.cisid.yml`, what comes with it, and the ways in (**Sign in**, **Create an account**, and **Browse the builds** where reading is public). Where reading is public, it shows the server's latest builds, live; otherwise an example. Someone signed in goes straight to `/jobs`. |
+| `/login` | **Sign in**: a **Continue with ...** button for each forge set up for sign-in ([accounts.md](accounts.md#signing-in-through-a-forge)), a username and password, or a token instead. `?next=` names the page to return to (only a path on this site); a failed forge sign-in comes back with `?signin=` and says why. |
+| `/register` | **Create an account** ([accounts.md](accounts.md#signing-up)). On a server with no accounts the page is **Set up cisid**, and the account it creates is the admin. When sign-up is closed it says so and, if forges create accounts on first sign-in, offers them. |
+| `/jobs` | The last 200 jobs. At the top, one sentence sums up the state: how many jobs are running, how many failed in the last 24 hours, and at which step the latest one failed. Tabs (All, Running, Failed, Pull requests) with their counts; filter by repository, branch or commit. Refreshes every 5 seconds. |
 | `/jobs/{id}` | The job's status in one sentence ("Failed at test with exit code 1 after 1m 48s."), the triggering event, commit, agent, start time and duration. Below that, the step strip and the live log of the selected step. |
 | `/repos` | The repositories that appear in recent jobs: their latest builds, statuses and build counts. |
 | `/repos/{owner}/{repo}` | A repository's builds, schedules, polled branches ([polling](polling.md)), notifications ([notifications](notifications.md)) and secrets, in tabs. The **Badge** button gives the Markdown of the repository's build badge. Repositories on other forges open with their prefix, e.g. `/repos/gitea:office/app`, or `/repos/gitlab:group%2Fsub/project` for nested GitLab groups. |
+| `/account`, `/users` | The signed-in user's account, and for admins the users ([below](#actions-and-tokens)). |
 
-Dialogs: **Run build** (repository and branch), API token, sign-in for reading, new schedule, new notification, new secret, the badge and delete confirmations.
+Dialogs: **Run build** (repository and branch), API token, sign-in, new schedule, new notification, new secret, the badge and delete confirmations.
 
 ## Step strip
 
@@ -35,25 +39,61 @@ Below the log, the job page lists the files the build kept ([pipeline.md](pipeli
 
 ## Appearance
 
-- **Colors:** Orange on a black background in the dark theme, a white background in the light theme. The theme follows the operating system's setting; the button at the bottom of the sidebar changes it, and the browser remembers the choice.
+- **Colors:** Orange on a black background in the dark theme, a white background in the light theme. The theme follows the operating system's setting; the button at the bottom of the sidebar (or **Light**/**Dark** on the introduction) changes it, and the browser remembers the choice.
 - **Color only on data:** Orange appears on the primary button, on the running step and on the 1px line that marks the selected item (tab, sidebar, step). Statuses are shown as text in the same hue on a faint background.
-- **Type:** Text is set in [Authentic Sans](https://authentic.website/sans). Numbers, commit SHAs, durations and logs use the system's monospace font, so numbers in columns stay aligned. The font files are under `internal/web/static/fonts/`; the license note is in [LICENSE.md](../internal/web/static/fonts/LICENSE.md).
-- **Phone:** The sidebar turns into a labeled bar at the bottom. Rows turn into cards of two or three lines, and the details on the job page turn into a list.
+- **Type:** Text is set in [Authentic Sans](https://authentic.website/sans). On the working screens, numbers, commit SHAs, durations and logs use the system's monospace font, so numbers in columns stay aligned; the introduction and the sign-in pages are set one step larger and keep monospace for code. The font files are under `web/public/fonts/`; the license note is in [LICENSE.md](../web/public/fonts/LICENSE.md).
+- **The introduction** uses the step strip as its one motif: the four moves of a build are a strip that fills as you scroll, where the browser ties animation to scrolling. With reduced motion turned on, nothing moves.
+- **Phone:** The sidebar turns into a labeled bar at the bottom. Rows turn into cards of two or three lines, and the details on the job page turn into a list. The sign-in pages drop their side panel.
 - The UI text never uses the em dash (U+2014); a test in `internal/web` checks this.
 
-The design follows the app-screen rules of the `design-taste-frontend` skill (data terminal style, seed 1222882761): measurements were taken in a browser at 1440, 768 and 390 pixels wide.
+The design follows the `design-taste-frontend` skill (data terminal style, seed 1222882761): app-screen rules for the working screens, page rules for the introduction and the sign-in pages; measurements were taken in a browser at 1440, 768 and 390 pixels wide.
 
 ## Actions and tokens
 
 - **Run build**, **Cancel**, **Rerun**, schedule, polling, notification and secret actions require `maintainer` ([accounts.md](accounts.md)). If you are not signed in, a sign-in dialog opens on first use: a username and password, or a token. The UI keeps the server's API token only in that tab's session (`sessionStorage`); a personal token or a password opens a session in the browser.
-- The person icon at the bottom of the sidebar opens the **Account** page: role, password change, personal tokens, sign-out. On the **Users** page, admins add users, change their roles and forge logins, disable them and delete them.
+- The person icon at the bottom of the sidebar opens the **Account** page (or **Sign in** when you are not signed in): role, password change, personal tokens, sign-out. On the **Users** page, admins add users, change their roles and forge logins, disable them and delete them.
 - A running job shows only **Cancel**, and a finished job shows only **Rerun**. A build from a fork that waits for approval also shows **Approve**.
 - If `CISID_PUBLIC_URL` is set, GitHub commit status links go to the job page (`/jobs/{id}`).
 
 ## Security
 
-- Pages are served with `Content-Security-Policy: default-src 'self'`: there are no inline scripts, and nothing is loaded from another origin, fonts included. The server also sends `frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`.
-- Every value from the API (log lines included) is inserted into the page with `textContent` and is never interpreted as HTML. A `<script>` in a step's output shows up as text.
+- Pages are served with `Content-Security-Policy: default-src 'self'`: there are no inline scripts or styles, and nothing is loaded from another origin, fonts included. The server also sends `frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`.
+- Every value from the API (log lines included) is rendered by React as text and is never interpreted as HTML. A `<script>` in a step's output shows up as text. A test in `internal/web` keeps `dangerouslySetInnerHTML`, `innerHTML` and the like out of the source.
 - If reading requires sign-in (`CISID_READ_ACCESS=signed-in`), the UI asks you to sign in on the first read. A user session lasts `CISID_SESSION_TTL`; a session opened with a read token lasts until the browser closes ([api.md](api.md#read-access)). Otherwise the pages are public.
 - Every change made with a cookie carries the `X-Cisid-Request` header; another site's form cannot add it (CSRF protection).
 - The UI never shows secret values. It lists only their names, which builds get them and when they were updated.
+
+## Changing the UI
+
+Node.js 20.19+ or 22.12+ is needed only to change the UI. From `web/`:
+
+```bash
+npm ci
+```
+
+```bash
+npm run dev
+```
+
+The dev server on http://localhost:5173 serves the pages at their real addresses, reloads on every change and proxies `/api` and `/auth` to a cisid server, by default `http://localhost:8080` (another with `CISID_DEV_SERVER`).
+
+```bash
+npm run typecheck
+```
+
+```bash
+npm test
+```
+
+```bash
+npm run build
+```
+
+`npm run build` checks the types and writes the build to `internal/web/static`, which `go build` embeds. Commit the build with the source, so the server is built without Node.js.
+
+| Path | Content |
+|---|---|
+| `web/src/pages/` | One file per screen: `Landing`, `Auth` (sign in, sign up), `Jobs`, `Job`, `Repos`, `Repo`, `Account`, `Users`, `NotFound` |
+| `web/src/ui/` | The sidebar shell, the dialog host, icons and shared parts (strip, pills, notes) |
+| `web/src/lib/` | API calls and sign-in, the signed-in user, dialogs, wording and formatting (with tests) |
+| `web/src/styles/` | `app.css` for the working screens, `site.css` for the introduction and the sign-in pages |

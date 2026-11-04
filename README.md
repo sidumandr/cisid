@@ -4,7 +4,7 @@
 
 A self-hosted, Docker-based CI/CD system written in Go.
 
-> Status: Phases 1–8 are done. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
+> Status: Phases 1–9 are done. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 
@@ -108,7 +108,7 @@ A self-hosted, Docker-based CI/CD system written in Go.
 │   ├── status/      # Commit status reporting
 │   ├── telemetry/   # OpenTelemetry trace setup and trace context propagation
 │   ├── trigger/     # Manual, scheduled and polled builds
-│   ├── web/         # Embedded web UI
+│   ├── web/         # Serves the embedded web UI build
 │   ├── runner/      # Docker integration
 │   └── db/          # PostgreSQL access (pgx)
 │       ├── dbtest/      # Temporary databases for tests
@@ -121,6 +121,7 @@ A self-hosted, Docker-based CI/CD system written in Go.
 │   └── helm/
 │       ├── cisid/       # Helm chart
 │       └── charttest/   # Chart tests (separate Go module)
+├── web/             # Web UI source (React, TypeScript, Vite)
 └── docs/            # Module documentation
 ```
 
@@ -129,6 +130,7 @@ A self-hosted, Docker-based CI/CD system written in Go.
 - Go 1.25+
 - PostgreSQL 14+
 - Docker (for the runner and the agent)
+- Node.js 20.19+ only to change the web UI; its build is committed
 
 ## Running locally
 
@@ -200,6 +202,12 @@ The Helm chart tests live in a separate Go module (so the Helm SDK adds no depen
 
 ```bash
 cd deployments/helm/charttest && go test ./...
+```
+
+The web UI has its own checks; `npm run build` writes the build that the server embeds ([docs/ui.md](docs/ui.md#changing-the-ui)):
+
+```bash
+cd web && npm ci && npm run typecheck && npm test && npm run build
 ```
 
 ## License

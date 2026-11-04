@@ -31,7 +31,6 @@ Bir istek kabul edilmeyen bir Bearer token taşıyorsa cookie'lere bakılmaz. Ki
 Yeni bir server'da ilk hesabı açmanın üç yolu var:
 
 - **Kaydolmak.** Server'da hiç kullanıcı yokken **Register** sayfasından (ya da `POST /api/register` ile) ilk kaydolan admin olur. O ana kadar server'a ulaşabilen herkes bu kişi olabilir; bu yüzden ilk hesabı server dışarıdan erişilebilir olmadan önce açın ya da aşağıdaki yollardan birini kullanın.
-
 - `CISID_ADMIN_PASSWORD` verin. Server açılışta `CISID_ADMIN_USER` (varsayılan `admin`) adlı bir admin oluşturur; kullanıcı zaten varsa dokunmaz, şifresini değiştirmez. Şifreyi sonra arayüzden değiştirin.
 - Ya da `CISID_API_TOKEN` ile kullanıcı API'sini çağırın; API token'ı admin'dir:
 
@@ -72,7 +71,7 @@ Değişiklikler her zaman maintainer ister. Hiç kullanıcı ve `CISID_API_TOKEN
 
 ## Sağlayıcıyla giriş
 
-Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, authorization code akışı). Her sağlayıcıda bir OAuth uygulaması kaydedilir ve client id ile secret'ı server'a verilir. Giriş diyaloğunda her sağlayıcı için bir **Sign in with ...** düğmesi çıkar.
+Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, authorization code akışı). Her sağlayıcıda bir OAuth uygulaması kaydedilir ve client id ile secret'ı server'a verilir. **Sign in** sayfasında her sağlayıcı için bir **Continue with ...**, giriş diyaloğunda bir **Sign in with ...** düğmesi çıkar.
 
 | Değişken | Açıklama |
 |---|---|
@@ -99,7 +98,7 @@ Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, autho
 - `CISID_OAUTH_SIGNUP_ROLE` tanımlıysa eşleşmeyen sağlayıcı kullanıcısı için hesap açılır. Kullanıcı adı sağlayıcıdaki adından türetilir; alınmışsa sonuna sağlayıcının adı eklenir (`ahmet-gitea`). Kendi kurduğunuz bir Gitea ya da GitLab'da herkes çalışansa kullanışlıdır. **GitHub.com, GitLab.com ya da Bitbucket'ta açmayın:** o sağlayıcıda hesabı olan herkes girebilir.
 - Devre dışı bırakılan kullanıcı sağlayıcıyla da giremez.
 
-**Güvenlik.** Giriş `state` parametresiyle bağlanır (kısa ömürlü, HttpOnly bir cookie'de, `SameSite=Lax`). Dönüş adresi yalnızca bu sitedeki bir yol olabilir (açık yönlendirme yok). Sağlayıcının verdiği erişim token'ı yalnızca "kim giriş yaptı" sorusu için kullanılır, saklanmaz. Başarısız bir giriş **Hesap** sayfasına nedeniyle döner (`/account?signin=unknown` gibi).
+**Güvenlik.** Giriş `state` parametresiyle bağlanır (kısa ömürlü, HttpOnly bir cookie'de, `SameSite=Lax`). Dönüş adresi yalnızca bu sitedeki bir yol olabilir (açık yönlendirme yok). Sağlayıcının verdiği erişim token'ı yalnızca "kim giriş yaptı" sorusu için kullanılır, saklanmaz. Başarısız bir giriş **Sign in** sayfasına nedeniyle döner (`/login?signin=unknown` gibi).
 
 ## Kişisel token'lar
 

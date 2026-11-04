@@ -111,7 +111,7 @@ func TestForgeSignInRefusals(t *testing.T) {
 	} {
 		rec := callback(h, tc.cookie, tc.state, tc.code)
 		assert.Equal(t, http.StatusFound, rec.Code, name)
-		assert.Equal(t, "/account?signin="+tc.want, rec.Header().Get("Location"), name)
+		assert.Equal(t, "/login?signin="+tc.want, rec.Header().Get("Location"), name)
 		assert.Nil(t, sessionOf(rec), name)
 	}
 	n, _ := m.CountUsers(t.Context())

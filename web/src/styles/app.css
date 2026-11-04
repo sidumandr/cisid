@@ -6,13 +6,13 @@
 
 @font-face {
   font-family: "Authentic Sans";
-  src: url("fonts/authentic-sans-90.woff2") format("woff2");
+  src: url("/ui/fonts/authentic-sans-90.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
 @font-face {
   font-family: "Authentic Sans";
-  src: url("fonts/authentic-sans-130.woff2") format("woff2");
+  src: url("/ui/fonts/authentic-sans-130.woff2") format("woff2");
   font-weight: 600;
   font-display: swap;
 }

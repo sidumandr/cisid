@@ -31,7 +31,6 @@ If a request carries a Bearer token that is not accepted, cookies are not checke
 There are three ways to create the first account on a new server:
 
 - **Sign up.** While a server has no users, the first person to sign up on the **Register** page (or with `POST /api/register`) becomes an admin. Until then anyone who reaches the server can be that person, so create the first account before the server is reachable from outside, or use one of the ways below.
-
 - Set `CISID_ADMIN_PASSWORD`. At startup the server creates an admin named `CISID_ADMIN_USER` (default `admin`); if the user already exists, the server leaves it alone and does not change its password. Change the password in the UI afterwards.
 - Or call the user API with `CISID_API_TOKEN`; the API token is an admin:
 
@@ -72,7 +71,7 @@ Changes always require a maintainer. If there are no users and no `CISID_API_TOK
 
 ## Signing in through a forge
 
-Users can sign in with their forge accounts (OAuth 2.0, authorization code flow). You register an OAuth app on each forge and give its client ID and secret to the server. The sign-in dialog shows a **Sign in with ...** button for each forge.
+Users can sign in with their forge accounts (OAuth 2.0, authorization code flow). You register an OAuth app on each forge and give its client ID and secret to the server. The **Sign in** page shows a **Continue with ...** button for each forge, and the sign-in dialog a **Sign in with ...** button.
 
 | Variable | Description |
 |---|---|
@@ -99,7 +98,7 @@ Users can sign in with their forge accounts (OAuth 2.0, authorization code flow)
 - If `CISID_OAUTH_SIGNUP_ROLE` is set, cisid creates an account for a forge user who does not match. The username is derived from their name on the forge; if that is taken, the forge's name is appended (`ahmet-gitea`). This is useful on a Gitea or GitLab you host yourself where everyone is an employee. **Do not enable it on GitHub.com, GitLab.com or Bitbucket:** anyone with an account on that forge can sign in.
 - A disabled user cannot sign in through a forge either.
 
-**Security.** The sign-in is bound by the `state` parameter (in a short-lived HttpOnly cookie, `SameSite=Lax`). The return address can only be a path on this site (no open redirect). The access token the forge issues is used only to answer "who signed in" and is not stored. A failed sign-in returns to the **Account** page with the reason (such as `/account?signin=unknown`).
+**Security.** The sign-in is bound by the `state` parameter (in a short-lived HttpOnly cookie, `SameSite=Lax`). The return address can only be a path on this site (no open redirect). The access token the forge issues is used only to answer "who signed in" and is not stored. A failed sign-in returns to the **Sign in** page with the reason (such as `/login?signin=unknown`).
 
 ## Personal tokens
 

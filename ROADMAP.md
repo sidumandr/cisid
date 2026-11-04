@@ -83,3 +83,8 @@ Goal: logs stream live, and dropped connections lose no work.
 - [x] Artifacts: `artifacts` in `.cisid.yml`, collected once the steps pass, uploaded by the agent, kept in PostgreSQL with the logs and downloaded from the job page ([docs/pipeline.md](docs/pipeline.md#artifacts)).
 - [x] Agent labels: `labels` in `.cisid.yml` and `CISID_AGENT_LABELS` on agents; a job goes only to agents that have every label ([docs/pipeline.md](docs/pipeline.md#labels)).
 - [x] Approval for pull requests from forks: with `CISID_BUILD_FORKS=approve` a maintainer approves each fork commit before it runs ([docs/webhook.md](docs/webhook.md#pull-requests)).
+
+## Phase 9: A front door
+
+- [x] Signing up: the first account on a new server becomes its admin; `CISID_SIGNUP_ROLE` lets others sign up as viewers or maintainers ([docs/accounts.md](docs/accounts.md#signing-up)).
+- [x] The web UI rewritten in React and TypeScript, with an introduction for visitors and pages of their own for signing in and signing up ([docs/ui.md](docs/ui.md)).

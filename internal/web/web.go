@@ -1,7 +1,8 @@
-// Package web serves cisid's browser UI: jobs, a job's steps and live logs,
-// and repositories with their schedules and secrets. It is a static page
-// embedded in the binary that talks to the JSON API; it loads nothing,
-// fonts included, from other origins.
+// Package web serves cisid's browser UI: an introduction, signing in and
+// up, jobs, a job's steps and live logs, and repositories with their
+// schedules, notifications and secrets. It is a React app, built from web/
+// by `npm run build` into static/ and embedded in the binary; it talks to
+// the JSON API and loads nothing, fonts included, from other origins.
 package web
 
 import (
@@ -18,9 +19,11 @@ var static embed.FS
 const contentSecurityPolicy = "default-src 'self'; img-src 'self' data:; " +
 	"frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 
-// Handler serves the UI:
+// Handler serves the UI, a React app built from web/ into static/:
 //
-//	GET /                       job list
+//	GET /                       introduction, for those not signed in
+//	GET /login, /register       signing in and signing up
+//	GET /jobs                   job list
 //	GET /jobs/{id}              job page
 //	GET /repos                  repositories
 //	GET /repos/{owner}/{repo}   a repository's builds, schedules and secrets
@@ -45,6 +48,9 @@ func Handler() http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", page)
+	mux.HandleFunc("GET /login", page)
+	mux.HandleFunc("GET /register", page)
+	mux.HandleFunc("GET /jobs", page)
 	mux.HandleFunc("GET /jobs/{id}", page)
 	mux.HandleFunc("GET /repos", page)
 	mux.HandleFunc("GET /repos/{owner}/{repo}", page)

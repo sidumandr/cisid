@@ -2,18 +2,22 @@
 
 [English](../ui.md) · **Türkçe**
 
-Server, job'ları izlemek ve yönetmek için bir web arayüzü sunar (`internal/web`). Arayüz binary'nin içine gömülüdür. Dışarıdan hiçbir CDN, kütüphane ya da font yüklemez; bütün verisini [Job API](api.md)'sinden alır.
+Server, cisid'i tanıtan ve job'ları izlemek, yönetmek için kullanılan bir web arayüzü sunar. Kaynağı [`web/`](../../web) altında React ve TypeScript ile yazılmış, Vite ile derlenen bir uygulamadır; derleme çıktısı `internal/web/static` altında repoya eklenir ve binary'nin içine gömülür, bu yüzden server'ı çalıştırmak için Node.js gerekmez. Arayüz dışarıdan hiçbir CDN, kütüphane ya da font yüklemez; bütün verisini [Job API](api.md)'sinden alır.
 
 ## Ekranlar
 
 | Sayfa | İçerik |
 |---|---|
-| `/` | Son 200 job. Üstte durumu özetleyen tek cümle: kaç job çalışıyor, son 24 saatte kaçı kırıldı, en sonuncusu hangi adımda. Sekmeler (Tümü, Çalışanlar, Kırılanlar, Pull request'ler) sayılarıyla birlikte; repo, branch ya da commit ile filtre. 5 saniyede bir yenilenir. |
+| `/` | Giriş yapmamış ziyaretçiye cisid'in tanıtımı: ne olduğu, bir build'in dört adımı, reponun kendi `.cisid.yml`'si, neler sunduğu ve girişler (**Sign in**, **Create an account**, okuma herkese açıksa **Browse the builds**). Okuma herkese açıksa server'ın son build'lerini canlı gösterir, değilse bir örnek. Giriş yapmış biri doğrudan `/jobs`'a gider. |
+| `/login` | **Sign in**: girişe açılmış her sağlayıcı için bir **Continue with ...** düğmesi ([accounts.md](accounts.md#sağlayıcıyla-giriş)), kullanıcı adı ve şifre, ya da onun yerine bir token. `?next=` dönülecek sayfayı söyler (yalnızca bu sitede bir yol); başarısız bir sağlayıcı girişi `?signin=` ile döner ve nedenini yazar. |
+| `/register` | **Create an account** ([accounts.md](accounts.md#kaydolmak)). Hiç hesabı olmayan bir server'da sayfa **Set up cisid** olur ve açılan hesap admin'dir. Kayıt kapalıysa bunu söyler; sağlayıcılar ilk girişte hesap açıyorsa onları önerir. |
+| `/jobs` | Son 200 job. Üstte durumu özetleyen tek cümle: kaç job çalışıyor, son 24 saatte kaçı kırıldı, en sonuncusu hangi adımda. Sekmeler (Tümü, Çalışanlar, Kırılanlar, Pull request'ler) sayılarıyla birlikte; repo, branch ya da commit ile filtre. 5 saniyede bir yenilenir. |
 | `/jobs/{id}` | Job'un durumu tek cümlede ("Failed at test with exit code 1 after 1m 48s."), tetikleyen olay, commit, agent, başlama zamanı ve süre. Altında adım şeridi ve seçilen adımın canlı logu. |
 | `/repos` | Son job'larda görünen repolar: son build'leri, durumları, build sayıları. |
 | `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları, yoklanan branch'leri ([polling](polling.md)), bildirimleri ([bildirimler](notifications.md)) ve secret'ları, sekmelerde. **Badge** düğmesi reponun build rozetinin Markdown'ını verir. Diğer sağlayıcıların repoları önekiyle açılır, ör. `/repos/gitea:office/app` ya da iç içe GitLab grupları için `/repos/gitlab:group%2Fsub/project`. |
+| `/account`, `/users` | Giriş yapan kullanıcının hesabı, admin'ler için de kullanıcılar ([aşağıda](#eylemler-ve-tokenlar)). |
 
-Diyaloglar: **Run build** (repo ve branch), API token'ı, okuma için oturum açma, yeni zamanlama, yeni bildirim, yeni secret, rozet ve silme onayları.
+Diyaloglar: **Run build** (repo ve branch), API token'ı, oturum açma, yeni zamanlama, yeni bildirim, yeni secret, rozet ve silme onayları.
 
 ## Adım şeridi
 
@@ -35,25 +39,61 @@ Job sayfasında logun altında build'in sakladığı dosyalar ([pipeline.md](pip
 
 ## Görünüm
 
-- **Renkler:** Koyu temada siyah zemin üzerinde turuncu, açık temada beyaz zemin. Tema işletim sisteminin ayarına uyar; kenar çubuğunun altındaki düğmeyle değiştirilir ve tarayıcıda hatırlanır.
+- **Renkler:** Koyu temada siyah zemin üzerinde turuncu, açık temada beyaz zemin. Tema işletim sisteminin ayarına uyar; kenar çubuğunun altındaki düğmeyle (tanıtım sayfasında **Light**/**Dark**) değiştirilir ve tarayıcıda hatırlanır.
 - **Renk yalnızca veride:** Turuncu; birincil düğmede, çalışan adımda ve seçili olanı gösteren 1px çizgide (sekme, kenar çubuğu, adım) kullanılır. Durumlar soluk zemin üzerinde aynı tonda yazıyla gösterilir.
-- **Yazı:** Metinler [Authentic Sans](https://authentic.website/sans), rakamlar, commit SHA'ları, süreler ve loglar sistemin monospace fontuyla yazılır; böylece sütunlardaki rakamlar hizalı durur. Font dosyaları `internal/web/static/fonts/` altındadır; lisans notu [LICENSE.md](../../internal/web/static/fonts/LICENSE.md) dosyasında.
-- **Telefon:** Kenar çubuğu alta, etiketli bir çubuğa dönüşür. Satırlar iki ya da üç satırlık kartlara, job sayfasındaki bilgiler bir listeye dönüşür.
+- **Yazı:** Metinler [Authentic Sans](https://authentic.website/sans) ile yazılır. Çalışma ekranlarında rakamlar, commit SHA'ları, süreler ve loglar sistemin monospace fontuyla yazılır, böylece sütunlardaki rakamlar hizalı durur; tanıtım ve giriş sayfaları bir kademe büyük dizilir ve monospace'i yalnızca kod için kullanır. Font dosyaları `web/public/fonts/` altındadır; lisans notu [LICENSE.md](../../web/public/fonts/LICENSE.md) dosyasında.
+- **Tanıtım sayfası** adım şeridini tek motif olarak kullanır: bir build'in dört adımı, tarayıcı animasyonu kaydırmaya bağlayabiliyorsa, sayfa kaydırıldıkça dolan bir şerittir. Azaltılmış hareket açıksa hiçbir şey kıpırdamaz.
+- **Telefon:** Kenar çubuğu alta, etiketli bir çubuğa dönüşür. Satırlar iki ya da üç satırlık kartlara, job sayfasındaki bilgiler bir listeye dönüşür. Giriş sayfalarının yan paneli kalkar.
 - Arayüz metinlerinde uzun tire (em dash, U+2014) kullanılmaz; `internal/web` testi bunu denetler.
 
-Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yapıldı (data terminal stili, seed 1222882761): ölçümleri 1440, 768 ve 390 piksel genişlikte bir tarayıcıda alındı.
+Tasarım `design-taste-frontend` skill'iyle yapıldı (data terminal stili, seed 1222882761): çalışma ekranları için uygulama ekranı kuralları, tanıtım ve giriş sayfaları için sayfa kuralları; ölçümleri 1440, 768 ve 390 piksel genişlikte bir tarayıcıda alındı.
 
 ## Eylemler ve token'lar
 
 - **Run build**, **Cancel**, **Rerun**, zamanlama, polling, bildirim ve secret işlemleri `maintainer` ister ([accounts.md](accounts.md)). Giriş yapılmamışsa ilk kullanımda bir giriş diyaloğu açılır: kullanıcı adı ve şifre, ya da bir token. Server'ın API token'ı yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur; kişisel token ve şifre tarayıcıda bir oturum açar.
-- Kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını açar: rol, şifre değiştirme, kişisel token'lar, çıkış. Admin'ler **Kullanıcılar** sayfasında kullanıcı ekler, rollerini ve sağlayıcı hesaplarını değiştirir, devre dışı bırakır ve siler.
+- Kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını (giriş yapılmamışsa **Sign in** sayfasını) açar: rol, şifre değiştirme, kişisel token'lar, çıkış. Admin'ler **Kullanıcılar** sayfasında kullanıcı ekler, rollerini ve sağlayıcı hesaplarını değiştirir, devre dışı bırakır ve siler.
 - Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir. Onay bekleyen fork build'inde ayrıca **Approve** görünür.
 - `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.
 
 ## Güvenlik
 
-- Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script yoktur, fontlar dahil başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
-- API'den gelen her değer (log satırları dahil) sayfaya `textContent` ile eklenir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür.
+- Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script ve stil yoktur, fontlar dahil başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
+- API'den gelen her değer (log satırları dahil) React tarafından metin olarak çizilir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür. `internal/web` testi `dangerouslySetInnerHTML`, `innerHTML` ve benzerlerini kaynaktan uzak tutar.
 - Okuma giriş istiyorsa (`CISID_READ_ACCESS=signed-in`) arayüz ilk okumada giriş ister. Kullanıcı oturumu `CISID_SESSION_TTL` kadar, okuma token'ıyla açılan oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Değilse sayfalar herkese açıktır.
 - Cookie ile yapılan her değişiklik `X-Cisid-Request` başlığını taşır; başka bir sitenin formu bunu ekleyemez (CSRF koruması).
 - Secret değerleri arayüzde hiçbir zaman gösterilmez; yalnızca adları, hangi build'lere verildikleri ve ne zaman güncellendikleri listelenir.
+
+## Arayüzü değiştirmek
+
+Node.js 20.19+ ya da 22.12+ yalnızca arayüzü değiştirmek için gerekir. `web/` içinde:
+
+```bash
+npm ci
+```
+
+```bash
+npm run dev
+```
+
+http://localhost:5173 üzerindeki geliştirme sunucusu sayfaları gerçek adreslerinde sunar, her değişiklikte yeniler ve `/api` ile `/auth` isteklerini bir cisid server'ına iletir; varsayılan `http://localhost:8080`, başkası için `CISID_DEV_SERVER`.
+
+```bash
+npm run typecheck
+```
+
+```bash
+npm test
+```
+
+```bash
+npm run build
+```
+
+`npm run build` tipleri denetler ve derlemeyi `go build`'in gömdüğü `internal/web/static` altına yazar. Derlemeyi kaynakla birlikte commit'leyin; böylece server Node.js olmadan derlenir.
+
+| Yol | İçerik |
+|---|---|
+| `web/src/pages/` | Her ekran için bir dosya: `Landing`, `Auth` (giriş, kayıt), `Jobs`, `Job`, `Repos`, `Repo`, `Account`, `Users`, `NotFound` |
+| `web/src/ui/` | Kenar çubuklu kabuk, diyalog katmanı, simgeler ve ortak parçalar (şerit, durum etiketleri, notlar) |
+| `web/src/lib/` | API çağrıları ve giriş, giriş yapan kullanıcı, diyaloglar, metin ve biçimlendirme (testleriyle) |
+| `web/src/styles/` | Çalışma ekranları için `app.css`, tanıtım ve giriş sayfaları için `site.css` |
