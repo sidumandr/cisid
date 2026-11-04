@@ -2,7 +2,7 @@
 // (a bar at the bottom on phones) and the canvas the page draws in.
 
 import { useState } from "react";
-import { Link, NavLink, Outlet } from "react-router";
+import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 
 import { useMe } from "../lib/session";
 import { Icon, ThemeIcon } from "./Icon";
@@ -43,7 +43,13 @@ export function useTheme(): [string, () => void] {
 
 export function Shell() {
   const me = useMe();
+  const location = useLocation();
   const [theme, toggleTheme] = useTheme();
+  // Where reading needs a sign-in, the working screens start at the sign-in
+  // page and come back here.
+  if (!me.public_read && !me.via) {
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
   const account = me.user ? me.user.username : "Sign in";
   return (
     <div className="shell">

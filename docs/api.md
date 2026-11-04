@@ -4,7 +4,7 @@
 
 The server exposes jobs and their logs over an HTTP API (`internal/api/jobs.go`). Jobs can be read, canceled and rerun. All responses are JSON, and the live log stream uses [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html).
 
-> Read endpoints can be public or require sign-in ([Read access](#read-access)). Endpoints that make changes require the `maintainer` role: the API token, a user's personal token, or a session ([accounts.md](accounts.md)).
+> Read endpoints require a sign-in or a token unless the server makes them public ([Read access](#read-access)). Endpoints that make changes require the `maintainer` role: the API token, a user's personal token, or a session ([accounts.md](accounts.md)).
 
 ## Endpoints
 
@@ -62,7 +62,7 @@ Errors: `400` for an invalid parameter, `404` for a job that does not exist, `42
 
 ## Read access
 
-When read access is `CISID_READ_ACCESS=signed-in` (the default when `CISID_READ_TOKEN` is set), the job, log and live stream endpoints and `/metrics` require one of these:
+Unless `CISID_READ_ACCESS=public`, the job, log and live stream endpoints and `/metrics` require one of these:
 
 - An `Authorization: Bearer <token>` header: the read token, the API token, or a user's personal token.
 - A user's session cookie ([accounts.md](accounts.md#sign-in-and-sessions)).

@@ -41,7 +41,7 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_RATE_LIMIT` | `10` | Webhook ve `/api` için istemci IP'si başına saniyedeki istek sayısı (ani yük için 2 katı kadar izin verilir). `0` limiti kapatır. Aşılırsa `429` döner. |
 | `CISID_TRUST_PROXY` | `false` | `true` ise istemci IP'si `X-Forwarded-For`'daki ilk adresten alınır. Sadece bu başlığı kendisi yazan bir reverse proxy arkasında açın, yoksa başlık sahte olabilir. |
 | `CISID_API_TOKEN` | — | Server'ın admin token'ı: her şeyi yapar, ilk kullanıcıları da oluşturabilir; en az 16 karakter ([accounts.md](accounts.md)) |
-| `CISID_READ_ACCESS` | read token varsa `signed-in`, yoksa `public` | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister ([accounts.md](accounts.md#okuma-erişimi)) |
+| `CISID_READ_ACCESS` | `signed-in` | `signed-in`: okumak giriş ya da token ister; `public`: herkes okur ([accounts.md](accounts.md#okuma-erişimi)) |
 | `CISID_ADMIN_USER`, `CISID_ADMIN_PASSWORD` | `admin`, — | Şifre verilirse server açılışta bu admin'i oluşturur (varsa dokunmaz); şifre en az 10 karakter |
 | `CISID_SESSION_TTL` | `7d` | Bir girişin süresi (`12h`, `30d` gibi) |
 | `CISID_<SAĞLAYICI>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sağlayıcıyla giriş: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; `CISID_PUBLIC_URL` gerekir ([accounts.md](accounts.md#sağlayıcıyla-giriş)) |

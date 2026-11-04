@@ -265,6 +265,7 @@ func TestRunEndToEnd(t *testing.T) {
 		"CISID_PUBLIC_URL":            "https://ci.example.com",
 		"CISID_API_TOKEN":             apiToken,
 		"CISID_SECRET_KEY":            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=", // 32 bytes
+		"CISID_READ_ACCESS":           "public",                                       // the test reads without signing in
 	}
 	var logs syncBuffer
 	ctx, cancel := context.WithCancel(t.Context())

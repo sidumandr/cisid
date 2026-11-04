@@ -20,8 +20,9 @@ secrets:
   agentToken: ""
   # Enables the cancel, rerun and secret endpoints, 16+ characters.
   apiToken: ""
-  # Makes reading jobs, logs and metrics need this token (or the API
-  # token), 16+ characters. Without it anyone who reaches the server reads.
+  # A token for reading jobs, logs and metrics, such as for Prometheus,
+  # 16+ characters. Reading needs a sign-in or a token in any case unless
+  # server.readAccess is public.
   readToken: ""
   # Base64 of 32 random bytes; encrypts repository secrets and where
   # notifications go, and enables both. Keep a copy: stored secrets cannot
@@ -92,8 +93,8 @@ server:
   # How often watched branches are polled for new commits, e.g. 1m; 0
   # turns polling off. For servers the forges' webhooks cannot reach.
   pollInterval: 1m
-  # public: anyone reads jobs and logs; signed-in: reading needs a sign-in
-  # or a token. Empty: signed-in with a read token, public without.
+  # signed-in: reading jobs, logs and metrics needs a sign-in or a token;
+  # public: anyone reads them. Empty means signed-in.
   readAccess: ""
   # How long a sign-in lasts, e.g. 7d or 12h.
   sessionTTL: 7d
@@ -245,7 +246,7 @@ metrics:
     enabled: false
     interval: 30s
     labels: {}
-    # Scrape with the read token, needed once secrets.readToken is set.
+    # Scrape with secrets.readToken; needed unless server.readAccess is public.
     authorize: false
 
 serviceAccount:

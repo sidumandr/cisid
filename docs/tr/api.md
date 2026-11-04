@@ -4,7 +4,7 @@
 
 Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jobs.go`). Job'lar okunabilir, iptal edilebilir ve yeniden çalıştırılabilir. Bütün yanıtlar JSON'dur, canlı log akışı ise [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html) ile gelir.
 
-> Okuma uç noktaları herkese açık ya da giriş isteyen olabilir ([Okuma erişimi](#okuma-erişimi)). Değişiklik yapan uç noktalar `maintainer` rolü ister: API token'ı, bir kullanıcının kişisel token'ı ya da oturumu ([accounts.md](accounts.md)).
+> Okuma uç noktaları, server onları herkese açmadıkça giriş ya da token ister ([Okuma erişimi](#okuma-erişimi)). Değişiklik yapan uç noktalar `maintainer` rolü ister: API token'ı, bir kullanıcının kişisel token'ı ya da oturumu ([accounts.md](accounts.md)).
 
 ## Endpoint'ler
 
@@ -62,7 +62,7 @@ Hatalar: geçersiz parametre `400`, olmayan job `404`, istemci başına rate lim
 
 ## Okuma erişimi
 
-Okuma `CISID_READ_ACCESS=signed-in` ise (`CISID_READ_TOKEN` tanımlıyken varsayılan budur) job, log ve canlı akış uç noktaları ile `/metrics` şunlardan birini ister:
+`CISID_READ_ACCESS=public` değilse job, log ve canlı akış uç noktaları ile `/metrics` şunlardan birini ister:
 
 - `Authorization: Bearer <token>` başlığı: okuma token'ı, API token'ı ya da bir kullanıcının kişisel token'ı.
 - Bir kullanıcının oturum cookie'si ([accounts.md](accounts.md#giriş-ve-oturumlar)).

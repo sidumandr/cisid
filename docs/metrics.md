@@ -36,7 +36,7 @@ If the database is unreachable, `cisid_jobs` is skipped in that scrape. The othe
 
 The server and the agent write structured logs (`log/slog`, in `key=value` format). Set the level with `CISID_LOG_LEVEL`. Secret values, tokens and the database password are never written to the logs. When tracing is on, lines written inside a span carry `trace_id` and `span_id` ([tracing.md](tracing.md)).
 
-> If `CISID_READ_TOKEN` is set, `/metrics` also requires this token ([api.md](api.md#read-access)). In Prometheus:
+> Like the jobs, `/metrics` needs a sign-in or a token unless `CISID_READ_ACCESS=public` ([api.md](api.md#read-access)). Prometheus scrapes it with `CISID_READ_TOKEN` (or the API token):
 >
 > ```yaml
 > scrape_configs:
@@ -47,4 +47,4 @@ The server and the agent write structured logs (`log/slog`, in `key=value` forma
 >       - targets: ["cisid:8080"]
 > ```
 >
-> If it is not set, `/metrics` is public. If you expose the server to an untrusted network, restrict this path in the reverse proxy.
+> With `CISID_READ_ACCESS=public`, `/metrics` is public too; if you expose such a server to an untrusted network, restrict this path in the reverse proxy.

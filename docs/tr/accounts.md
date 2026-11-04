@@ -55,8 +55,8 @@ curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" \
 
 | `CISID_READ_ACCESS` | Anlamı |
 |---|---|
-| `public` | Herkes job'ları, logları ve metrikleri okur. `CISID_READ_TOKEN` yoksa varsayılandır. |
-| `signed-in` | Okumak giriş ya da token ister. `CISID_READ_TOKEN` varsa varsayılandır. |
+| `signed-in` | Okumak giriş ya da token ister. Varsayılan budur: build'ler webhook, polling ve zamanlamalarla kimse bakmazken de çalışır, ama yalnızca hesabı olanlar görür. |
+| `public` | Herkes job'ları, logları ve metrikleri okur. `CISID_READ_TOKEN` ile birlikte kullanılamaz. |
 
 Değişiklikler her zaman maintainer ister. Hiç kullanıcı ve `CISID_API_TOKEN` yoksa değişiklik yapan uç noktalar `403` döner, çünkü kimse yetkili olamaz.
 

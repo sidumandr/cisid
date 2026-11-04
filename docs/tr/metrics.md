@@ -36,7 +36,7 @@ Veritabanına ulaşılamazsa `cisid_jobs` o scrape'te atlanır. Diğer metrikler
 
 Server ve agent yapılandırılmış log yazar (`log/slog`, `key=value` biçiminde). Seviye `CISID_LOG_LEVEL` ile ayarlanır. Secret değerleri, token'lar ve veritabanı şifresi loglara yazılmaz. Trace açıksa bir span içinde yazılan satırlar `trace_id` ve `span_id` taşır ([tracing.md](tracing.md)).
 
-> `CISID_READ_TOKEN` tanımlıysa `/metrics` de bu token'ı ister ([api.md](api.md#okuma-erişimi)). Prometheus'ta:
+> Job'lar gibi `/metrics` de `CISID_READ_ACCESS=public` değilse giriş ya da token ister ([api.md](api.md#okuma-erişimi)). Prometheus onu `CISID_READ_TOKEN` (ya da API token'ı) ile okur:
 >
 > ```yaml
 > scrape_configs:
@@ -47,4 +47,4 @@ Server ve agent yapılandırılmış log yazar (`log/slog`, `key=value` biçimin
 >       - targets: ["cisid:8080"]
 > ```
 >
-> Tanımlı değilse `/metrics` herkese açıktır; server'ı güvenilmeyen bir ağa açıyorsanız bu yolu reverse proxy'de kısıtlayın.
+> `CISID_READ_ACCESS=public` ile `/metrics` de herkese açıktır; böyle bir server'ı güvenilmeyen bir ağa açıyorsanız bu yolu reverse proxy'de kısıtlayın.

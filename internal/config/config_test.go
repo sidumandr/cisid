@@ -46,7 +46,6 @@ func TestLoadDefaults(t *testing.T) {
 		GitLab:          Forge{URL: "https://gitlab.com"},
 		Bitbucket:       Forge{URL: "https://api.bitbucket.org/2.0"},
 		PollInterval:    time.Minute,
-		PublicRead:      true,
 		SessionTTL:      7 * 24 * time.Hour,
 		AdminUser:       "admin",
 		ArtifactMaxSize: 100 << 20,
@@ -69,6 +68,14 @@ func TestLoadAccounts(t *testing.T) {
 	cfg, err := Load(env(with(map[string]string{"CISID_READ_TOKEN": "read-token-0123456789"})))
 	require.NoError(t, err)
 	assert.False(t, cfg.PublicRead, "a read token means reading needs it")
+
+	cfg, err = Load(env(with(nil)))
+	require.NoError(t, err)
+	assert.False(t, cfg.PublicRead, "reading needs a sign-in unless the server opens it")
+
+	cfg, err = Load(env(with(map[string]string{"CISID_READ_ACCESS": "public"})))
+	require.NoError(t, err)
+	assert.True(t, cfg.PublicRead)
 
 	cfg, err = Load(env(with(map[string]string{
 		"CISID_READ_ACCESS": "signed-in", "CISID_SESSION_TTL": "12h",

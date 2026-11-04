@@ -62,7 +62,7 @@ The design follows the `design-taste-frontend` skill (data terminal style, seed 
 
 - Pages are served with `Content-Security-Policy: default-src 'self'`: there are no inline scripts or styles, and nothing is loaded from another origin, fonts included. The server also sends `frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`.
 - Every value from the API (log lines included) is rendered by React as text and is never interpreted as HTML. A `<script>` in a step's output shows up as text. A test in `internal/web` keeps `dangerouslySetInnerHTML`, `innerHTML` and the like out of the source.
-- If reading requires sign-in (`CISID_READ_ACCESS=signed-in`), the UI asks you to sign in on the first read. A user session lasts `CISID_SESSION_TTL`; a session opened with a read token lasts until the browser closes ([api.md](api.md#read-access)). Otherwise the pages are public.
+- Reading requires a sign-in unless the server sets `CISID_READ_ACCESS=public`: someone who has not signed in sees the introduction, and any other page asks them to sign in. A user session lasts `CISID_SESSION_TTL`; a session opened with a read token lasts until the browser closes ([api.md](api.md#read-access)). With `public`, anyone can read the pages.
 - Every change made with a cookie carries the `X-Cisid-Request` header; another site's form cannot add it (CSRF protection).
 - The UI never shows secret values. It lists only their names, which builds get them and when they were updated.
 

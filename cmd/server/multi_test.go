@@ -81,6 +81,7 @@ func TestRunTwoServers(t *testing.T) {
 			"CISID_AGENT_TOKEN":           agentToken,
 			"CISID_API_TOKEN":             apiToken,
 			"CISID_SECRET_KEY":            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+			"CISID_READ_ACCESS":           "public", // the test reads without signing in
 		}
 		s := server{base: "http://" + addr, logs: &syncBuffer{}, done: make(chan error, 1)}
 		go func() { s.done <- run(srvCtx, func(k string) string { return env[k] }, s.logs) }()

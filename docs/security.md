@@ -38,7 +38,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 - Passwords are stored with PBKDF2-HMAC-SHA256 (600,000 iterations, salted); sessions and personal tokens only as SHA-256 hashes. An unknown user and a wrong password get the same response in the same time.
 - Signing in through a forge (OAuth) is bound by `state`, the return address can only be a path on the site, and the forge's access token is not stored. Accounts match on the forge's immutable user ID. Do not enable `CISID_OAUTH_SIGNUP_ROLE` on public forges ([accounts.md](accounts.md#signing-in-through-a-forge)).
 - The session cookie is HttpOnly and `SameSite=Lax`. Changes that arrive with a cookie also require the `X-Cisid-Request` header (CSRF).
-- With `CISID_READ_ACCESS=signed-in` (the default when `CISID_READ_TOKEN` is set), the read endpoints (`/api/jobs`, logs, the live stream) and `/metrics` require a sign-in or a token; with `public`, anyone can read them. The job list shows repository names, commits and logs. A browser that signs in with the read token gets an HttpOnly, `SameSite=Strict` cookie through `POST /api/login`; the cookie carries a hash of the token and allows only reading ([api.md](api.md#read-access)). `/healthz` and `/readyz` are always open.
+- With `CISID_READ_ACCESS=signed-in`, the default, the read endpoints (`/api/jobs`, logs, the live stream) and `/metrics` require a sign-in or a token; with `public`, anyone can read them. The job list shows repository names, commits and logs. A browser that signs in with the read token gets an HttpOnly, `SameSite=Strict` cookie through `POST /api/login`; the cookie carries a hash of the token and allows only reading ([api.md](api.md#read-access)). `/healthz` and `/readyz` are always open.
 - `/webhooks/` and `/api/` are rate-limited per IP with a token bucket (`CISID_RATE_LIMIT`, default 10 requests/s). Behind a reverse proxy, `CISID_TRUST_PROXY=true` takes the client address from `X-Forwarded-For`. Do not enable this setting without a proxy, because the header can be forged.
 - The web UI is served with `Content-Security-Policy: default-src 'self'` and has no inline scripts. Every value from the API is inserted with `textContent`. The browser keeps the API token only in `sessionStorage` ([ui.md](ui.md#security)).
 
@@ -84,7 +84,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 - [ ] Long, random values for `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` and `CISID_API_TOKEN`.
 - [ ] The first account exists before the server is reachable from outside: until then, whoever signs up first becomes an admin ([accounts.md](accounts.md#the-first-admin)).
 - [ ] The server runs with TLS or behind a reverse proxy that terminates TLS. Agents connect with `wss://`.
-- [ ] `CISID_READ_ACCESS=signed-in` (or `CISID_READ_TOKEN` set), or the server is behind a reverse proxy with access control.
+- [ ] `CISID_READ_ACCESS` is left at `signed-in`, or the server is behind a reverse proxy with access control.
 - [ ] If the first admin was created, `CISID_ADMIN_PASSWORD` is removed from the environment and the password is changed in the UI.
 - [ ] `CISID_SECRET_KEY` is stored separately from database backups.
 - [ ] Agents run on separate machines, with `CISID_STEP_MEMORY` and `CISID_STEP_CPUS` set.

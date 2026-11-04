@@ -82,7 +82,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `server.replicaCount` | `1` | Server replicas |
 | `server.giteaURL`, `server.forgejoURL` | — | Addresses of the Gitea and Forgejo servers; setting them turns them on |
 | `server.gitlabURL` | GitLab.com | Address of your own GitLab installation |
-| `server.readAccess` | — | `public`: anyone can read; `signed-in`: reading requires a sign-in or a token. If empty, `signed-in` when a read token is set, `public` when not. |
+| `server.readAccess` | `signed-in` | `signed-in`: reading requires a sign-in or a token; `public`: anyone can read. A ServiceMonitor then needs `metrics.serviceMonitor.authorize` and `secrets.readToken`, unless reading is public. |
 | `server.sessionTTL` | `7d` | How long a sign-in lasts |
 | `server.adminUser` | `admin` | The account that `secrets.adminPassword` creates |
 | `server.oauthClientIDs.<forge>` | — | Client ID of the OAuth app; needs its secret and `server.publicURL` (or an ingress) |

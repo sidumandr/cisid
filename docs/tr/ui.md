@@ -62,7 +62,7 @@ Tasarım `design-taste-frontend` skill'iyle yapıldı (data terminal stili, seed
 
 - Sayfalar `Content-Security-Policy: default-src 'self'` ile sunulur: inline script ve stil yoktur, fontlar dahil başka origin'den hiçbir şey yüklenmez. Ayrıca `frame-ancestors 'none'` ve `X-Content-Type-Options: nosniff` gönderilir.
 - API'den gelen her değer (log satırları dahil) React tarafından metin olarak çizilir, hiçbir zaman HTML olarak yorumlanmaz. Bir adımın çıktısındaki `<script>` metin olarak görünür. `internal/web` testi `dangerouslySetInnerHTML`, `innerHTML` ve benzerlerini kaynaktan uzak tutar.
-- Okuma giriş istiyorsa (`CISID_READ_ACCESS=signed-in`) arayüz ilk okumada giriş ister. Kullanıcı oturumu `CISID_SESSION_TTL` kadar, okuma token'ıyla açılan oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). Değilse sayfalar herkese açıktır.
+- Server `CISID_READ_ACCESS=public` demedikçe okumak giriş ister: giriş yapmamış biri tanıtım sayfasını görür, diğer her sayfa giriş ister. Kullanıcı oturumu `CISID_SESSION_TTL` kadar, okuma token'ıyla açılan oturum tarayıcı kapanana kadar sürer ([api.md](api.md#okuma-erişimi)). `public` ile sayfaları herkes okur.
 - Cookie ile yapılan her değişiklik `X-Cisid-Request` başlığını taşır; başka bir sitenin formu bunu ekleyemez (CSRF koruması).
 - Secret değerleri arayüzde hiçbir zaman gösterilmez; yalnızca adları, hangi build'lere verildikleri ve ne zaman güncellendikleri listelenir.
 

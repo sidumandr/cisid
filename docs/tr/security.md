@@ -38,7 +38,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - Şifreler PBKDF2-HMAC-SHA256 ile (600.000 tur, tuzlu) saklanır; oturumlar ve kişisel token'lar yalnızca SHA-256 özetleriyle. Bilinmeyen kullanıcıyla yanlış şifre aynı yanıtı aynı sürede alır.
 - Sağlayıcıyla giriş (OAuth) `state` ile bağlanır, dönüş adresi yalnızca site içi bir yol olabilir, sağlayıcının erişim token'ı saklanmaz. Hesaplar sağlayıcının değişmeyen kullanıcı numarasıyla eşleşir; `CISID_OAUTH_SIGNUP_ROLE` herkese açık sağlayıcılarda açılmamalıdır ([accounts.md](accounts.md#sağlayıcıyla-giriş)).
 - Oturum cookie'si HttpOnly ve `SameSite=Lax`'tır; cookie ile gelen değişiklikler ayrıca `X-Cisid-Request` başlığını ister (CSRF).
-- Okuma uç noktaları (`/api/jobs`, loglar, canlı akış) ve `/metrics`, `CISID_READ_ACCESS=signed-in` ise (`CISID_READ_TOKEN` tanımlıyken varsayılan) giriş ya da token ister; `public` ise herkese açıktır. Job listesi repo adlarını, commit'leri ve logları gösterir. Okuma token'ıyla giriş yapan tarayıcı HttpOnly, `SameSite=Strict` bir cookie alır; cookie token'ın özetini taşır ve yalnızca okumaya izin verir ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` her zaman açıktır.
+- Okuma uç noktaları (`/api/jobs`, loglar, canlı akış) ve `/metrics`, `CISID_READ_ACCESS=signed-in` ise (varsayılan budur) giriş ya da token ister; `public` ise herkese açıktır. Job listesi repo adlarını, commit'leri ve logları gösterir. Okuma token'ıyla giriş yapan tarayıcı HttpOnly, `SameSite=Strict` bir cookie alır; cookie token'ın özetini taşır ve yalnızca okumaya izin verir ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` her zaman açıktır.
 - `/webhooks/` ve `/api/` IP başına token bucket ile sınırlıdır (`CISID_RATE_LIMIT`, varsayılan 10 istek/sn). Reverse proxy arkasında `CISID_TRUST_PROXY=true` ile istemci adresi `X-Forwarded-For`'dan alınır. Proxy yoksa bu ayarı açmayın, başlık sahte olabilir.
 - Web arayüzü `Content-Security-Policy: default-src 'self'` ile sunulur, inline script yoktur. API'den gelen her değer `textContent` ile eklenir. API token'ı tarayıcıda yalnızca `sessionStorage`'da tutulur ([ui.md](ui.md#güvenlik)).
 
@@ -84,7 +84,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - [ ] `CISID_GITHUB_WEBHOOK_SECRET`, `CISID_AGENT_TOKEN` ve `CISID_API_TOKEN` için uzun, rastgele değerler.
 - [ ] İlk hesap, server dışarıdan erişilebilir olmadan önce açılmış: o ana kadar ilk kaydolan admin olur ([accounts.md](accounts.md#ilk-admin)).
 - [ ] Server TLS ile ya da TLS sonlandıran bir reverse proxy arkasında. Agent'lar `wss://` ile bağlanıyor.
-- [ ] `CISID_READ_ACCESS=signed-in` (ya da `CISID_READ_TOKEN` tanımlı), veya server erişim kontrolü olan bir reverse proxy arkasında.
+- [ ] `CISID_READ_ACCESS` varsayılan `signed-in` değerinde, veya server erişim kontrolü olan bir reverse proxy arkasında.
 - [ ] İlk admin oluşturulduysa `CISID_ADMIN_PASSWORD` ortamdan kaldırıldı ve şifre arayüzden değiştirildi.
 - [ ] `CISID_SECRET_KEY` veritabanı yedeklerinden ayrı saklanıyor.
 - [ ] Agent'lar ayrı makinelerde, `CISID_STEP_MEMORY` ve `CISID_STEP_CPUS` tanımlı.

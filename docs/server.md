@@ -41,7 +41,7 @@ To run PostgreSQL, the server and the agent together as containers, see [deploym
 | `CISID_RATE_LIMIT` | `10` | Requests per second per client IP for the webhook and `/api` (bursts of up to twice that are allowed). `0` turns the limit off. Exceeding it returns `429`. |
 | `CISID_TRUST_PROXY` | `false` | If `true`, the client IP is taken from the first address in `X-Forwarded-For`. Turn this on only behind a reverse proxy that writes this header itself; otherwise the header can be forged. |
 | `CISID_API_TOKEN` | — | The server's admin token: it can do everything, including creating the first users; at least 16 characters ([accounts.md](accounts.md)) |
-| `CISID_READ_ACCESS` | `signed-in` if a read token is set, otherwise `public` | `public`: anyone can read; `signed-in`: reading requires sign-in or a token ([accounts.md](accounts.md#read-access)) |
+| `CISID_READ_ACCESS` | `signed-in` | `signed-in`: reading requires sign-in or a token; `public`: anyone can read ([accounts.md](accounts.md#read-access)) |
 | `CISID_ADMIN_USER`, `CISID_ADMIN_PASSWORD` | `admin`, — | If a password is set, the server creates this admin at startup (and leaves it alone if it exists); the password must be at least 10 characters |
 | `CISID_SESSION_TTL` | `7d` | How long a sign-in lasts (such as `12h`, `30d`) |
 | `CISID_<FORGE>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sign-in through a forge: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; requires `CISID_PUBLIC_URL` ([accounts.md](accounts.md#signing-in-through-a-forge)) |

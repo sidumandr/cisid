@@ -55,8 +55,8 @@ With `CISID_READ_ACCESS=signed-in`, open sign-up as `viewer` lets anyone who can
 
 | `CISID_READ_ACCESS` | Meaning |
 |---|---|
-| `public` | Anyone can read jobs, logs and metrics. The default when `CISID_READ_TOKEN` is not set. |
-| `signed-in` | Reading requires signing in or a token. The default when `CISID_READ_TOKEN` is set. |
+| `signed-in` | Reading requires signing in or a token. The default: builds still run, from webhooks, polling and schedules, while nobody watches, but only people with an account see them. |
+| `public` | Anyone can read jobs, logs and metrics. It cannot be combined with `CISID_READ_TOKEN`. |
 
 Changes always require a maintainer. If there are no users and no `CISID_API_TOKEN`, endpoints that make changes return `403`, because nobody can be authorized.
 

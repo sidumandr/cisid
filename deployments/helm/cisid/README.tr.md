@@ -82,7 +82,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.replicaCount` | `1` | Server kopyası |
 | `server.giteaURL`, `server.forgejoURL` | — | Gitea ve Forgejo sunucularının adresi; verilince açılırlar |
 | `server.gitlabURL` | GitLab.com | Kendi GitLab kurulumunuzun adresi |
-| `server.readAccess` | — | `public`: herkes okur; `signed-in`: okumak giriş ya da token ister. Boşsa read token varken `signed-in`, yokken `public`. |
+| `server.readAccess` | `signed-in` | `signed-in`: okumak giriş ya da token ister; `public`: herkes okur. Okuma herkese açık değilse ServiceMonitor `metrics.serviceMonitor.authorize` ve `secrets.readToken` ister. |
 | `server.sessionTTL` | `7d` | Bir girişin süresi |
 | `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
 | `server.oauthClientIDs.<sağlayıcı>` | — | OAuth uygulamasının client id'si; secret'ı ve `server.publicURL` (ya da ingress) gerekir |

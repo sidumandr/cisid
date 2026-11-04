@@ -43,7 +43,7 @@ type Config struct {
 	BuildForks      bool          // CISID_BUILD_FORKS, build pull requests from forks (without secrets): true, false or approve
 	ApproveForks    bool          // CISID_BUILD_FORKS=approve: a maintainer approves each fork job first
 	PollInterval    time.Duration // CISID_POLL_INTERVAL, how often watched branches are polled, default 1m, at least 10s, 0 turns polling off
-	PublicRead      bool          // CISID_READ_ACCESS: "public" (default without a read token) lets anyone read, "signed-in" needs a sign-in or token
+	PublicRead      bool          // CISID_READ_ACCESS: "signed-in" (default) needs a sign-in or token to read, "public" lets anyone read
 	SessionTTL      time.Duration // CISID_SESSION_TTL, how long a sign-in lasts, default 7d
 	AdminUser       string        // CISID_ADMIN_USER, default "admin": the account CISID_ADMIN_PASSWORD creates
 	AdminPassword   string        // CISID_ADMIN_PASSWORD, optional: creates AdminUser as an admin if it does not exist
@@ -348,16 +348,16 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	cfg.PublicRead = cfg.ReadToken == ""
+	// Builds run whoever is watching; seeing them, their logs included,
+	// takes a sign-in or a token unless the server says otherwise.
 	switch v := getenv("CISID_READ_ACCESS"); v {
-	case "":
+	case "", "signed-in":
+		cfg.PublicRead = false
 	case "public":
 		if cfg.ReadToken != "" {
 			problems = append(problems, fmt.Errorf("CISID_READ_ACCESS=public and CISID_READ_TOKEN contradict each other"))
 		}
 		cfg.PublicRead = true
-	case "signed-in":
-		cfg.PublicRead = false
 	default:
 		problems = append(problems, fmt.Errorf("CISID_READ_ACCESS must be public or signed-in"))
 	}
