@@ -129,6 +129,21 @@ type Repository struct {
 	AddedAt       time.Time `json:"added_at"`
 	// Polled says a branch of it is polled for new commits.
 	Polled bool `json:"polled"`
+	// ViaUserID is the user whose own access to the forge reaches it; nil
+	// for the server's token.
+	ViaUserID *int64 `json:"-"`
+	// Via is that user's username.
+	Via string `json:"via,omitempty"`
+}
+
+// ForgeAccount is a user's own access to a forge, without its token.
+type ForgeAccount struct {
+	Forge string `json:"forge"`
+	// Login is the user's name on the forge.
+	Login string `json:"login"`
+	// Kind is how it was connected: "oauth" or "token".
+	Kind      string    `json:"kind"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // User is an account. Its password hash never leaves the store.

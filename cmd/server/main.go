@@ -30,6 +30,7 @@ import (
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/events"
 	"github.com/sidumandr/cisid/internal/forge"
+	"github.com/sidumandr/cisid/internal/forgeauth"
 	"github.com/sidumandr/cisid/internal/gitea"
 	"github.com/sidumandr/cisid/internal/github"
 	"github.com/sidumandr/cisid/internal/gitlab"
@@ -115,6 +116,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	forges, bb := forgeClients(cfg, forgeHTTP)
 	log.InfoContext(ctx, "forges", "names", forges.Names())
+	providers := oauthProviders(cfg, forgeHTTP)
 
 	// Interfaces stay nil (not a nil *Vault) when secrets are off.
 	var (
@@ -122,6 +124,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		secretSrc     pipeline.SecretSource
 		notifier      *notify.Service
 		notifications api.NotificationService
+		forgeAccounts api.ForgeAccounts
 	)
 	if cfg.SecretKey != nil {
 		c, err := secrets.NewCipher(cfg.SecretKey)
@@ -134,8 +137,13 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			return err
 		}
 		notifications = notifier
+		// Users' own forge access, sealed with the same key, reaches the
+		// repositories they connect.
+		fa := forgeauth.New(store, c, forges, refreshers(cfg, providers), log)
+		forges.UseCredentials(fa.RepositoryToken)
+		forgeAccounts = fa
 	} else {
-		log.InfoContext(ctx, "secrets and notifications disabled: CISID_SECRET_KEY is not set")
+		log.InfoContext(ctx, "secrets, notifications and users' forge accounts disabled: CISID_SECRET_KEY is not set")
 	}
 	planner := pipeline.Planner{Configs: forges, Secrets: secretSrc, Clones: forges}
 
@@ -196,7 +204,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	access := api.NewAccess(api.AccessConfig{
 		APIToken: cfg.APIToken, ReadToken: cfg.ReadToken, PublicRead: cfg.PublicRead,
 		Accounts: store, SessionTTL: cfg.SessionTTL, Log: log, SignupRole: auth.Role(cfg.SignupRole),
-		OAuth: api.OAuthConfig{Providers: oauthProviders(cfg, forgeHTTP), PublicURL: cfg.PublicURL, SignupRole: auth.Role(cfg.OAuthSignupRole)},
+		OAuth:         api.OAuthConfig{Providers: providers, PublicURL: cfg.PublicURL, SignupRole: auth.Role(cfg.OAuthSignupRole)},
+		ForgeAccounts: forgeAccounts,
 	})
 	jobsAPI := api.NewJobsAPI(store, broker, log,
 		api.WithAccess(access),
@@ -324,6 +333,19 @@ func forgeClients(cfg config.Config, httpClient *http.Client) (*forge.Set, *bitb
 	bb := &bitbucket.Client{APIURL: cfg.Bitbucket.URL, Token: cfg.Bitbucket.Token, HTTP: httpClient}
 	s.Add(forge.Bitbucket, bb)
 	return s, bb
+}
+
+// refreshers renew the OAuth tokens of users' forge accounts that expire,
+// as GitLab's do, with the forge's OAuth app.
+func refreshers(cfg config.Config, providers []*auth.Provider) map[string]forgeauth.Refresher {
+	out := map[string]forgeauth.Refresher{}
+	for _, p := range providers {
+		redirect := strings.TrimSuffix(cfg.PublicURL, "/") + "/auth/" + p.Name + "/callback"
+		out[p.Name] = func(ctx context.Context, refreshToken string) (auth.Token, error) {
+			return p.Refresh(ctx, refreshToken, redirect)
+		}
+	}
+	return out
 }
 
 // oauthProviders returns the forges users can sign in through.

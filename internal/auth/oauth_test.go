@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -104,4 +105,45 @@ func TestAuthCodeURL(t *testing.T) {
 	assert.Equal(t, "code", q.Get("response_type"))
 	assert.Equal(t, "read_user", q.Get("scope"))
 	assert.NotContains(t, u.String(), "client-secret")
+}
+
+func TestConnectURLAsksForRepositoryScopes(t *testing.T) {
+	u, err := url.Parse(GitHubProvider("https://github.com", "https://api.github.com", "client-id", "client-secret").ConnectURL("s", redirect))
+	require.NoError(t, err)
+	assert.Equal(t, "repo", u.Query().Get("scope"))
+	u, err = url.Parse(GitLabProvider("https://gitlab.com", "client-id", "client-secret").ConnectURL("s", redirect))
+	require.NoError(t, err)
+	assert.Equal(t, "api", u.Query().Get("scope"), "GitLab's api scope sets commit statuses")
+	u, err = url.Parse(GitLabProvider("https://gitlab.com", "client-id", "client-secret").AuthCodeURL("s", redirect))
+	require.NoError(t, err)
+	assert.Equal(t, "read_user", u.Query().Get("scope"), "signing in still asks for no more than the user")
+}
+
+func TestExchangeAndRefreshKeepTheWholeToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.PostForm.Get("grant_type") {
+		case "authorization_code":
+			_, _ = w.Write([]byte(`{"access_token":"a1","refresh_token":"r1","expires_in":7200}`))
+		case "refresh_token":
+			assert.Equal(t, "r1", r.PostForm.Get("refresh_token"))
+			assert.Equal(t, "client-secret", r.PostForm.Get("client_secret"))
+			_, _ = w.Write([]byte(`{"access_token":"a2","refresh_token":"r2","expires_in":7200}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	p := GitLabProvider(srv.URL, "client-id", "client-secret")
+	p.TokenURL = srv.URL + "/token"
+
+	tok, err := p.Exchange(t.Context(), "good", redirect)
+	require.NoError(t, err)
+	assert.Equal(t, "a1", tok.AccessToken)
+	assert.Equal(t, "r1", tok.RefreshToken)
+	assert.WithinDuration(t, time.Now().Add(2*time.Hour), tok.Expiry, time.Minute)
+
+	tok, err = p.Refresh(t.Context(), "r1", redirect)
+	require.NoError(t, err)
+	assert.Equal(t, "a2", tok.AccessToken)
+	assert.Equal(t, "r2", tok.RefreshToken)
 }

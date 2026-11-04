@@ -61,7 +61,9 @@ func TestPlanClonesTheCommit(t *testing.T) {
 // fakeClones hands out one token for every repository.
 type fakeClones struct{ user, token string }
 
-func (f fakeClones) CloneCredentials(string) (string, string) { return f.user, f.token }
+func (f fakeClones) CloneCredentials(context.Context, string) (string, string) {
+	return f.user, f.token
+}
 
 func TestPlanClonesPrivateRepositoriesWithTheForgeToken(t *testing.T) {
 	steps, err := stepsOf(Planner{Clones: fakeClones{"oauth2", "glpat-secret"}}.Plan(t.Context(), testJob()))

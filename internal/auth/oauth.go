@@ -36,6 +36,10 @@ type Provider struct {
 	TokenURL     string
 	UserURL      string
 	Scopes       []string
+	// ConnectScopes are what connecting a user's account asks for: enough
+	// to list, clone and report on their repositories. Empty when users
+	// connect this forge with a token of their own only.
+	ConnectScopes []string
 	// BasicAuth sends the client's credentials to TokenURL as HTTP Basic
 	// auth, as Bitbucket wants, instead of in the form.
 	BasicAuth bool
@@ -48,14 +52,24 @@ type Provider struct {
 // AuthCodeURL is where the browser goes to sign in; the forge sends it
 // back to redirectURI with a code and state.
 func (p *Provider) AuthCodeURL(state, redirectURI string) string {
+	return p.authURL(state, redirectURI, p.Scopes)
+}
+
+// ConnectURL is where the browser goes to let cisid reach the user's
+// repositories, with ConnectScopes.
+func (p *Provider) ConnectURL(state, redirectURI string) string {
+	return p.authURL(state, redirectURI, p.ConnectScopes)
+}
+
+func (p *Provider) authURL(state, redirectURI string, scopes []string) string {
 	q := url.Values{
 		"client_id":     {p.ClientID},
 		"redirect_uri":  {redirectURI},
 		"response_type": {"code"},
 		"state":         {state},
 	}
-	if len(p.Scopes) > 0 {
-		q.Set("scope", strings.Join(p.Scopes, " "))
+	if len(scopes) > 0 {
+		q.Set("scope", strings.Join(scopes, " "))
 	}
 	sep := "?"
 	if strings.Contains(p.AuthURL, "?") {
@@ -67,10 +81,11 @@ func (p *Provider) AuthCodeURL(state, redirectURI string) string {
 // SignIn exchanges code for an access token and asks the forge who it
 // belongs to. The token is used for that one question and forgotten.
 func (p *Provider) SignIn(ctx context.Context, code, redirectURI string) (Identity, error) {
-	token, err := p.exchange(ctx, code, redirectURI)
+	tok, err := p.Exchange(ctx, code, redirectURI)
 	if err != nil {
 		return Identity{}, err
 	}
+	token := tok.AccessToken
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.UserURL, nil)
 	if err != nil {
 		return Identity{}, fmt.Errorf("build user request: %w", err)
@@ -92,19 +107,41 @@ func (p *Provider) SignIn(ctx context.Context, code, redirectURI string) (Identi
 	return Identity{Forge: p.Name, Subject: subject, Login: login}, nil
 }
 
-func (p *Provider) exchange(ctx context.Context, code, redirectURI string) (string, error) {
-	form := url.Values{
+// Token is what a forge answers a code or a refresh token with.
+type Token struct {
+	AccessToken  string
+	RefreshToken string
+	// Expiry is zero for a token that does not expire.
+	Expiry time.Time
+}
+
+// Exchange trades code for a token.
+func (p *Provider) Exchange(ctx context.Context, code, redirectURI string) (Token, error) {
+	return p.token(ctx, url.Values{
 		"grant_type":   {"authorization_code"},
 		"code":         {code},
 		"redirect_uri": {redirectURI},
-	}
+	})
+}
+
+// Refresh trades a refresh token for a new token, as GitLab's expire
+// after two hours.
+func (p *Provider) Refresh(ctx context.Context, refreshToken, redirectURI string) (Token, error) {
+	return p.token(ctx, url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"redirect_uri":  {redirectURI},
+	})
+}
+
+func (p *Provider) token(ctx context.Context, form url.Values) (Token, error) {
 	if !p.BasicAuth {
 		form.Set("client_id", p.ClientID)
 		form.Set("client_secret", p.ClientSecret)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("build token request: %w", err)
+		return Token{}, fmt.Errorf("build token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
@@ -114,19 +151,25 @@ func (p *Provider) exchange(ctx context.Context, code, redirectURI string) (stri
 	}
 	data, err := p.do(req)
 	if err != nil {
-		return "", fmt.Errorf("exchange %s code: %w", p.Name, err)
+		return Token{}, fmt.Errorf("get %s token (%s): %w", p.Name, form.Get("grant_type"), err)
 	}
 	var resp struct {
-		AccessToken string `json:"access_token"`
-		Error       string `json:"error"` // GitHub answers 200 with an error
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+		Error        string `json:"error"` // GitHub answers 200 with an error
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return "", fmt.Errorf("%w: %s token answer: %w", ErrOAuth, p.Name, err)
+		return Token{}, fmt.Errorf("%w: %s token answer: %w", ErrOAuth, p.Name, err)
 	}
 	if resp.AccessToken == "" {
-		return "", fmt.Errorf("%w: %s gave no token: %s", ErrOAuth, p.Name, resp.Error)
+		return Token{}, fmt.Errorf("%w: %s gave no token: %s", ErrOAuth, p.Name, resp.Error)
 	}
-	return resp.AccessToken, nil
+	tok := Token{AccessToken: resp.AccessToken, RefreshToken: resp.RefreshToken}
+	if resp.ExpiresIn > 0 {
+		tok.Expiry = time.Now().Add(time.Duration(resp.ExpiresIn) * time.Second)
+	}
+	return tok, nil
 }
 
 // do sends req and returns the body of a 2xx answer, up to 1 MiB.
@@ -187,6 +230,8 @@ func GitHubProvider(webURL, apiURL, clientID, secret string) *Provider {
 		Name: "github", ClientID: clientID, ClientSecret: secret,
 		AuthURL: webURL + "/login/oauth/authorize", TokenURL: webURL + "/login/oauth/access_token",
 		UserURL: apiURL + "/user", user: numericUser("login"),
+		// GitHub has no narrower scope that reads private repositories.
+		ConnectScopes: []string{"repo"},
 	}
 }
 
@@ -206,6 +251,8 @@ func GitLabProvider(webURL, clientID, secret string) *Provider {
 		Name: "gitlab", ClientID: clientID, ClientSecret: secret,
 		AuthURL: webURL + "/oauth/authorize", TokenURL: webURL + "/oauth/token",
 		UserURL: webURL + "/api/v4/user", Scopes: []string{"read_user"}, user: numericUser("username"),
+		// api is the scope that may set commit statuses.
+		ConnectScopes: []string{"api"},
 	}
 }
 

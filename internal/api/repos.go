@@ -11,6 +11,7 @@ import (
 	"github.com/sidumandr/cisid/internal/auth"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/forge"
+	"github.com/sidumandr/cisid/internal/forgeauth"
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/pkg/models"
 )
@@ -116,7 +117,9 @@ func (a *ReposAPI) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
+	// The caller's own access to the forge, when they connected it, finds
+	// their private repositories, and builds the repository from now on.
+	ctx, via := a.userAccess(r.Context(), r, repo)
 	info, err := a.forges.Repository(ctx, repo)
 	if err != nil {
 		a.resolveError(w, r, err)
@@ -136,7 +139,10 @@ func (a *ReposAPI) connect(w http.ResponseWriter, r *http.Request) {
 	if p, ok := caller(r); ok && p.name != "" {
 		by = p.name
 	}
-	rec := models.Repository{Repo: repo, CloneURL: info.CloneURL, DefaultBranch: info.DefaultBranch, AddedBy: by}
+	rec := models.Repository{Repo: repo, CloneURL: info.CloneURL, DefaultBranch: info.DefaultBranch, AddedBy: by, ViaUserID: via}
+	if via != nil {
+		rec.Via = by
+	}
 	created, err := a.store.PutRepository(ctx, rec)
 	if err != nil {
 		a.internalError(w, r, "connect repository", err)
@@ -174,9 +180,40 @@ func (a *ReposAPI) disconnect(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// reachable lists the repositories the forges' tokens reach.
+// reachable lists the repositories the caller's own forge access reaches,
+// and the server's tokens on the forges they have not connected.
 func (a *ReposAPI) reachable(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, a.forges.Repositories(r.Context()))
+	ctx := r.Context()
+	if p, ok := caller(r); ok && p.user != nil && a.access.cfg.ForgeAccounts != nil {
+		for _, name := range a.access.cfg.ForgeAccounts.Forges() {
+			if token, err := a.access.cfg.ForgeAccounts.Token(ctx, p.user.ID, name); err == nil {
+				ctx = forge.WithAccess(ctx, name, token)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, a.forges.Repositories(ctx))
+}
+
+// userAccess returns ctx with the caller's own access to the forge of repo,
+// and their user ID, when they connected that forge; else ctx as it is.
+func (a *ReposAPI) userAccess(ctx context.Context, r *http.Request, repo string) (context.Context, *int64) {
+	p, ok := caller(r)
+	if !ok || p.user == nil || a.access.cfg.ForgeAccounts == nil {
+		return ctx, nil
+	}
+	name, _, err := forge.SplitKey(repo)
+	if err != nil {
+		return ctx, nil
+	}
+	token, err := a.access.cfg.ForgeAccounts.Token(ctx, p.user.ID, name)
+	if err != nil {
+		if !errors.Is(err, forgeauth.ErrNotConnected) {
+			a.log.WarnContext(ctx, "user's forge token unusable, using the server's", "user", p.user.Username, "forge", name, "error", err)
+		}
+		return ctx, nil
+	}
+	id := p.user.ID
+	return forge.WithAccess(ctx, name, token), &id
 }
 
 // resolveError answers a failure to look a repository up on its forge.

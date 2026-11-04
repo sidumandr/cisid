@@ -38,13 +38,14 @@ type Listing struct {
 	Unlisted []string `json:"unlisted"`
 }
 
-// Repositories lists what each forge's token reaches. A forge that cannot
-// list, has no token or fails is named in Unlisted, and the rest are still
-// listed.
+// Repositories lists what each forge's token reaches: the context's, as a
+// user's own access, else the server's. A forge that cannot list, has no
+// token or fails is named in Unlisted, and the rest are still listed.
 func (s *Set) Repositories(ctx context.Context) Listing {
 	l := Listing{Repos: []Listed{}, Unlisted: []string{}}
 	for _, name := range s.Names() {
-		lister, ok := s.clients[name].(Lister)
+		c, _ := s.client(ctx, name, "")
+		lister, ok := c.(Lister)
 		if !ok {
 			l.Unlisted = append(l.Unlisted, name)
 			continue

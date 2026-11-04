@@ -237,3 +237,16 @@ func TestRepositoriesListsWhatTheTokenReaches(t *testing.T) {
 	_, err = (&Client{}).Repositories(t.Context())
 	assert.ErrorIs(t, err, forge.ErrNoListing, "without a token there is nobody to list for")
 }
+
+func TestWhoamiWithAnotherToken(t *testing.T) {
+	c := newClient(t, "server-token", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/user", r.URL.Path)
+		assert.Equal(t, "Bearer users-token", r.Header.Get("Authorization"), "the copy uses the other token")
+		_, _ = w.Write([]byte(`{"login":"sidumandr"}`))
+	})
+	other := c.WithToken("users-token")
+	login, err := other.(forge.Identifier).Whoami(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "sidumandr", login)
+	assert.Equal(t, "server-token", c.Token, "the client itself keeps its token")
+}

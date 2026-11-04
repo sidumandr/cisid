@@ -51,7 +51,7 @@ var _ ConfigSource = (*forge.Set)(nil)
 // CloneAuth returns the credentials git clones a repository with; an empty
 // token clones anonymously. *forge.Set satisfies it.
 type CloneAuth interface {
-	CloneCredentials(repo string) (user, token string)
+	CloneCredentials(ctx context.Context, repo string) (user, token string)
 }
 
 var _ CloneAuth = (*forge.Set)(nil)
@@ -105,7 +105,7 @@ func (p Planner) Plan(ctx context.Context, job models.Job) (Plan, error) {
 		return Plan{}, fmt.Errorf("%w %d: branch is empty", ErrInvalidJob, job.ID)
 	}
 
-	steps := []models.StepSpec{p.cloneStep(job)}
+	steps := []models.StepSpec{p.cloneStep(ctx, job)}
 	if p.Configs == nil {
 		return Plan{Assignment: models.JobAssignment{Steps: steps}}, nil
 	}
@@ -291,7 +291,7 @@ const credentialHelper = `!f() { test "$1" = get && echo "username=$CISID_CLONE_
 // pull request ref instead, which must still contain the commit. With the
 // forge's token, private repositories clone too; the token is a secret of
 // this step only, masked in its output.
-func (p Planner) cloneStep(job models.Job) models.StepSpec {
+func (p Planner) cloneStep(ctx context.Context, job models.Job) models.StepSpec {
 	image := p.CloneImage
 	if image == "" {
 		image = DefaultCloneImage
@@ -316,7 +316,7 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 	if p.Clones == nil {
 		return step
 	}
-	if user, token := p.Clones.CloneCredentials(job.Repo); token != "" {
+	if user, token := p.Clones.CloneCredentials(ctx, job.Repo); token != "" {
 		// Configuration from the environment applies to every git command
 		// of the step and is not written anywhere.
 		env["GIT_CONFIG_COUNT"] = "1"

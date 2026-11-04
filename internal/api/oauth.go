@@ -15,9 +15,12 @@ import (
 	"github.com/sidumandr/cisid/pkg/models"
 )
 
-// oauthCookie carries a sign-in's state and the page to return to, from
-// the redirect to the forge to the callback.
+// oauthCookie carries a sign-in's state, the page to return to and, for
+// connecting a forge account rather than signing in, modeConnect, from the
+// redirect to the forge to the callback.
 const oauthCookie = "cisid_oauth"
+
+const modeConnect = "connect"
 
 // OAuthConfig signs users in through their forges.
 type OAuthConfig struct {
@@ -103,11 +106,25 @@ func (a *Access) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		fail("expired")
 		return
 	}
-	state, escapedNext, _ := strings.Cut(c.Value, "|")
+	state, rest, _ := strings.Cut(c.Value, "|")
+	escapedNext, mode, _ := strings.Cut(rest, "|")
 	got := r.URL.Query().Get("state")
 	if state == "" || subtle.ConstantTimeCompare([]byte(got), []byte(state)) != 1 {
 		a.log.WarnContext(ctx, "forge sign-in with a wrong state", "forge", p.Name, "remote_addr", r.RemoteAddr)
 		fail("expired")
+		return
+	}
+	next, err := url.QueryUnescape(escapedNext)
+	if err != nil {
+		next = "/"
+	}
+	next = safeNext(next)
+	if mode == modeConnect {
+		if r.URL.Query().Get("error") != "" {
+			http.Redirect(w, r, withQuery(next, "connect", "denied"), http.StatusFound)
+			return
+		}
+		a.finishConnect(w, r, p, next)
 		return
 	}
 	if r.URL.Query().Get("error") != "" {
@@ -135,11 +152,7 @@ func (a *Access) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	if !a.startSession(w, r, u) {
 		return
 	}
-	next, err := url.QueryUnescape(escapedNext)
-	if err != nil {
-		next = "/"
-	}
-	http.Redirect(w, r, safeNext(next), http.StatusFound)
+	http.Redirect(w, r, next, http.StatusFound)
 }
 
 // forgeUser returns the account of a forge identity, creating it when

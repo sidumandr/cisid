@@ -12,12 +12,14 @@ import (
 // PutRepository connects r.Repo, or updates its clone URL and default
 // branch when it is connected already, and reports whether it is new.
 func (s *Store) PutRepository(ctx context.Context, r models.Repository) (bool, error) {
+	// Connecting again with one's own access makes it the repository's.
 	const q = `
-		INSERT INTO repositories (repo, clone_url, default_branch, added_by) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (repo) DO UPDATE SET clone_url = EXCLUDED.clone_url, default_branch = EXCLUDED.default_branch
+		INSERT INTO repositories (repo, clone_url, default_branch, added_by, via_user_id) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (repo) DO UPDATE SET clone_url = EXCLUDED.clone_url, default_branch = EXCLUDED.default_branch,
+			via_user_id = COALESCE(EXCLUDED.via_user_id, repositories.via_user_id)
 		RETURNING xmax = 0`
 	var created bool
-	if err := s.pool.QueryRow(ctx, q, r.Repo, r.CloneURL, r.DefaultBranch, r.AddedBy).Scan(&created); err != nil {
+	if err := s.pool.QueryRow(ctx, q, r.Repo, r.CloneURL, r.DefaultBranch, r.AddedBy, r.ViaUserID).Scan(&created); err != nil {
 		return false, fmt.Errorf("connect repository %s: %w", r.Repo, err)
 	}
 	return created, nil
@@ -40,13 +42,14 @@ func (s *Store) DeleteRepository(ctx context.Context, repo string) (bool, error)
 	return removed > 0, nil
 }
 
-// Repositories lists the connected repositories by key, and whether a
-// branch of each is polled.
+// Repositories lists the connected repositories by key, whether a branch
+// of each is polled, and whose access reaches it.
 func (s *Store) Repositories(ctx context.Context) ([]models.Repository, error) {
 	const q = `
 		SELECT r.repo, r.clone_url, r.default_branch, r.added_by, r.added_at,
-		       EXISTS (SELECT 1 FROM watches w WHERE w.repo = r.repo)
-		FROM repositories r ORDER BY r.repo`
+		       EXISTS (SELECT 1 FROM watches w WHERE w.repo = r.repo),
+		       r.via_user_id, COALESCE(u.username, '')
+		FROM repositories r LEFT JOIN users u ON u.id = r.via_user_id ORDER BY r.repo`
 	rows, err := s.pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list repositories: %w", err)

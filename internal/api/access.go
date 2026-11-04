@@ -74,7 +74,10 @@ type AccessConfig struct {
 	// role; empty takes no sign-ups, except the first account of a server
 	// with no users, which becomes an admin.
 	SignupRole auth.Role
-	Log        *slog.Logger
+	// ForgeAccounts keeps users' own access to their forges; nil when the
+	// server has no CISID_SECRET_KEY to seal it with.
+	ForgeAccounts ForgeAccounts
+	Log           *slog.Logger
 }
 
 // Access decides who may do what. A caller is known by

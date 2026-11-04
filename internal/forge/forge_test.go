@@ -89,7 +89,7 @@ func TestSetRoutesKeysToClients(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "group/sub/project", gl.path, "the client gets the path without the forge")
 
-	user, _ := s.CloneCredentials("gitlab:group/project")
+	user, _ := s.CloneCredentials(ctx, "gitlab:group/project")
 	assert.Equal(t, "oauth2", user)
 	assert.Equal(t, []string{GitHub, GitLab}, s.Names())
 
@@ -97,7 +97,7 @@ func TestSetRoutesKeysToClients(t *testing.T) {
 	assert.ErrorIs(t, err, ErrUnknownForge)
 	err = s.CreateStatus(ctx, "not a key", "sha", CommitStatus{})
 	assert.ErrorIs(t, err, ErrInvalidRepo)
-	user, token := s.CloneCredentials("gitea:office/app")
+	user, token := s.CloneCredentials(ctx, "gitea:office/app")
 	assert.Empty(t, user+token)
 }
 

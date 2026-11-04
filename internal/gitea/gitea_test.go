@@ -127,3 +127,14 @@ func TestRepositoriesListsTheTokensRepositories(t *testing.T) {
 	_, err = (&Client{}).Repositories(t.Context())
 	assert.ErrorIs(t, err, forge.ErrNoListing)
 }
+
+func TestWhoamiWithAnotherToken(t *testing.T) {
+	c := newClient(t, "server-token", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/user", r.URL.Path)
+		assert.Equal(t, "token users-token", r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"login":"ilhan"}`))
+	})
+	login, err := c.WithToken("users-token").(forge.Identifier).Whoami(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "ilhan", login)
+}

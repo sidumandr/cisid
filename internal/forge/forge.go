@@ -168,6 +168,7 @@ func PullRequestRef(forge string, number int, branch string) string {
 // Its methods take keys where Client's take paths.
 type Set struct {
 	clients map[string]Client
+	creds   Credentials
 }
 
 // NewSet returns an empty Set.
@@ -196,12 +197,12 @@ func (s *Set) Names() []string {
 	return names
 }
 
-func (s *Set) lookup(key string) (Client, string, error) {
+func (s *Set) lookup(ctx context.Context, key string) (Client, string, error) {
 	name, path, err := SplitKey(key)
 	if err != nil {
 		return nil, "", err
 	}
-	c, ok := s.clients[name]
+	c, ok := s.client(ctx, name, key)
 	if !ok {
 		return nil, "", fmt.Errorf("%w: %s (repository %s)", ErrUnknownForge, name, key)
 	}
@@ -210,7 +211,7 @@ func (s *Set) lookup(key string) (Client, string, error) {
 
 // Repository describes the repository key names.
 func (s *Set) Repository(ctx context.Context, key string) (Repository, error) {
-	c, path, err := s.lookup(key)
+	c, path, err := s.lookup(ctx, key)
 	if err != nil {
 		return Repository{}, err
 	}
@@ -219,7 +220,7 @@ func (s *Set) Repository(ctx context.Context, key string) (Repository, error) {
 
 // BranchHead returns the SHA of the commit branch of key points at.
 func (s *Set) BranchHead(ctx context.Context, key, branch string) (string, error) {
-	c, path, err := s.lookup(key)
+	c, path, err := s.lookup(ctx, key)
 	if err != nil {
 		return "", err
 	}
@@ -228,7 +229,7 @@ func (s *Set) BranchHead(ctx context.Context, key, branch string) (string, error
 
 // FileContent returns the raw content of file in key at ref.
 func (s *Set) FileContent(ctx context.Context, key, ref, file string) ([]byte, error) {
-	c, path, err := s.lookup(key)
+	c, path, err := s.lookup(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +238,7 @@ func (s *Set) FileContent(ctx context.Context, key, ref, file string) ([]byte, e
 
 // CreateStatus sets a commit status on sha in key.
 func (s *Set) CreateStatus(ctx context.Context, key, sha string, st CommitStatus) error {
-	c, path, err := s.lookup(key)
+	c, path, err := s.lookup(ctx, key)
 	if err != nil {
 		return err
 	}
@@ -246,8 +247,8 @@ func (s *Set) CreateStatus(ctx context.Context, key, sha string, st CommitStatus
 
 // CloneCredentials returns what git clones key with; an empty token
 // clones anonymously.
-func (s *Set) CloneCredentials(key string) (user, token string) {
-	c, _, err := s.lookup(key)
+func (s *Set) CloneCredentials(ctx context.Context, key string) (user, token string) {
+	c, _, err := s.lookup(ctx, key)
 	if err != nil {
 		return "", ""
 	}

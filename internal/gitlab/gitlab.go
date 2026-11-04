@@ -171,3 +171,26 @@ func (c *Client) Repositories(ctx context.Context) ([]forge.ListedPath, error) {
 	}
 	return out, nil
 }
+
+var (
+	_ forge.Tokened    = (*Client)(nil)
+	_ forge.Identifier = (*Client)(nil)
+)
+
+// WithToken returns a copy of the client that uses token.
+func (c *Client) WithToken(token string) forge.Client {
+	cp := *c
+	cp.Token = token
+	return &cp
+}
+
+// Whoami returns the username of the token's user.
+func (c *Client) Whoami(ctx context.Context) (string, error) {
+	var u struct {
+		Username string `json:"username"`
+	}
+	if err := c.api().GetJSON(ctx, "/user", &u); err != nil {
+		return "", fmt.Errorf("ask whose the token is: %w", err)
+	}
+	return u.Username, nil
+}

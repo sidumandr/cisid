@@ -30,6 +30,7 @@ func (a *Access) register(mux *http.ServeMux) {
 		return
 	}
 	mux.HandleFunc("POST /api/register", a.registerUser)
+	a.registerForgeAccounts(mux)
 	mux.HandleFunc("GET /auth/{forge}/login", a.oauthLogin)
 	mux.HandleFunc("GET /auth/{forge}/callback", a.oauthCallback)
 	mux.HandleFunc("PUT /api/me/password", a.require(auth.RoleViewer, a.changePassword))
