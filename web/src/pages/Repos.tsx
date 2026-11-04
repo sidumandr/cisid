@@ -51,7 +51,8 @@ function HeaderRow() {
 
 // how says how cisid hears of a connected repository's commits.
 const how = (c: RepositoryInfo) =>
-  c.polled ? t("polling {branch}", { branch: c.default_branch }) : t("by webhook");
+  (c.polled ? t("polling {branch}", { branch: c.default_branch }) : t("by webhook")) +
+  (c.via ? " · " + t("with {user}'s access", { user: c.via }) : "");
 
 export function Repos() {
   useTitle(t("Repositories"));

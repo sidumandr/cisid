@@ -11,6 +11,7 @@ import { loadMe, useMe } from "../lib/session";
 import type { APIToken } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { ErrorNote, Fact, Header, Note } from "../ui/parts";
+import { ForgeAccounts } from "./AccountForges";
 
 export function Account() {
   useTitle(t("Account"));
@@ -111,6 +112,7 @@ export function Account() {
         <Fact name={t("Forges")}>{forges}</Fact>
         <Fact name={t("Password")}>{user.has_password ? t("Set") : t("None, signs in through a forge")}</Fact>
       </dl>
+      <ForgeAccounts />
       <div className="toolbar">
         <span className="muted small">{t("Personal API tokens")}</span>
         <span className="toolbar-actions">

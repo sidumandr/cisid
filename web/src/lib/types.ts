@@ -73,6 +73,23 @@ export interface RepositoryInfo {
   added_by?: string;
   added_at: string;
   polled: boolean;
+  // via is the user whose own forge access builds it.
+  via?: string;
+}
+
+// ForgeAccount is the user's own access to a forge, without its token.
+export interface ForgeAccount {
+  forge: string;
+  login: string;
+  kind: "oauth" | "token";
+  created_at: string;
+}
+
+// ForgesInfo is what the user can connect, and what they did.
+export interface ForgesInfo {
+  enabled: boolean;
+  forges: { forge: string; oauth: boolean }[];
+  accounts: ForgeAccount[];
 }
 
 // Connected is the answer to connecting a repository.

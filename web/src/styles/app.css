@@ -371,6 +371,8 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
   white-space: pre-wrap;
   word-break: break-all;
 }
+.forge-grid { grid-template-columns: minmax(140px, 1fr) minmax(0, 1.4fr) minmax(90px, 0.6fr) auto; }
+.forge-name { display: flex; align-items: center; gap: 10px; }
 .secret-grid { grid-template-columns: minmax(0, 1.6fr) minmax(0, 2fr) minmax(0, 1fr) 64px; }
 
 .ident { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -688,13 +690,14 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   }
   .col-time .line2 { margin-top: 0; }
   .wide-only { display: none; }
-  .sched-grid, .watch-grid, .notify-grid, .secret-grid, .user-grid { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .sched-grid, .watch-grid, .notify-grid, .secret-grid, .user-grid, .forge-grid { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .sched-grid > :not(:first-child):not(:last-child),
   .watch-grid > :not(:first-child):not(:last-child),
   .notify-grid > :not(:first-child):not(:last-child),
   .user-grid > :not(:first-child):not(:last-child),
-  .secret-grid > :not(:first-child):not(:last-child) { grid-column: 1; text-align: left; justify-self: start; }
-  .sched-grid > :last-child, .watch-grid > :last-child, .notify-grid > :last-child, .secret-grid > :last-child, .user-grid > :last-child { grid-column: 2; grid-row: 1; }
+  .secret-grid > :not(:first-child):not(:last-child),
+  .forge-grid > :not(:first-child):not(:last-child) { grid-column: 1; text-align: left; justify-self: start; }
+  .sched-grid > :last-child, .watch-grid > :last-child, .notify-grid > :last-child, .secret-grid > :last-child, .user-grid > :last-child, .forge-grid > :last-child { grid-column: 2; grid-row: 1; }
 
   .facts { grid-template-columns: minmax(0, 1fr); }
   .fact { display: flex; justify-content: space-between; gap: 16px; border-left: 0; padding: 10px 14px; }

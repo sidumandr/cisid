@@ -6,7 +6,7 @@ import { request } from "./api";
 import { openDialog } from "./dialog";
 import { repoKeyRe, repoURL } from "./format";
 import { t } from "./i18n";
-import type { Connected, Job, Reachable } from "./types";
+import type { Connected, ForgesInfo, Job, Reachable } from "./types";
 
 // runBuild builds the head of a branch now and returns the new job, or
 // null when the dialog was dismissed.
@@ -56,11 +56,21 @@ export async function connectRepo(): Promise<Connected | null> {
     // Picking from a list is a help; typing the name still works.
   }
   const picks = reachable.repositories.map((r) => r.repo);
+  // Whether the user connected a forge of their own, to point them there.
+  let own = false;
+  try {
+    const info = await request<ForgesInfo>("GET", "/api/me/forges");
+    own = Boolean(info?.accounts.length);
+  } catch {
+    // A token, not a user: there is no account page to point to.
+  }
   const done = await openDialog<Connected | null>({
     title: t("Connect a repository"),
-    text: picks.length
-      ? t("Pick one of the repositories the server's tokens reach, or write another. cisid then builds it as new commits arrive.")
-      : t("Write the repository. cisid then builds it as new commits arrive. With CISID_GITHUB_TOKEN (or another forge's token) set on the server, you can pick from your repositories here, and private ones work too."),
+    text: (picks.length
+      ? t("Pick one of your repositories, or write another. cisid then builds it as new commits arrive.")
+      : t("Write the repository. cisid then builds it as new commits arrive.")) + " " +
+      (own ? t("It is built with your own access to its forge.")
+        : t("Connect your GitHub or GitLab account on the Account page to pick from your repositories, private ones too.")),
     fields: [
       { name: "repo", label: t("Repository"), placeholder: "owner/name", suggestions: picks,
         hint: t("On GitHub owner/name; elsewhere prefix the forge, as in gitea:owner/name or gitlab:group/project.") },
