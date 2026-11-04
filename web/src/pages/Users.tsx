@@ -10,7 +10,7 @@ import { useTitle } from "../lib/useTitle";
 import { ErrorNote, Header, Note } from "../ui/parts";
 
 const ROLES: Role[] = ["viewer", "maintainer", "admin"];
-const IDENTITY_HINT = "Their logins on the forges, as gitea=ahmet, github=ahmet-y. They can then sign in through those forges.";
+const IDENTITY_HINT = "Their logins on the forges and Google, as github=ahmet-y, google=ahmet@example.com. They can then sign in with those.";
 
 // usersLede counts the accounts and the admins among them.
 function usersLede(n: number, admins: number): string {
@@ -49,7 +49,7 @@ export function Users() {
         { name: "username", label: "Username", hint: "Lowercase letters, digits, dots, dashes and underscores." },
         { name: "role", label: "Role", options: ROLES },
         { name: "password", label: "Password", type: "password", autocomplete: "new-password", hint: "Optional: without one, they sign in through a forge." },
-        { name: "identities", label: "Forge logins", hint: IDENTITY_HINT },
+        { name: "identities", label: "Linked logins", hint: IDENTITY_HINT },
       ],
       submit: "Add user",
       onSubmit: (v) => {
@@ -68,7 +68,7 @@ export function Users() {
         { name: "role", label: "Role", options: [u.role, ...ROLES.filter((r) => r !== u.role)] },
         { name: "state", label: "Status", options: u.disabled ? ["disabled", "active"] : ["active", "disabled"] },
         { name: "password", label: "New password", type: "password", autocomplete: "new-password", hint: "Empty keeps the password." },
-        { name: "identities", label: "Forge logins", value: showIdentities(u.identities), hint: IDENTITY_HINT },
+        { name: "identities", label: "Linked logins", value: showIdentities(u.identities), hint: IDENTITY_HINT },
       ],
       submit: "Save",
       onSubmit: (v) => {

@@ -270,7 +270,12 @@ select { font: inherit; }
 
 /* ---------- sign-in through a forge ---------- */
 .providers { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
-.btn.provider { flex: 1 1 auto; justify-content: center; text-decoration: none; }
+.btn.provider { flex: 1 1 auto; justify-content: center; gap: 10px; text-decoration: none; }
+svg.brand.google path { stroke: none; }
+svg.brand.google .g-red { fill: #ea4335; }
+svg.brand.google .g-blue { fill: #4285f4; }
+svg.brand.google .g-yellow { fill: #fbbc05; }
+svg.brand.google .g-green { fill: #34a853; }
 .toolbar-actions { display: flex; gap: 8px; }
 
 /* ---------- tabs: the selected one carries the orange line ---------- */
@@ -523,7 +528,7 @@ dialog {
   color: var(--text);
   box-shadow: var(--float);
 }
-dialog::backdrop { background: var(--backdrop); }
+dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(4px); }
 dialog h2 { margin-bottom: 8px; }
 dialog p { margin: 0 0 20px; color: var(--muted); }
 .field { display: grid; gap: 8px; margin-bottom: 16px; }
@@ -531,6 +536,61 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
 .field .hint { color: var(--muted); font-size: var(--fs-small); line-height: 16px; }
 .form-error { min-height: 20px; margin: 4px 0 0; color: var(--negative); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* ---------- glass: what floats over the page lets it show through, blurred ---------- */
+:root {
+  --glass: color-mix(in srgb, var(--ground) 66%, transparent);
+  --glass-raised: color-mix(in srgb, var(--raised) 70%, transparent);
+  --glass-edge: color-mix(in srgb, var(--text) 10%, transparent);
+  --glass-blur: blur(18px) saturate(160%);
+}
+.glass {
+  background: var(--glass-raised);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--float);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --glass: var(--ground); --glass-raised: var(--raised); }
+}
+
+/* ---------- dropdowns: a button or an input, and a list on glass ---------- */
+.dropdown { position: relative; }
+.select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select svg { color: var(--muted); transition: transform 150ms ease; }
+.select[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dropdown-list {
+  position: fixed;
+  z-index: 50;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+  border-radius: 10px;
+  animation: drop-in 140ms ease-out;
+}
+.dropdown-list:focus { outline: none; }
+.dropdown-list li { padding: 8px 10px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.dropdown-list li[data-active] { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.dropdown-list [role="option"][aria-selected="true"] { color: var(--accent-text); font-weight: 600; }
+@keyframes drop-in { from { opacity: 0; transform: translateY(-4px); } }
 
 /* ---------- tablet ---------- */
 @media (max-width: 1100px) {
@@ -548,11 +608,17 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   :root { --pad: 16px; }
   .shell { grid-template-columns: minmax(0, 1fr); }
   .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
     display: flex;
     align-items: center;
     height: 48px;
     padding: 0 16px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--glass-edge);
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
   }
   .wordmark { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--fs-section); }
   .rail {
@@ -564,8 +630,10 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
     justify-content: space-around;
     padding: 0 8px;
     border-right: 0;
-    border-top: 1px solid var(--border);
-    background: var(--ground);
+    border-top: 1px solid var(--glass-edge);
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
   }
   .mark { display: none; }
   .rail-item { width: auto; height: 56px; padding: 0 16px; gap: 2px; grid-template-rows: auto auto; }
@@ -615,5 +683,6 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .seg[data-state="running"] .seg-bar { animation: none; }
-  .btn, .rail-item { transition: none; }
+  .btn, .rail-item, .select svg { transition: none; }
+  .dropdown-list { animation: none; }
 }

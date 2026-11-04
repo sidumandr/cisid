@@ -2,9 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 
-import { STATE_WORD, STATUS_WORD, FINISHED, stepStates } from "../lib/format";
+import { STATE_WORD, STATUS_WORD, FINISHED, forgeName, stepStates } from "../lib/format";
 import type { Job, JobStatus } from "../lib/types";
-import { Icon } from "./Icon";
+import { Icon, ProviderMark } from "./Icon";
 
 export function Header({ crumbs, title, lede, actions }: {
   crumbs?: ReactNode;
@@ -128,5 +128,15 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
     }}>
       <Icon name={done ? "check" : "copy"} size={14} />
     </button>
+  );
+}
+
+// ProviderLink starts a sign-in through a forge or Google, coming back to next.
+export function ProviderLink({ provider, verb, next }: { provider: string; verb: string; next: string }) {
+  return (
+    <a className="btn provider" href={`/auth/${provider}/login?next=${encodeURIComponent(next)}`}>
+      <ProviderMark provider={provider} />
+      <span>{verb} {forgeName(provider)}</span>
+    </a>
   );
 }

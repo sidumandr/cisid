@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { closeDialog, dialogStore, type Field, type OpenDialog, type Values } from "../lib/dialog";
+import { Combo, Select } from "./Dropdown";
 
 export function DialogHost() {
   const open = useSyncExternalStore(dialogStore.subscribe, dialogStore.get);
@@ -68,32 +69,28 @@ function DialogForm({ spec }: { spec: OpenDialog }) {
       {spec.extra}
       {fields.map((f, i) => {
         const id = "f-" + f.name;
-        const listID = f.suggestions?.length ? id + "-list" : undefined;
         const bind = (el: HTMLElement | null) => {
           if (i === 0) firstRef.current = el;
         };
         let input;
         if (f.options) {
-          input = (
-            <select id={id} name={f.name} ref={bind} value={values[f.name]} onChange={(e) => set(f.name, e.target.value)}>
-              {f.options.map((o) => typeof o === "string"
-                ? <option key={o} value={o}>{o}</option>
-                : <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          );
+          const choices = f.options.map((o) => (typeof o === "string" ? { value: o, label: o } : o));
+          input = <Select id={id} value={values[f.name] ?? ""} choices={choices} buttonRef={bind} onChange={(v) => set(f.name, v)} />;
+        } else if (f.suggestions?.length) {
+          input = <Combo id={id} value={values[f.name] ?? ""} suggestions={f.suggestions} placeholder={f.placeholder}
+            inputRef={bind} onChange={(v) => set(f.name, v)} />;
         } else if (f.multiline) {
           input = <textarea id={id} name={f.name} ref={bind} rows={4} autoComplete="off" spellCheck={false}
             value={values[f.name]} placeholder={f.placeholder} onChange={(e) => set(f.name, e.target.value)} />;
         } else {
           input = <input id={id} name={f.name} ref={bind} type={f.type ?? "text"} autoComplete={f.autocomplete ?? "off"}
-            spellCheck={false} list={listID} value={values[f.name]} placeholder={f.placeholder}
+            spellCheck={false} value={values[f.name]} placeholder={f.placeholder}
             onChange={(e) => set(f.name, e.target.value)} />;
         }
         return (
           <div className="field" key={f.name}>
             <label htmlFor={id}>{f.label}</label>
             {input}
-            {listID ? <datalist id={listID}>{f.suggestions!.map((s) => <option key={s} value={s} />)}</datalist> : null}
             {f.hint ? <span className="hint">{f.hint}</span> : null}
           </div>
         );

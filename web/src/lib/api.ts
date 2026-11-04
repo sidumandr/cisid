@@ -5,8 +5,8 @@
 import { createElement } from "react";
 
 import { openDialog, type Field } from "./dialog";
-import { forgeName } from "./format";
 import { getMe, loadMe, signedIn } from "./session";
+import { ProviderLink } from "../ui/parts";
 
 const TOKEN_KEY = "cisid.apiToken";
 
@@ -105,9 +105,8 @@ export async function signIn({ change = false, retry = false } = {}): Promise<bo
     name: "token", label: me.accounts ? "Or a token" : "Token", type: "password", autocomplete: "off",
     hint: change ? "A personal token, or CISID_API_TOKEN, kept in this tab only." : "A personal token, CISID_READ_TOKEN or CISID_API_TOKEN.",
   });
-  const next = encodeURIComponent(location.pathname);
   const providers = (me.providers || []).map((p) =>
-    createElement("a", { key: p, className: "btn provider", href: `/auth/${p}/login?next=${next}` }, "Sign in with " + forgeName(p)));
+    createElement(ProviderLink, { key: p, provider: p, verb: "Sign in with", next: location.pathname }));
   const done = await openDialog({
     title: retry ? "That did not work" : "Sign in",
     text: change ? "Running builds, cancelling, rerunning and managing schedules, notifications and secrets need a maintainer."

@@ -216,7 +216,7 @@ export function jobsFinding(jobs: Job[], now = Date.now()): string {
 }
 
 export const FORGE_NAMES: Record<string, string> = {
-  github: "GitHub", gitea: "Gitea", forgejo: "Forgejo", gitlab: "GitLab", bitbucket: "Bitbucket",
+  github: "GitHub", gitea: "Gitea", forgejo: "Forgejo", gitlab: "GitLab", bitbucket: "Bitbucket", google: "Google",
 };
 export const forgeName = (f: string) => FORGE_NAMES[f] || f;
 
@@ -229,7 +229,7 @@ export function parseIdentities(text: string): Record<string, string> {
   for (const part of text.split(",")) {
     const [forge = "", login = ""] = part.split("=").map((s) => s.trim());
     if (!forge && !login) continue;
-    if (!forge || !login) throw new Error("Write forge logins as forge=login, separated by commas.");
+    if (!forge || !login) throw new Error("Write logins as provider=login, separated by commas.");
     out[forge.toLowerCase()] = login;
   }
   return out;

@@ -8,16 +8,22 @@ import { forgeName } from "../lib/format";
 import { loadMe, useMe } from "../lib/session";
 import { useTitle } from "../lib/useTitle";
 import { Mark } from "../ui/Icon";
-import { Strip } from "../ui/parts";
+import { ProviderLink, Strip } from "../ui/parts";
 import type { Job } from "../lib/types";
 
-// SIGNIN_PROBLEMS explain why signing in through a forge came back here.
+// SIGNIN_PROBLEMS explain why signing in through a forge or Google came
+// back here.
 const SIGNIN_PROBLEMS: Record<string, string> = {
   expired: "That sign-in took too long or started in another tab. Try again.",
-  denied: "The forge did not let cisid in.",
-  failed: "Signing in through the forge failed. Try again.",
-  unknown: "That forge account has no cisid account. An admin can add your forge login on the Users page.",
+  denied: "The sign-in was turned down on the other side, so cisid did not get in.",
+  failed: "That sign-in did not work. Try again.",
+  unknown: "That account has no cisid account. An admin can link it to yours on the Users page.",
 };
+
+// orWords joins names as choices: "a", "a or b", "a, b or c".
+function orWords(names: string[]): string {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
 
 // safeNext keeps the return address on this site.
 function safeNext(next: string | null): string {
@@ -63,9 +69,7 @@ function Providers({ verb, next }: { verb: string; next: string }) {
   return (
     <>
       <div className="providers">
-        {me.providers.map((p) => (
-          <a key={p} className="btn provider" href={`/auth/${p}/login?next=${encodeURIComponent(next)}`}>{verb} {forgeName(p)}</a>
-        ))}
+        {me.providers.map((p) => <ProviderLink key={p} provider={p} verb={verb} next={next} />)}
       </div>
       <div className="or" role="separator"><span>or</span></div>
     </>
@@ -111,7 +115,7 @@ export function Login() {
     <AuthFrame
       title="Sign in"
       lede={!me.accounts ? "This server has no accounts: sign in with one of its tokens."
-        : me.providers?.length ? "With your cisid account, your forge, or a token." : "With your cisid account, or a token."}
+        : me.providers?.length ? `With your cisid account, your ${orWords(me.providers.map(forgeName))} account, or a token.` : "With your cisid account, or a token."}
       aside={{ statement: "Back to your builds.", text: "Watch them as they run, and run them again when they break." }}
     >
       {me.accounts ? <Providers verb="Continue with" next={next} /> : null}
@@ -193,7 +197,7 @@ export function Register() {
       <AuthFrame title="Sign-up is closed" lede="Accounts on this server are made by its admins." aside={aside}>
         {me.provider_signup ? (
           <>
-            <p className="muted">Your forge account gets a cisid account the first time you sign in with it.</p>
+            <p className="muted">Your account there gets a cisid account the first time you sign in with it.</p>
             <Providers verb="Sign up with" next="/jobs" />
           </>
         ) : null}

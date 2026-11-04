@@ -1,7 +1,7 @@
 // Landing introduces cisid to someone who has not signed in, and sends
 // them on to sign in, sign up or, where reading is public, the builds.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router";
 
 import { getJSON } from "../lib/api";
@@ -89,20 +89,74 @@ const LOG_LINES: [string, string][] = [
   ["out", "ok   cisid/internal/notify    0.549s"],
 ];
 
+const SECTIONS = [
+  { href: "#how", label: "How it works" },
+  { href: "#pipeline", label: "Pipeline" },
+  { href: "#features", label: "Features" },
+  { href: "https://github.com/sidumandr/cisid", label: "Source" },
+];
+
+// NavMenu holds the nav's links on screens too narrow to show them, in a
+// dropdown on the same glass as the nav.
+function NavMenu({ theme, toggle }: { theme: string; toggle: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const press = (e: PointerEvent) => { if (!(e.target instanceof Node && box.current?.contains(e.target))) setOpen(false); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", press);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", press);
+      document.removeEventListener("keydown", key);
+    };
+  }, [open]);
+  return (
+    <div className="nav-menu" ref={box}>
+      <button ref={button} className="btn nav-menu-button" type="button" aria-label="Menu" aria-expanded={open}
+        aria-controls="nav-menu-list" onClick={() => setOpen(!open)}>
+        <Icon name={open ? "close" : "jobs"} size={18} />
+      </button>
+      {open ? (
+        <div id="nav-menu-list" className="nav-menu-list glass">
+          {SECTIONS.map((s) => (
+            <a key={s.href} href={s.href} rel={s.href.startsWith("http") ? "noreferrer" : undefined} onClick={() => setOpen(false)}>{s.label}</a>
+          ))}
+          <Link to="/login" onClick={() => setOpen(false)}>Sign in</Link>
+          <button className="text-action" type="button" onClick={toggle}>{theme === "dark" ? "Light theme" : "Dark theme"}</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SiteNav({ signupOpen }: { signupOpen: boolean }) {
   const [theme, toggle] = useTheme();
+  // Glass once the page slides under the nav; clear over the hero.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const on = () => setStuck(window.scrollY > 4);
+    on();
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
   return (
-    <header className="site-nav">
+    <header className="site-nav" data-stuck={stuck || undefined}>
       <Link className="site-mark" to="/"><Mark size={22} /><span>cisid</span></Link>
       <nav aria-label="Site">
-        <a href="#how">How it works</a>
-        <a href="#pipeline">Pipeline</a>
-        <a href="#features">Features</a>
-        <a href="https://github.com/sidumandr/cisid" rel="noreferrer">Source</a>
+        {SECTIONS.map((s) => <a key={s.href} href={s.href} rel={s.href.startsWith("http") ? "noreferrer" : undefined}>{s.label}</a>)}
         <button className="text-action" type="button" onClick={toggle}>{theme === "dark" ? "Light" : "Dark"}</button>
         {/* On a phone the nav keeps one button: Create an account when sign-up is open, else Sign in. */}
         <Link className={signupOpen ? "btn nav-extra" : "btn"} to="/login">Sign in</Link>
         {signupOpen ? <Link className="btn primary" to="/register">Create an account</Link> : null}
+        <NavMenu theme={theme} toggle={toggle} />
       </nav>
     </header>
   );
@@ -185,7 +239,10 @@ export function Landing() {
               <p className="hero-note">This server has no accounts yet: the first one you create is its admin.</p>
             ) : null}
           </div>
-          <LiveBuilds publicRead={me.public_read} />
+          {/* The cisid mark, large, behind the glass the builds sit on. */}
+          <div className="hero-visual">
+            <LiveBuilds publicRead={me.public_read} />
+          </div>
         </section>
 
         <section className="flow" id="how" aria-labelledby="how-title">
