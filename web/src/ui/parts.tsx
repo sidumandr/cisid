@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 
-import { STATE_WORD, STATUS_WORD, FINISHED, forgeName, stepStates } from "../lib/format";
+import { FINISHED, forgeName, stateWord, statusWord, stepStates } from "../lib/format";
+import { t } from "../lib/i18n";
 import type { Job, JobStatus } from "../lib/types";
 import { Icon, ProviderMark } from "./Icon";
 
@@ -15,7 +16,7 @@ export function Header({ crumbs, title, lede, actions }: {
   return (
     <div className="head">
       <div className="head-main">
-        {crumbs ? <nav className="crumbs" aria-label="Breadcrumb">{crumbs}</nav> : null}
+        {crumbs ? <nav className="crumbs" aria-label={t("Breadcrumb")}>{crumbs}</nav> : null}
         <h1>{title}</h1>
         {typeof lede === "string" ? <p className="lede">{lede}</p> : lede}
       </div>
@@ -30,6 +31,7 @@ export interface Tab<T extends string> {
 }
 
 // TabBar draws underline tabs; the selected one carries the orange line.
+// Labels are English, marked with N_, and shown in the language chosen.
 export function TabBar<T extends string>({ tabs, selected, onSelect, counts = {} }: {
   tabs: readonly Tab<T>[];
   selected: T;
@@ -38,10 +40,10 @@ export function TabBar<T extends string>({ tabs, selected, onSelect, counts = {}
 }) {
   return (
     <div className="tabs" role="tablist">
-      {tabs.map((t) => (
-        <button key={t.id} className="tab" type="button" role="tab" aria-selected={t.id === selected} onClick={() => onSelect(t.id)}>
-          {t.label}
-          <span className="num">{counts[t.id] ?? ""}</span>
+      {tabs.map((tab) => (
+        <button key={tab.id} className="tab" type="button" role="tab" aria-selected={tab.id === selected} onClick={() => onSelect(tab.id)}>
+          {t(tab.label)}
+          <span className="num">{counts[tab.id] ?? ""}</span>
         </button>
       ))}
     </div>
@@ -77,14 +79,14 @@ export function Note({ children, action }: { children: ReactNode; action?: React
 export function ErrorNote({ text, onRetry }: { text: string; onRetry?: () => void }) {
   return (
     <div className="note error" role="alert">
-      <span><span className="sign">Error: </span>{text}</span>
-      {onRetry ? <button className="text-action" type="button" onClick={onRetry}>Retry</button> : null}
+      <span><span className="sign">{t("Error: ")}</span>{text}</span>
+      {onRetry ? <button className="text-action" type="button" onClick={onRetry}>{t("Retry")}</button> : null}
     </div>
   );
 }
 
 export function Pill({ status, children }: { status: JobStatus | "canceled"; children?: ReactNode }) {
-  return <span className="pill" data-status={status}>{children ?? STATUS_WORD[status] ?? status}</span>;
+  return <span className="pill" data-status={status}>{children ?? (status === "canceled" ? t("Canceled") : statusWord(status))}</span>;
 }
 
 export const Dash = () => <span className="dash">-</span>;
@@ -102,11 +104,11 @@ export function Fact({ name, children }: { name: string; children: ReactNode }) 
 export function Strip({ job }: { job: Job }) {
   const steps = stepStates(job);
   if (steps.length === 0) {
-    const text = job.status === "pending" ? "Waiting for an agent" : FINISHED.has(job.status) ? "No steps ran" : "Planning";
+    const text = job.status === "pending" ? t("Waiting for an agent") : FINISHED.has(job.status) ? t("No steps ran") : t("Planning");
     return <span className="strip-wait">{text}</span>;
   }
   return (
-    <div className="strip" role="img" aria-label={steps.map((s) => `${s.name} ${STATE_WORD[s.state]}`).join(", ")}>
+    <div className="strip" role="img" aria-label={steps.map((s) => `${s.name} ${stateWord(s.state)}`).join(", ")}>
       {steps.map((s, i) => (
         <span key={i} className="seg" data-state={s.state}>
           <span className="seg-bar" />
@@ -131,12 +133,13 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-// ProviderLink starts a sign-in through a forge, coming back to next.
-export function ProviderLink({ provider, verb, next }: { provider: string; verb: string; next: string }) {
+// ProviderLink starts a sign-in through a forge, coming back to next;
+// label words the button for the forge's name.
+export function ProviderLink({ provider, label, next }: { provider: string; label: (forge: string) => string; next: string }) {
   return (
     <a className="btn provider" href={`/auth/${provider}/login?next=${encodeURIComponent(next)}`}>
       <ProviderMark provider={provider} />
-      <span>{verb} {forgeName(provider)}</span>
+      <span>{label(forgeName(provider))}</span>
     </a>
   );
 }

@@ -6,12 +6,14 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
 import { App } from "./App";
+import { applyLang } from "./lib/i18n";
 import { loadMe } from "./lib/session";
 import { applySavedTheme } from "./ui/Shell";
 import "./styles/app.css";
 import "./styles/site.css";
 
 applySavedTheme();
+applyLang();
 
 // Who is signed in decides what the first page shows, so it is known first.
 void loadMe().then(() => {

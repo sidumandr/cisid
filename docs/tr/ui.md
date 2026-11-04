@@ -39,6 +39,8 @@ Job sayfasında logun altında build'in sakladığı dosyalar ([pipeline.md](pip
 
 ## Görünüm
 
+- **Diller:** İngilizce ve Türkçe. Tarayıcının dili Türkçeyse arayüz Türkçe, değilse İngilizce açılır. Tanıtım sayfasının üst çubuğundaki ve giriş sayfalarındaki EN/TR seçicisi ile kenar çubuğunun altındaki dil düğmesi dili değiştirir; seçim tarayıcıda hatırlanır. Çevirisi olmayan bir server mesajı İngilizce görünür.
+- **Tanıtım sayfasının üst çubuğu** sayfanın üzerinde camdan bir kapsül olarak süzülür: logo, görünen bölümün vurgulandığı bir şeritte bölümler, dil seçicisi, tema düğmesi ve girişler. Sayfa altına kaydıkça daralır; dar ekranlarda bağlantılar, dil ve tema bir menüye geçer.
 - **Renkler:** Turuncunun göründüğü her yerde (düğmeler, çalışan adım, seçim çizgisi, çalışıyor durumu, rozet) logonun turuncusu kullanılır: koyu temanın siyahında `#F26B1D`, açık temanın beyazında `#E0560B`. Beyaz zemindeki turuncu yazı aynı turuncunun koyusudur (`#B84508`), böylece küçük yazı 5.4:1 ile okunur. Tema işletim sisteminin ayarına uyar; kenar çubuğunun altındaki düğmeyle (tanıtım sayfasında **Light**/**Dark**) değiştirilir ve tarayıcıda hatırlanır.
 - **Renk yalnızca veride:** Turuncu; birincil düğmede, çalışan adımda ve seçili olanı gösteren 1px çizgide (sekme, kenar çubuğu, adım) kullanılır. Durumlar soluk zemin üzerinde aynı tonda yazıyla gösterilir.
 - **Yazı:** Metinler [Authentic Sans](https://authentic.website/sans) ile yazılır. Çalışma ekranlarında rakamlar, commit SHA'ları, süreler ve loglar sistemin monospace fontuyla yazılır, böylece sütunlardaki rakamlar hizalı durur; tanıtım ve giriş sayfaları bir kademe büyük dizilir ve monospace'i yalnızca kod için kullanır. Font dosyaları `web/public/fonts/` altındadır; lisans notu [LICENSE.md](../../web/public/fonts/LICENSE.md) dosyasında.
@@ -93,11 +95,13 @@ npm test
 npm run build
 ```
 
+Arayüzün gösterdiği her metin İngilizce olarak `t("...")` içine (ya da gösterildiği yerde çevrilen bir tabloda `N_("...")` içine) yazılır; konan değerler için `{ad}` kullanılır. Türkçesi `web/src/lib/i18n.tr.ts` dosyasına girer. Bir metnin Türkçesi yoksa ya da Türkçesi başka değerler koyuyorsa `npm test` başarısız olur.
+
 `npm run build` tipleri denetler ve derlemeyi `go build`'in gömdüğü `internal/web/static` altına yazar. Derlemeyi kaynakla birlikte commit'leyin; böylece server Node.js olmadan derlenir.
 
 | Yol | İçerik |
 |---|---|
 | `web/src/pages/` | Her ekran için bir dosya: `Landing`, `Auth` (giriş, kayıt), `Jobs`, `Job`, `Repos`, `Repo`, `Account`, `Users`, `NotFound` |
 | `web/src/ui/` | Kenar çubuklu kabuk, diyalog katmanı, simgeler ve ortak parçalar (şerit, durum etiketleri, notlar) |
-| `web/src/lib/` | API çağrıları ve giriş, giriş yapan kullanıcı, diyaloglar, metin ve biçimlendirme (testleriyle) |
+| `web/src/lib/` | API çağrıları ve giriş, giriş yapan kullanıcı, diyaloglar, metin ve biçimlendirme (testleriyle); `i18n.ts` ve Türkçe sözlük `i18n.tr.ts` |
 | `web/src/styles/` | Çalışma ekranları için `app.css`, tanıtım ve giriş sayfaları için `site.css` |

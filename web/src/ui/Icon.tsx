@@ -11,6 +11,8 @@ const ICONS = {
   account: ["M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 20.5a8 8 0 0 1 16 0"],
   arrow: ["M5 12h14M13 6l6 6-6 6"],
   close: ["M6 6l12 12M18 6L6 18"],
+  sun: ["M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"],
+  moon: ["M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"],
 } as const;
 
 export type IconName = keyof typeof ICONS;

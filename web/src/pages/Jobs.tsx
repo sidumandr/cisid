@@ -7,6 +7,7 @@ import { Link, useNavigate } from "react-router";
 import { getJSON } from "../lib/api";
 import { knownRepos, runBuild } from "../lib/actions";
 import { ago, fmtDuration, jobsFinding, matrixLabel, seconds, shortSHA, trigger } from "../lib/format";
+import { N_, t } from "../lib/i18n";
 import type { Job } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { ErrorNote, Header, Note, Pill, RepoTile, SearchBox, Skeleton, Strip, TabBar, type Tab } from "../ui/parts";
@@ -15,10 +16,10 @@ export const LIST_LIMIT = 200;
 
 type JobTab = "all" | "active" | "failed" | "pr";
 const TABS: readonly Tab<JobTab>[] = [
-  { id: "all", label: "All" },
-  { id: "active", label: "Running" },
-  { id: "failed", label: "Failed" },
-  { id: "pr", label: "Pull requests" },
+  { id: "all", label: N_("All") },
+  { id: "active", label: N_("Running") },
+  { id: "failed", label: N_("Failed") },
+  { id: "pr", label: N_("Pull requests") },
 ];
 const MATCH: Record<JobTab, (j: Job) => boolean> = {
   all: () => true,
@@ -36,11 +37,11 @@ function matchesSearch(j: Job, q: string): boolean {
 export function JobsHeaderRow() {
   return (
     <div className="tr th jobs-grid" role="row">
-      <span role="columnheader">Job</span>
-      <span role="columnheader">Steps</span>
-      <span role="columnheader">Status</span>
-      <span role="columnheader" className="col-agent">Agent</span>
-      <span role="columnheader" className="right col-time">Duration</span>
+      <span role="columnheader">{t("Job")}</span>
+      <span role="columnheader">{t("Steps")}</span>
+      <span role="columnheader">{t("Status")}</span>
+      <span role="columnheader" className="col-agent">{t("Agent")}</span>
+      <span role="columnheader" className="right col-time">{t("Duration")}</span>
     </div>
   );
 }
@@ -69,7 +70,7 @@ export function JobRow({ job: j }: { job: Job }) {
 }
 
 export function Jobs() {
-  useTitle("Jobs");
+  useTitle(t("Jobs"));
   const navigate = useNavigate();
   const [tab, setTab] = useState<JobTab>("all");
   const [q, setQ] = useState("");
@@ -96,30 +97,30 @@ export function Jobs() {
   }, [refresh]);
 
   const searched = (jobs ?? []).filter((j) => matchesSearch(j, q));
-  const counts = Object.fromEntries(TABS.map((t) => [t.id, jobs ? searched.filter(MATCH[t.id]).length : null]));
+  const counts = Object.fromEntries(TABS.map((tab) => [tab.id, jobs ? searched.filter(MATCH[tab.id]).length : null]));
   const shown = searched.filter(MATCH[tab]);
 
   let rows;
-  if (failure) rows = <ErrorNote text={`Couldn't load jobs: ${failure}`} onRetry={refresh} />;
+  if (failure) rows = <ErrorNote text={t("Couldn't load jobs: {reason}", { reason: failure })} onRetry={refresh} />;
   else if (!jobs) rows = <><JobsHeaderRow /><Skeleton grid="jobs-grid" /></>;
-  else if (jobs.length === 0) rows = <Note>No jobs yet. Point a webhook at /webhooks/github (or gitea, forgejo, gitlab, bitbucket), or run a build by hand.</Note>;
-  else if (shown.length === 0) rows = <><JobsHeaderRow /><Note>No jobs match this view.</Note></>;
+  else if (jobs.length === 0) rows = <Note>{t("No jobs yet. Point a webhook at /webhooks/github (or gitea, forgejo, gitlab, bitbucket), poll a branch, or run a build by hand.")}</Note>;
+  else if (shown.length === 0) rows = <><JobsHeaderRow /><Note>{t("No jobs match this view.")}</Note></>;
   else rows = <><JobsHeaderRow />{shown.map((j) => <JobRow key={j.id} job={j} />)}</>;
 
   return (
     <>
-      <Header title="Jobs" lede={jobs ? jobsFinding(jobs) : "Loading jobs"} actions={
+      <Header title={t("Jobs")} lede={jobs ? jobsFinding(jobs) : t("Loading jobs")} actions={
         <button className="btn primary" type="button" onClick={async () => {
           const job = await runBuild("", knownRepos(jobs ?? []));
           if (job) navigate("/jobs/" + job.id);
-        }}>Run build</button>
+        }}>{t("Run build")}</button>
       } />
       <TabBar tabs={TABS} selected={tab} onSelect={setTab} counts={counts} />
       <div className="toolbar">
-        <SearchBox placeholder="Filter by repository, branch or commit" onChange={setQ} />
-        <span className="muted small num">{jobs ? `${shown.length} of the latest ${jobs.length} jobs` : ""}</span>
+        <SearchBox placeholder={t("Filter by repository, branch or commit")} onChange={setQ} />
+        <span className="muted small num">{jobs ? t("{n} of the latest {total} jobs", { n: shown.length, total: jobs.length }) : ""}</span>
       </div>
-      <div className="table" role="table" aria-label="Jobs">{rows}</div>
+      <div className="table" role="table" aria-label={t("Jobs")}>{rows}</div>
     </>
   );
 }

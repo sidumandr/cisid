@@ -5,6 +5,7 @@
 import { createElement } from "react";
 
 import { openDialog, type Field } from "./dialog";
+import { t } from "./i18n";
 import { getMe, loadMe, signedIn } from "./session";
 import { ProviderLink } from "../ui/parts";
 
@@ -49,9 +50,9 @@ export async function request<T = unknown>(method: string, url: string, { body, 
     // Changes a cookie signs in must say they come from this page.
     const headers: Record<string, string> = { Accept: "application/json", "X-Cisid-Request": "1" };
     if (token && !signedIn()) {
-      const t = await credential(attempt > 0);
-      if (t === null) return null;
-      if (t) headers.Authorization = "Bearer " + t;
+      const cred = await credential(attempt > 0);
+      if (cred === null) return null;
+      if (cred) headers.Authorization = "Bearer " + cred;
     }
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const resp = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -62,20 +63,20 @@ export async function request<T = unknown>(method: string, url: string, { body, 
         continue;
       }
       if (await signIn()) continue;
-      throw new APIError("Sign in to see this.", 401);
+      throw new APIError(t("Sign in to see this."), 401);
     }
     if (resp.status === 204) return {} as T;
     const data = (await resp.json().catch(() => ({}))) as { reason?: string };
     if (!resp.ok) throw new APIError(data.reason || resp.statusText, resp.status);
     return data as T;
   }
-  throw new APIError(token ? "The sign-in or token was not accepted." : "The token was not accepted.", 401);
+  throw new APIError(token ? t("The sign-in or token was not accepted.") : t("The token was not accepted."), 401);
 }
 
 // getJSON reads from the API; it throws instead of returning null.
 export async function getJSON<T>(url: string): Promise<T> {
   const data = await request<T>("GET", url);
-  if (data === null) throw new APIError("Sign in to see this.", 401);
+  if (data === null) throw new APIError(t("Sign in to see this."), 401);
   return data;
 }
 
@@ -98,33 +99,33 @@ export async function signIn({ change = false, retry = false } = {}): Promise<bo
   const me = getMe();
   const fields: Field[] = [];
   if (me.accounts) {
-    fields.push({ name: "username", label: "Username", autocomplete: "username" },
-      { name: "password", label: "Password", type: "password", autocomplete: "current-password" });
+    fields.push({ name: "username", label: t("Username"), autocomplete: "username" },
+      { name: "password", label: t("Password"), type: "password", autocomplete: "current-password" });
   }
   fields.push({
-    name: "token", label: me.accounts ? "Or a token" : "Token", type: "password", autocomplete: "off",
-    hint: change ? "A personal token, or CISID_API_TOKEN, kept in this tab only." : "A personal token, CISID_READ_TOKEN or CISID_API_TOKEN.",
+    name: "token", label: me.accounts ? t("Or a token") : t("Token"), type: "password", autocomplete: "off",
+    hint: change ? t("A personal token, or CISID_API_TOKEN, kept in this tab only.") : t("A personal token, CISID_READ_TOKEN or CISID_API_TOKEN."),
   });
   const providers = (me.providers || []).map((p) =>
-    createElement(ProviderLink, { key: p, provider: p, verb: "Sign in with", next: location.pathname }));
+    createElement(ProviderLink, { key: p, provider: p, label: (forge: string) => t("Sign in with {forge}", { forge }), next: location.pathname }));
   const done = await openDialog({
-    title: retry ? "That did not work" : "Sign in",
-    text: change ? "Running builds, cancelling, rerunning and managing schedules, notifications and secrets need a maintainer."
-      : "This server shows jobs and logs to signed-in users.",
+    title: retry ? t("That did not work") : t("Sign in"),
+    text: change ? t("Running builds, cancelling, rerunning and managing schedules, notifications and secrets need a maintainer.")
+      : t("This server shows jobs and logs to signed-in users."),
     extra: providers.length ? createElement("div", { className: "providers" }, providers) : null,
     fields,
-    submit: "Sign in",
+    submit: t("Sign in"),
     onSubmit: async (v) => {
-      const t = (v.token || "").trim();
+      const token = (v.token || "").trim();
       if (v.username && v.password) {
         await login({ username: v.username.trim(), password: v.password });
-      } else if (t.startsWith("cisid_")) {
-        await login({ token: t });
-      } else if (t) {
-        if (change) saveToken(t);
-        else await login({ token: t });
+      } else if (token.startsWith("cisid_")) {
+        await login({ token });
+      } else if (token) {
+        if (change) saveToken(token);
+        else await login({ token });
       } else {
-        throw new Error(me.accounts ? "Write your username and password, or a token." : "Write a token.");
+        throw new Error(me.accounts ? t("Write your username and password, or a token.") : t("Write a token."));
       }
       await loadMe();
     },
@@ -133,8 +134,10 @@ export async function signIn({ change = false, retry = false } = {}): Promise<bo
   return Boolean(done);
 }
 
+// sentence makes the server's reason a sentence, in the language chosen
+// when the dictionary knows it.
 function sentence(reason: string): string {
-  return reason.charAt(0).toUpperCase() + reason.slice(1) + (reason.endsWith(".") ? "" : ".");
+  return t(reason.charAt(0).toUpperCase() + reason.slice(1) + (reason.endsWith(".") ? "" : "."));
 }
 
 // login signs the browser in with a password or a token.
@@ -146,7 +149,7 @@ export async function login(body: { username: string; password: string } | { tok
   });
   if (!resp.ok) {
     const data = (await resp.json().catch(() => ({}))) as { reason?: string };
-    throw new Error(data.reason ? sentence(data.reason) : "That was not accepted.");
+    throw new Error(data.reason ? sentence(data.reason) : t("That was not accepted."));
   }
 }
 
@@ -159,7 +162,7 @@ export async function register(body: { username: string; password: string }): Pr
   });
   if (!resp.ok) {
     const data = (await resp.json().catch(() => ({}))) as { reason?: string };
-    throw new Error(data.reason ? sentence(data.reason) : "That did not work.");
+    throw new Error(data.reason ? sentence(data.reason) : t("That did not work."));
   }
 }
 

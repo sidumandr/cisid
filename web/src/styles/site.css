@@ -21,67 +21,126 @@
 }
 .site main { flex: 1; }
 .site h1, .site h2, .site h3, .auth h1 { display: block; letter-spacing: -0.015em; }
-.site section > *, .site-nav, .site-foot { max-width: var(--site-max); }
+.site section > *, .site-foot { max-width: var(--site-max); }
 
-/* ---------- nav ---------- */
+/* ---------- nav: a capsule of glass floating over the page ---------- */
 .site-nav {
   position: sticky;
   top: 0;
   z-index: 5;
+  width: 100%;
+  padding: 12px var(--site-pad) 0;
+}
+.site-nav-bar {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin: 0 auto;
+  gap: 16px;
   width: 100%;
-  padding: 14px var(--site-pad);
-  border-bottom: 1px solid transparent;
-  transition: border-color 200ms ease;
+  max-width: calc(var(--site-max) - 2 * var(--site-pad));
+  margin: 0 auto;
+  padding: 7px 7px 7px 20px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  transition: max-width 300ms ease, box-shadow 300ms ease;
 }
-/* Clear over the hero; glass once the page slides under it. The glass is
-   a layer of its own: blur on the nav itself would keep its dropdown from
-   blurring the page under it. */
-.site-nav::before {
+/* The glass is a layer of its own: blur on the bar itself would keep its
+   dropdown from blurring the page under it. */
+.site-nav-bar::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  opacity: 0;
+  border-radius: inherit;
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  transition: opacity 200ms ease;
 }
-.site-nav[data-stuck] { border-bottom-color: var(--glass-edge); }
-.site-nav[data-stuck]::before { opacity: 1; }
-.site-nav nav { display: flex; align-items: center; gap: 22px; }
-.site-nav nav > a:not(.btn), .site-nav nav > .text-action { color: var(--muted); }
-.site-nav nav > a:not(.btn):hover { color: var(--text); }
-.site-mark { display: inline-flex; align-items: center; }
+/* Once the page slides under it, the capsule draws in and lifts. */
+.site-nav[data-stuck] .site-nav-bar { max-width: min(1080px, calc(var(--site-max) - 2 * var(--site-pad))); box-shadow: 0 14px 40px -18px rgba(0, 0, 0, 0.55); }
+.site-mark { display: inline-flex; align-items: center; flex: none; }
+
+/* The sections sit in a track; the one in view is lit. */
+.site-links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 auto;
+  padding: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.site-links a {
+  padding: 7px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 20px;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.site-links a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); }
+.site-links a[aria-current="true"] { color: var(--text); background: color-mix(in srgb, var(--text) 12%, transparent); }
+.site-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+.btn.round { border-radius: 999px; }
+
+/* An icon in a circle: the theme, and the menu on narrow screens. */
+.icon-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.icon-toggle:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+/* The language switch: two letters a side, the one in use raised. */
+.lang-switch {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.lang-switch button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px/16px var(--font);
+  letter-spacing: 0.04em;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.lang-switch button:hover { color: var(--text); }
+.lang-switch button[aria-pressed="true"] { background: var(--ground); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
 
 .btn.big { height: 48px; padding: 0 22px; }
 
 /* The nav's dropdown, for screens too narrow for its links. */
 .nav-menu { position: relative; display: none; }
-.nav-menu-button { width: var(--button-height); padding: 0; }
 .nav-menu-list {
   position: absolute;
-  top: calc(100% + 12px);
+  top: calc(100% + 14px);
   right: 0;
   z-index: 20;
   display: grid;
-  min-width: 220px;
+  min-width: 240px;
   padding: 8px;
-  border-radius: 12px;
+  border-radius: 16px;
   animation: drop-in 140ms ease-out;
 }
-.nav-menu-list a, .nav-menu-list .text-action {
+.nav-menu-list a {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   color: var(--text);
-  text-align: left;
 }
-.nav-menu-list a:hover, .nav-menu-list .text-action:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.nav-menu-list a:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.nav-menu-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; padding: 8px 4px 2px 8px; border-top: 1px solid var(--glass-edge); }
 .btn.wide { width: 100%; }
 
 /* ---------- hero ---------- */
@@ -290,6 +349,7 @@
 .auth-text { max-width: 34ch; margin: 24px 0 40px; color: var(--muted); font-size: var(--fs-lead); }
 .auth-strip { max-width: 440px; }
 .auth-tagline { color: var(--muted); font-size: var(--fs-small); }
+.auth-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .auth .field .hint { line-height: 1.4; }
 .auth-main { display: grid; place-items: center; padding: 48px clamp(16px, 4vw, 48px); }
 .auth-card { width: 100%; max-width: 400px; }
@@ -348,7 +408,7 @@
 
 /* ---------- smaller screens ---------- */
 @media (max-width: 1100px) {
-  .site-nav nav > a:not(.btn), .site-nav nav > .text-action { display: none; }
+  .site-links { display: none; }
   .nav-menu { display: block; }
 }
 @media (max-width: 1000px) {
@@ -359,14 +419,17 @@
   .cta-logo { right: 50%; width: min(520px, 92%); transform: translate(50%, -50%); }
 }
 @media (max-width: 760px) {
-  .site-nav nav { gap: 8px; }
+  .site-nav { padding-top: 8px; }
+  .site-nav-bar { gap: 8px; padding-left: 14px; }
+  .site-tools { gap: 6px; }
+  .site-tools .wide-tool { display: none; }
   .site-nav .btn { height: var(--control-height); padding: 0 12px; }
-  .site-nav .nav-menu-button { width: var(--control-height); padding: 0; }
   .flow-steps, .feature-grid { grid-template-columns: minmax(0, 1fr); }
   .flow-steps p { padding-right: 0; }
   .hero-actions .btn.big { flex: 1 1 auto; }
   .auth { grid-template-columns: minmax(0, 1fr); min-height: auto; }
   .auth-side { flex-direction: row; align-items: center; gap: 16px; padding: 18px 16px; }
+  .auth-top { flex: 1; }
   .auth-side-copy, .auth-tagline { display: none; }
   .auth-main { place-items: start center; padding-top: 32px; }
 }
@@ -375,5 +438,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .flow-steps li[data-state="running"] .flow-bar, .live-dot, .nav-menu-list { animation: none; }
-  .site-nav, .site-nav::before { transition: none; }
+  .site-nav-bar, .site-links a, .icon-toggle, .lang-switch button { transition: none; }
 }

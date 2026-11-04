@@ -8,9 +8,10 @@ import { Link, useNavigate, useParams } from "react-router";
 import { getJSON, request } from "../lib/api";
 import { openDialog } from "../lib/dialog";
 import {
-  FINISHED, STATE_WORD, byteSize, finding, fmtDuration, matrixLabel, repoPath, seconds, shortSHA, stamp, stepStates,
+  FINISHED, byteSize, finding, fmtDuration, matrixLabel, repoPath, seconds, shortSHA, stamp, stateWord, stepStates,
   stepTime, stripANSI, trigger,
 } from "../lib/format";
+import { t } from "../lib/i18n";
 import type { Artifact, Job as JobT, JobLog } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { Icon } from "../ui/Icon";
@@ -65,7 +66,7 @@ class Logs {
 
 export function Job() {
   const id = Number(useParams().id);
-  useTitle(`Job #${id}`);
+  useTitle(t("Job #{id}", { id }));
   const navigate = useNavigate();
   const [job, setJob] = useState<JobT | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -130,8 +131,8 @@ export function Job() {
   // The clocks of a job still going move on every second.
   useEffect(() => {
     if (!job || FINISHED.has(job.status)) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, [job]);
 
   // Once finished, the files the build kept are listed.
@@ -160,7 +161,7 @@ export function Job() {
       // The API leaves out fields that are false, such as needs_approval.
       else if (result) setJob((prev) => ({ ...prev, needs_approval: false, ...result }));
     } catch (err) {
-      await openDialog({ title: "That did not work", text: err instanceof Error ? err.message : String(err), submit: "Close", cancel: false });
+      await openDialog({ title: t("That did not work"), text: err instanceof Error ? err.message : String(err), submit: t("Close"), cancel: false });
     } finally {
       setBusy(false);
     }
@@ -169,49 +170,49 @@ export function Job() {
   if (failure) {
     return (
       <>
-        <Header title={<span>Job <span className="num">#{id}</span></span>} />
-        <ErrorNote text={`Couldn't load this job: ${failure}`} onRetry={() => navigate(0)} />
+        <Header title={<span>{t("Job")} <span className="num">#{id}</span></span>} />
+        <ErrorNote text={t("Couldn't load this job: {reason}", { reason: failure })} onRetry={() => navigate(0)} />
       </>
     );
   }
   if (!job) {
-    return <Header title={<span>Job <span className="num">#{id}</span></span>} lede="Loading job" />;
+    return <Header title={<span>{t("Job")} <span className="num">#{id}</span></span>} lede={t("Loading job")} />;
   }
 
   const actions = FINISHED.has(job.status)
-    ? [<button key="rerun" className="btn primary" type="button" disabled={busy} onClick={() => act(`/api/jobs/${job.id}/rerun`, true)}>Rerun</button>]
-    : [<button key="cancel" className="btn" type="button" disabled={busy} onClick={() => act(`/api/jobs/${job.id}/cancel`, false)}>Cancel</button>];
+    ? [<button key="rerun" className="btn primary" type="button" disabled={busy} onClick={() => act(`/api/jobs/${job.id}/rerun`, true)}>{t("Rerun")}</button>]
+    : [<button key="cancel" className="btn" type="button" disabled={busy} onClick={() => act(`/api/jobs/${job.id}/cancel`, false)}>{t("Cancel")}</button>];
   if (job.needs_approval && job.status === "pending") {
     actions.unshift(<button key="approve" className="btn primary" type="button" disabled={busy}
-      onClick={() => act(`/api/jobs/${job.id}/approve`, false)}>Approve</button>);
+      onClick={() => act(`/api/jobs/${job.id}/approve`, false)}>{t("Approve")}</button>);
   }
   const errorAfter = job.status === "failed" && job.error && job.failed_step !== undefined && job.failed_step !== null ? ` ${job.error}` : "";
 
   const facts: [string, ReactNode][] = [
-    ["Trigger", trigger(job)],
-    ["Commit", <><span className="num">{shortSHA(job.commit_sha)}</span><CopyButton text={job.commit_sha} label="Copy the commit SHA" /></>],
-    ["Agent", job.agent || <Dash />],
-    ["Started", job.started_at ? <span className="num" title={job.started_at}>{stamp(job.started_at)}</span> : <Dash />],
-    ["Duration", job.started_at ? <span className="num">{fmtDuration(seconds(job, now))}</span> : <Dash />],
+    [t("Trigger"), trigger(job)],
+    [t("Commit"), <><span className="num">{shortSHA(job.commit_sha)}</span><CopyButton text={job.commit_sha} label={t("Copy the commit SHA")} /></>],
+    [t("Agent"), job.agent || <Dash />],
+    [t("Started"), job.started_at ? <span className="num" title={job.started_at}>{stamp(job.started_at)}</span> : <Dash />],
+    [t("Duration"), job.started_at ? <span className="num">{fmtDuration(seconds(job, now))}</span> : <Dash />],
   ];
-  if (job.matrix) facts.splice(1, 0, ["Matrix", matrixLabel(job.matrix)]);
+  if (job.matrix) facts.splice(1, 0, [t("Matrix"), matrixLabel(job.matrix)]);
 
   const state = selected !== null ? states[selected] : undefined;
   let logNote: string | null = null;
   if (selected === null) {
     logNote = job.logs_expired_at
-      ? `Logs were deleted on ${stamp(job.logs_expired_at)} after the retention period.`
-      : FINISHED.has(job.status) ? "No step ran, so there is no output." : "The log starts when an agent picks the job up.";
+      ? t("Logs were deleted on {date} after the retention period.", { date: stamp(job.logs_expired_at) })
+      : FINISHED.has(job.status) ? t("No step ran, so there is no output.") : t("The log starts when an agent picks the job up.");
   } else if (!logs.current.has(selected)) {
-    if (job.logs_expired_at) logNote = `Logs were deleted on ${stamp(job.logs_expired_at)} after the retention period.`;
-    else logNote = state && (state.state === "queued" || state.state === "running") ? "No output yet." : "This step wrote no output.";
+    if (job.logs_expired_at) logNote = t("Logs were deleted on {date} after the retention period.", { date: stamp(job.logs_expired_at) });
+    else logNote = state && (state.state === "queued" || state.state === "running") ? t("No output yet.") : t("This step wrote no output.");
   }
   const total = artifacts.reduce((n, a) => n + a.size, 0);
 
   return (
     <>
       <Header
-        crumbs={<><Link to="/jobs">Jobs</Link><span aria-hidden="true">/</span><Link to={repoPath(job.repo)}>{job.repo}</Link></>}
+        crumbs={<><Link to="/jobs">{t("Jobs")}</Link><span aria-hidden="true">/</span><Link to={repoPath(job.repo)}>{job.repo}</Link></>}
         title={<><span>{job.repo}</span><span className="num">#{job.id}</span><Pill status={job.status} /></>}
         lede={<p className="lede">{finding(job, now)}{errorAfter}</p>}
         actions={actions}
@@ -219,7 +220,7 @@ export function Job() {
       <dl className="facts" style={{ "--n": facts.length } as CSSProperties}>
         {facts.map(([name, value]) => <Fact key={name} name={name}>{value}</Fact>)}
       </dl>
-      <div className="strip big" role="group" aria-label="Steps">
+      <div className="strip big" role="group" aria-label={t("Steps")}>
         {states.map((s, i) => {
           const took = stepTime(s.result);
           return (
@@ -227,27 +228,27 @@ export function Job() {
               <span className="seg-bar" />
               <span className="seg-name">
                 <span>{s.name}</span>
-                <span className="seg-state">{STATE_WORD[s.state]}</span>
+                <span className="seg-state">{stateWord(s.state)}</span>
                 {took !== null ? <span className="seg-time num">{fmtDuration(took)}</span> : null}
               </span>
             </button>
           );
         })}
       </div>
-      <section className="logs" aria-label="Log">
+      <section className="logs" aria-label={t("Log")}>
         <div className="logs-head">
           <div className="stack">
-            <h2>{selected === null ? "Log" : (job.steps || [])[selected] || `step ${selected}`}</h2>
-            <span className="muted small">{state ? STATE_WORD[state.state] : ""}</span>
+            <h2>{selected === null ? t("Log") : (job.steps || [])[selected] || t("step {n}", { n: selected })}</h2>
+            <span className="muted small">{state ? stateWord(state.state) : ""}</span>
           </div>
         </div>
         {logNote ? <p className="logs-note">{logNote}</p> : <div ref={logBox} />}
       </section>
       {artifacts.length ? (
-        <section className="artifacts" aria-label="Artifacts">
+        <section className="artifacts" aria-label={t("Artifacts")}>
           <div className="section-head">
-            <h2>Artifacts</h2>
-            <span className="muted small num">{artifacts.length} {artifacts.length === 1 ? "file" : "files"}, {byteSize(total)}</span>
+            <h2>{t("Artifacts")}</h2>
+            <span className="muted small num">{artifacts.length === 1 ? t("{n} file, {size}", { n: 1, size: byteSize(total) }) : t("{n} files, {size}", { n: artifacts.length, size: byteSize(total) })}</span>
           </div>
           <ul className="artifact-list">
             {artifacts.map((a) => (

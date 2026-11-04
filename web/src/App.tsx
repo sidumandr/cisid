@@ -3,6 +3,8 @@
 
 import { Route, Routes } from "react-router";
 
+import { useLang } from "./lib/i18n";
+
 import { Account } from "./pages/Account";
 import { Login, Register } from "./pages/Auth";
 import { Job } from "./pages/Job";
@@ -16,6 +18,8 @@ import { DialogHost } from "./ui/DialogHost";
 import { Shell } from "./ui/Shell";
 
 export function App() {
+  // A change of language re-renders every page, so their words follow it.
+  useLang();
   return (
     <>
       <Routes>

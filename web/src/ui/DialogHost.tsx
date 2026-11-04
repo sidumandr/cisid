@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } fro
 
 import { closeDialog, dialogStore, type Field, type OpenDialog, type Values } from "../lib/dialog";
 import { Combo, Select } from "./Dropdown";
+import { t } from "../lib/i18n";
 
 export function DialogHost() {
   const open = useSyncExternalStore(dialogStore.subscribe, dialogStore.get);
@@ -98,7 +99,7 @@ function DialogForm({ spec }: { spec: OpenDialog }) {
       <p className="form-error" role="alert">{error}</p>
       <div className="dialog-actions">
         {spec.cancel === false ? null
-          : <button className="btn" type="button" onClick={() => closeDialog(spec.id, null)}>{spec.cancel ?? "Cancel"}</button>}
+          : <button className="btn" type="button" onClick={() => closeDialog(spec.id, null)}>{spec.cancel ?? t("Cancel")}</button>}
         <button ref={submitRef} className={spec.danger ? "btn danger" : "btn primary"} type="submit" disabled={busy}>{spec.submit}</button>
       </div>
     </form>

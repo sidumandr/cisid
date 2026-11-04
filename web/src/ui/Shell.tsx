@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 
+import { LANGS, setLang, t, useLang } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import { Icon, ThemeIcon } from "./Icon";
 import { LogoMark, Wordmark } from "./Logo";
@@ -45,37 +46,43 @@ export function Shell() {
   const me = useMe();
   const location = useLocation();
   const [theme, toggleTheme] = useTheme();
+  const lang = useLang();
+  const other = LANGS.find((l) => l.lang !== lang)!;
   // Where reading needs a sign-in, the working screens start at the sign-in
   // page and come back here.
   if (!me.public_read && !me.via) {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
-  const account = me.user ? me.user.username : "Sign in";
+  const account = me.user ? me.user.username : t("Sign in");
   return (
     <div className="shell">
       <header className="topbar">
         <Link className="wordmark" to="/"><Wordmark height={22} /></Link>
       </header>
-      <nav className="rail" aria-label="Main">
-        <Link className="mark" to="/" aria-label="cisid home"><LogoMark size={34} /></Link>
-        <NavLink className="rail-item" to="/jobs" title="Jobs">
-          <Icon name="jobs" size={18} /><span className="rail-label">Jobs</span>
+      <nav className="rail" aria-label={t("Main")}>
+        <Link className="mark" to="/" aria-label={t("cisid home")}><LogoMark size={34} /></Link>
+        <NavLink className="rail-item" to="/jobs" title={t("Jobs")}>
+          <Icon name="jobs" size={18} /><span className="rail-label">{t("Jobs")}</span>
         </NavLink>
-        <NavLink className="rail-item" to="/repos" title="Repositories">
-          <Icon name="repos" size={18} /><span className="rail-label">Repositories</span>
+        <NavLink className="rail-item" to="/repos" title={t("Repositories")}>
+          <Icon name="repos" size={18} /><span className="rail-label">{t("Repositories")}</span>
         </NavLink>
         {me.user && me.role === "admin" ? (
-          <NavLink className="rail-item" to="/users" title="Users">
-            <Icon name="users" size={18} /><span className="rail-label">Users</span>
+          <NavLink className="rail-item" to="/users" title={t("Users")}>
+            <Icon name="users" size={18} /><span className="rail-label">{t("Users")}</span>
           </NavLink>
         ) : null}
         <NavLink className="rail-item rail-end" to={me.user ? "/account" : "/login"}
-          title={me.user ? `${me.user.username} (${me.role})` : "Sign in"}>
+          title={me.user ? `${me.user.username} (${me.role})` : t("Sign in")}>
           <Icon name="account" size={18} /><span className="rail-label">{account}</span>
         </NavLink>
-        <button className="rail-item" type="button" title="Switch light and dark" onClick={toggleTheme}
-          aria-label={theme === "dark" ? "Switch to light" : "Switch to dark"}>
-          <ThemeIcon /><span className="rail-label">Theme</span>
+        <button className="rail-item" type="button" title={t("Switch light and dark")} onClick={toggleTheme}
+          aria-label={theme === "dark" ? t("Switch to light") : t("Switch to dark")}>
+          <ThemeIcon /><span className="rail-label">{t("Theme")}</span>
+        </button>
+        <button className="rail-item" type="button" lang={other.lang} title={other.name} onClick={() => setLang(other.lang)}
+          aria-label={other.name}>
+          <span className="rail-lang" aria-hidden="true">{other.label}</span><span className="rail-label">{other.name}</span>
         </button>
       </nav>
       <main className="canvas" aria-live="polite">

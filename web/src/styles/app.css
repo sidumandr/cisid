@@ -216,6 +216,7 @@ input:not([type="checkbox"]):not([type="radio"]), textarea { cursor: text; }
   background: var(--accent);
 }
 .rail-end { margin-top: auto; }
+.rail-lang { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid currentColor; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; }
 [hidden] { display: none !important; }
 .rail-label {
   position: absolute; width: 1px; height: 1px; overflow: hidden;

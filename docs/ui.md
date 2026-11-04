@@ -39,6 +39,8 @@ Below the log, the job page lists the files the build kept ([pipeline.md](pipeli
 
 ## Appearance
 
+- **Languages:** English and Turkish. The UI starts in Turkish when the browser's language is Turkish, else in English. The EN/TR switch in the introduction's navbar and on the sign-in pages, and the language button at the bottom of the sidebar, change it, and the browser remembers the choice. A message from the server that has no translation shows in English.
+- **The introduction's navbar** floats over the page as a capsule of glass: the mark, the sections in a track with the one in view lit, the language switch, a theme button and the ways in. It draws in once the page slides under it; on narrow screens its links, the language and the theme move into a menu.
 - **Colors:** The logo's orange wherever orange appears (buttons, the running step, the selection line, the running status, the badge): `#F26B1D` on the dark theme's black, `#E0560B` on the light theme's white. Orange text on white is the same orange, darker (`#B84508`), so small text reads at 5.4:1. The theme follows the operating system's setting; the button at the bottom of the sidebar (or **Light**/**Dark** on the introduction) changes it, and the browser remembers the choice.
 - **Color only on data:** Orange appears on the primary button, on the running step and on the 1px line that marks the selected item (tab, sidebar, step). Statuses are shown as text in the same hue on a faint background.
 - **Type:** Text is set in [Authentic Sans](https://authentic.website/sans). On the working screens, numbers, commit SHAs, durations and logs use the system's monospace font, so numbers in columns stay aligned; the introduction and the sign-in pages are set one step larger and keep monospace for code. The font files are under `web/public/fonts/`; the license note is in [LICENSE.md](../web/public/fonts/LICENSE.md).
@@ -93,11 +95,13 @@ npm test
 npm run build
 ```
 
+Every text the UI shows is written in English inside `t("...")` (or `N_("...")` in a table translated where it is shown), with `{name}` for the values put in; its Turkish goes in `web/src/lib/i18n.tr.ts`. `npm test` fails while a text has no Turkish, or its Turkish puts in other values.
+
 `npm run build` checks the types and writes the build to `internal/web/static`, which `go build` embeds. Commit the build with the source, so the server is built without Node.js.
 
 | Path | Content |
 |---|---|
 | `web/src/pages/` | One file per screen: `Landing`, `Auth` (sign in, sign up), `Jobs`, `Job`, `Repos`, `Repo`, `Account`, `Users`, `NotFound` |
 | `web/src/ui/` | The sidebar shell, the dialog host, icons and shared parts (strip, pills, notes) |
-| `web/src/lib/` | API calls and sign-in, the signed-in user, dialogs, wording and formatting (with tests) |
+| `web/src/lib/` | API calls and sign-in, the signed-in user, dialogs, wording and formatting (with tests); `i18n.ts` and the Turkish dictionary `i18n.tr.ts` |
 | `web/src/styles/` | `app.css` for the working screens, `site.css` for the introduction and the sign-in pages |

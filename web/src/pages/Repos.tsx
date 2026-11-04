@@ -5,6 +5,7 @@ import { Link } from "react-router";
 
 import { getJSON } from "../lib/api";
 import { ago, repoPath, trigger } from "../lib/format";
+import { t } from "../lib/i18n";
 import type { Job } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { ErrorNote, Header, Note, Pill, RepoTile, Skeleton, Strip } from "../ui/parts";
@@ -29,17 +30,17 @@ function summarize(jobs: Job[]): RepoSummary[] {
 function HeaderRow() {
   return (
     <div className="tr th repos-grid" role="row">
-      <span role="columnheader">Repository</span>
-      <span role="columnheader">Last build</span>
-      <span role="columnheader">Status</span>
-      <span role="columnheader" className="right col-count">Builds</span>
-      <span role="columnheader" className="right col-time">Last run</span>
+      <span role="columnheader">{t("Repository")}</span>
+      <span role="columnheader">{t("Last build")}</span>
+      <span role="columnheader">{t("Status")}</span>
+      <span role="columnheader" className="right col-count">{t("Builds")}</span>
+      <span role="columnheader" className="right col-time">{t("Last run")}</span>
     </div>
   );
 }
 
 export function Repos() {
-  useTitle("Repositories");
+  useTitle(t("Repositories"));
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -57,18 +58,20 @@ export function Repos() {
 
   const repos = jobs ? summarize(jobs) : [];
   const failing = repos.filter((r) => r.last.status === "failed");
-  let lede = "Loading repositories";
+  let lede = t("Loading repositories");
   if (jobs) {
     lede = repos.length === 0
-      ? "A repository shows up here after its first build."
-      : `${repos.length} ${repos.length === 1 ? "repository" : "repositories"} in the latest ${jobs.length} jobs. ` +
-        (failing.length ? `${failing.length} failing now: ${failing.map((r) => r.repo).join(", ")}.` : "None failing now.");
+      ? t("A repository shows up here after its first build.")
+      : (repos.length === 1
+        ? t("{n} repository in the latest {total} jobs.", { n: repos.length, total: jobs.length })
+        : t("{n} repositories in the latest {total} jobs.", { n: repos.length, total: jobs.length })) + " " +
+        (failing.length ? t("{n} failing now: {names}.", { n: failing.length, names: failing.map((r) => r.repo).join(", ") }) : t("None failing now."));
   }
 
   let rows;
-  if (failure) rows = <ErrorNote text={`Couldn't load repositories: ${failure}`} onRetry={load} />;
+  if (failure) rows = <ErrorNote text={t("Couldn't load repositories: {reason}", { reason: failure })} onRetry={load} />;
   else if (!jobs) rows = <><HeaderRow /><Skeleton grid="repos-grid" rows={3} /></>;
-  else if (repos.length === 0) rows = <Note>No repositories yet. Point a webhook at /webhooks/github (or gitea, forgejo, gitlab, bitbucket) to build the first one.</Note>;
+  else if (repos.length === 0) rows = <Note>{t("No repositories yet. Point a webhook at /webhooks/github (or gitea, forgejo, gitlab, bitbucket), or poll a branch, to build the first one.")}</Note>;
   else {
     rows = (
       <>
@@ -94,8 +97,8 @@ export function Repos() {
 
   return (
     <>
-      <Header title="Repositories" lede={lede} />
-      <div className="table" role="table" aria-label="Repositories">{rows}</div>
+      <Header title={t("Repositories")} lede={lede} />
+      <div className="table" role="table" aria-label={t("Repositories")}>{rows}</div>
     </>
   );
 }
