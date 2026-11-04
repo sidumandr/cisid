@@ -94,6 +94,8 @@ spec:
               value: {{ .Values.server.buildForks | quote }}
             - name: CISID_PUBLIC_BADGES
               value: {{ .Values.server.publicBadges | quote }}
+            - name: CISID_ARTIFACT_MAX_SIZE
+              value: {{ .Values.server.artifactMaxSize | quote }}
             {{- with .Values.server.smtp }}
             {{- if .host }}
             - name: CISID_SMTP_HOST

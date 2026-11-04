@@ -261,6 +261,11 @@ func (a *Agent) runOne(ctx context.Context, job models.JobAssignment, i int, env
 	// Secrets are masked before output leaves the agent.
 	stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &env.seq}, spec.Secrets)
 	stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &env.seq}, spec.Secrets)
+	if spec.Artifacts {
+		code, err := a.collectArtifacts(ctx, job, i, env, stderr)
+		_ = stderr.Flush()
+		return code, err
+	}
 	code, err := a.runStep(ctx, i, spec, toRunnerStep(job.JobID, spec, env.workspace, env.network, env.caches), stdout, stderr)
 	_ = stdout.Flush()
 	_ = stderr.Flush()

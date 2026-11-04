@@ -52,6 +52,8 @@ Her mesaj bir JSON zarfıdır. Tipler `pkg/models/protocol.go` dosyasındadır.
 
 ## Job yürütme
 
+- **Artifact'lar:** `artifacts` adımı saklanacak dosyaların tar akışını stdout'una yazar. Agent bunu loglamaz: her dosyayı gelir gelmez server'a `PUT /agent/jobs/{id}/artifacts/{name}` ile yükler; WebSocket uç noktasının adresinden HTTP(S) üzerinden, token'ı ve `X-Cisid-Agent`'taki adıyla. Server yalnızca o agent'ta çalışan job'un dosyalarını kabul eder. Reddedilen yükleme adımı kırar ([pipeline.md](pipeline.md#artifactlar)).
+
 - Agent aynı anda **bir** job çalıştırır. Meşgulken gelen atamaya `job_rejected` döner. Kapanış sırasında gelen atamaya da `job_rejected` döner, sebep `"agent shutting down"` olur.
 - Atamada servis varsa agent önce job'a özel bir Docker ağı oluşturur ve servisleri bu ağda, adlarını host adı olarak kullanarak başlatır. Adımlar aynı ağda çalışır. Job bitince servisler ve ağ silinir ([pipeline.md](pipeline.md#servisler)).
 - Adımlar sırayla çalışır ve ilk başarısız adımda durulur.

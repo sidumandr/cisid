@@ -49,6 +49,7 @@ type Config struct {
 	GitHubOAuth     OAuthApp      // CISID_GITHUB_OAUTH_CLIENT_ID, CISID_GITHUB_OAUTH_CLIENT_SECRET: sign in through GitHub
 	OAuthSignupRole string        // CISID_OAUTH_SIGNUP_ROLE, viewer or maintainer: forge users without an account get one; empty: only linked users sign in
 	PublicBadges    bool          // CISID_PUBLIC_BADGES, lets anyone see build badges even when reading needs a sign-in
+	ArtifactMaxSize int64         // CISID_ARTIFACT_MAX_SIZE, the largest artifact accepted, default 100MB
 	SMTP            SMTP          // CISID_SMTP_*: the relay notifications are emailed through
 
 	// The other forges. Gitea and Forgejo are on when their URL is set;
@@ -400,6 +401,19 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	cfg.SMTP = loadSMTP(getenv, &problems)
 
+	cfg.ArtifactMaxSize = defaultArtifactMaxSize
+	if v := getenv("CISID_ARTIFACT_MAX_SIZE"); v != "" {
+		n, err := parseSize(v)
+		switch {
+		case err != nil:
+			problems = append(problems, fmt.Errorf("CISID_ARTIFACT_MAX_SIZE: %w", err))
+		case n < 1 || n > maxArtifactMaxSize:
+			problems = append(problems, fmt.Errorf("CISID_ARTIFACT_MAX_SIZE must be between 1 byte and 10GB"))
+		default:
+			cfg.ArtifactMaxSize = n
+		}
+	}
+
 	cfg.LogRetention = defaultLogRetention
 	if v := getenv("CISID_LOG_RETENTION"); v != "" {
 		d, err := parseRetention(v)
@@ -419,6 +433,33 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidConfig, errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+// Artifact size bounds.
+const (
+	defaultArtifactMaxSize = 100 << 20
+	maxArtifactMaxSize     = 10 << 30
+)
+
+// parseSize reads a size such as "100MB", "512KB", "2GB" or a number of
+// bytes; KB, MB and GB are powers of 1024.
+func parseSize(v string) (int64, error) {
+	units := []struct {
+		suffix string
+		shift  uint
+	}{{"GB", 30}, {"MB", 20}, {"KB", 10}, {"B", 0}}
+	num, shift := strings.TrimSpace(v), uint(0)
+	for _, u := range units {
+		if n, ok := strings.CutSuffix(strings.ToUpper(num), u.suffix); ok {
+			num, shift = strings.TrimSpace(n), u.shift
+			break
+		}
+	}
+	n, err := strconv.ParseInt(num, 10, 64)
+	if err != nil || n < 0 || n > (1<<62)>>shift {
+		return 0, fmt.Errorf("%q is not a size such as 100MB", v)
+	}
+	return n << shift, nil
 }
 
 // parseRetention reads a duration such as "90d" or "36h"; "0" means forever.
@@ -479,6 +520,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("github_sign_in", c.GitHubOAuth.Enabled()),
 		slog.String("oauth_signup_role", c.OAuthSignupRole),
 		slog.Bool("public_badges", c.PublicBadges),
+		slog.Int64("artifact_max_size", c.ArtifactMaxSize),
 		slog.Any("smtp", c.SMTP.logValue()),
 	)
 }

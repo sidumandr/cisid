@@ -32,6 +32,7 @@ cisid runs its own tests this way too: [/.cisid.yml](../.cisid.yml).
 | `services` | no | Up to 10 services started before the steps ([Services](#services)) |
 | `matrix` | no | Runs the pipeline as a separate job for each combination of values ([Matrix](#matrix)) |
 | `cache` | no | Up to 10 directories to keep between the repository's jobs, as absolute paths ([Cache](#cache)) |
+| `artifacts` | no | Up to 20 files or directories to keep once the steps pass, relative to the workspace, wildcards allowed ([Artifacts](#artifacts)) |
 | `steps[].name` | yes | Letters, digits, `.`, `_`, `-`. At most 63 characters, must be unique. The name `clone` is reserved. |
 | `steps[].image` | yes | The Docker image the step runs in. Must contain `/bin/sh`. |
 | `steps[].commands` | yes | Shell commands |
@@ -165,6 +166,32 @@ steps:
 - There can be at most 8 axes and 16 combinations. Axis names must be environment variable names, cannot be reserved names, and cannot clash with a step's `environment` field.
 - Each combination gets its own commit status on GitHub, for example `cisid (GO_VERSION=1.27, POSTGRES=18)` ([commit-status.md](commit-status.md)).
 - When a matrix job is rerun, only its own combination runs again.
+
+## Artifacts
+
+```yaml
+steps:
+  - name: build
+    image: golang:1.27
+    commands: [go build -o dist/ ./cmd/...]
+  - name: test
+    image: golang:1.27
+    commands: [go test -coverprofile=coverage.out ./...]
+
+artifacts:
+  - dist
+  - coverage.out
+  - reports/*.xml
+```
+
+Once every step has passed, cisid runs one more step, `artifacts`, which collects the listed files from `/workspace` and uploads them to the server. They are listed on the job page, with a link to download each ([ui.md](ui.md)), and in the API ([api.md](api.md#artifacts)).
+
+- Paths are relative to `/workspace`. `*`, `?` and `[...]` match within a path segment (`reports/*.xml`); a directory keeps every file in it. A path that matches nothing is noted in the step's log and does not fail the job.
+- Each file is one artifact, named by its path, e.g. `dist/app`. A job keeps at most 100 files, each up to `CISID_ARTIFACT_MAX_SIZE` (100 MB by default, [server.md](server.md)). A file over the limit fails the `artifacts` step, and so the job.
+- Artifacts are not collected when a step fails or the job is canceled.
+- The step runs in the clone image (`alpine/git`), so its log shows each file it uploaded. The name `artifacts` is reserved for it.
+- Artifacts are stored in PostgreSQL and deleted with the job's logs when `CISID_LOG_RETENTION` runs out. Plan the database's size for them.
+- Pull requests from forks keep artifacts too; whoever can read the job can download them.
 
 ## Cache
 

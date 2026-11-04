@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -163,6 +164,18 @@ func TestRunRejectsInvalidTracingConfig(t *testing.T) {
 type stepRunner struct{}
 
 func (stepRunner) Run(_ context.Context, step runner.Step, stdout, _ io.Writer) (int, error) {
+	if step.Env["CISID_ARTIFACT_UPLOAD"] == "1" {
+		// The artifacts step: a tar stream of the files to keep.
+		tw := tar.NewWriter(stdout)
+		report := []byte("e2e report\n")
+		if err := tw.WriteHeader(&tar.Header{Name: "report.txt", Mode: 0o644, Size: int64(len(report))}); err != nil {
+			return 1, err
+		}
+		if _, err := tw.Write(report); err != nil {
+			return 1, err
+		}
+		return 0, tw.Close()
+	}
 	out := step.Env["CISID_STEP"] + " in " + step.Image + " at " + step.Env["CISID_COMMIT_SHA"] + "\n"
 	if token := step.Env["DEPLOY_TOKEN"]; token != "" {
 		out += "token=" + token + "\n" // a careless step printing its secret
@@ -179,8 +192,9 @@ type ghStatus struct {
 	Context     string `json:"context"`
 }
 
-// fakeGitHub serves .cisid.yml and records the commit statuses it receives.
-func fakeGitHub(t *testing.T) (url string, statuses func() []ghStatus) {
+// fakeGitHub serves .cisid.yml, with extra appended, and records the
+// commit statuses it receives.
+func fakeGitHub(t *testing.T, extra ...string) (url string, statuses func() []ghStatus) {
 	t.Helper()
 	const sha = "6113728f27ae82c7b1a177c8d03f9e96e0adf246"
 	var (
@@ -192,7 +206,8 @@ func fakeGitHub(t *testing.T) (url string, statuses func() []ghStatus) {
 		switch r.URL.Path {
 		case "/repos/sidumandr/cisid/contents/.cisid.yml":
 			assert.Equal(t, sha, r.URL.Query().Get("ref"))
-			_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n    secrets: [DEPLOY_TOKEN]\n")
+			_, _ = io.WriteString(w, "steps:\n  - name: test\n    image: golang:1.27\n    commands: [go test ./...]\n    secrets: [DEPLOY_TOKEN]\n"+
+				strings.Join(extra, ""))
 		case "/repos/sidumandr/cisid/statuses/" + sha:
 			var st ghStatus
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&st))
@@ -236,7 +251,7 @@ func TestRunEndToEnd(t *testing.T) {
 	addr := ln.Addr().String()
 	require.NoError(t, ln.Close())
 
-	ghURL, statuses := fakeGitHub(t)
+	ghURL, statuses := fakeGitHub(t, "artifacts: [report.txt]\n")
 	collector := telemetrytest.NewCollector(t)
 	const apiToken = "e2e-api-token-0123456789"
 	env := map[string]string{
@@ -355,7 +370,7 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, models.JobStatusSuccess, job.Status)
 	assert.Equal(t, "e2e-agent", job.Agent)
 	assert.Equal(t, "main", job.Branch)
-	require.Len(t, job.StepResults, 2, "the agent reports how each step went")
+	require.Len(t, job.StepResults, 3, "the agent reports how each step went")
 	for i, st := range job.StepResults {
 		assert.Equal(t, models.StepSuccess, st.State, "step %d", i)
 		require.NotNil(t, st.FinishedAt)
@@ -371,7 +386,25 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, []string{
 		"clone in alpine/git:2.52.0 at " + sha + "\n",
 		"test in golang:1.27 at " + sha + "\ntoken=***\n",
-	}, lines, "the clone step runs first, then the steps of .cisid.yml; the secret is masked")
+		"uploaded report.txt (11 B)\n",
+	}, lines, "the clone step runs first, then the steps of .cisid.yml, then the artifacts are kept; the secret is masked")
+
+	// The artifact went from the agent to the server and comes back.
+	artResp, err := client.Get(fmt.Sprintf("%s/api/jobs/%d/artifacts", base, queued.JobID))
+	require.NoError(t, err)
+	var arts []models.Artifact
+	require.NoError(t, json.NewDecoder(artResp.Body).Decode(&arts))
+	artResp.Body.Close()
+	require.Len(t, arts, 1)
+	assert.Equal(t, "report.txt", arts[0].Name)
+	assert.EqualValues(t, 11, arts[0].Size)
+	dl, err := client.Get(fmt.Sprintf("%s/api/jobs/%d/artifacts/report.txt", base, queued.JobID))
+	require.NoError(t, err)
+	content, err := io.ReadAll(dl.Body)
+	dl.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, "e2e report\n", string(content))
+	assert.Equal(t, `attachment; filename*=UTF-8''report.txt`, dl.Header.Get("Content-Disposition"))
 
 	// GitHub sees the commit go from pending to success, linked to the job.
 	require.Eventually(t, func() bool {
@@ -423,7 +456,7 @@ func TestRunEndToEnd(t *testing.T) {
 	stream, err := io.ReadAll(streamResp.Body)
 	streamResp.Body.Close()
 	require.NoError(t, err)
-	assert.Equal(t, 2, strings.Count(string(stream), "event: log\n"))
+	assert.Equal(t, 3, strings.Count(string(stream), "event: log\n"))
 	assert.Contains(t, string(stream), `"status":"success"`)
 
 	// Stop the server first: it asks the agent to close, then exits.

@@ -128,6 +128,10 @@ type StepSpec struct {
 	// this one starts; steps whose dependencies passed run at the same
 	// time. Nil means the step before it, so steps run one after another.
 	DependsOn []int `json:"depends_on,omitempty"`
+	// Artifacts marks the step that collects the job's artifacts: the agent
+	// runs it with CISID_ARTIFACT_UPLOAD=1, reads a tar stream from its
+	// stdout and uploads every file in it.
+	Artifacts bool `json:"artifacts,omitempty"`
 }
 
 // Needs returns the steps step i of steps waits for: its DependsOn, or the

@@ -58,6 +58,11 @@ type Handlers struct {
 	// Notifications manages where build results are announced; omitted
 	// when nil.
 	Notifications *NotificationsAPI
+	// Artifacts serves the files builds kept; omitted when nil.
+	Artifacts *ArtifactsAPI
+	// ArtifactUploads takes artifacts from agents at
+	// PUT /agent/jobs/{id}/artifacts/{name...}; omitted when nil.
+	ArtifactUploads http.Handler
 	// TracerProvider traces webhook and API requests; nil traces nothing.
 	TracerProvider trace.TracerProvider
 }
@@ -67,6 +72,7 @@ type Handlers struct {
 //	POST /webhooks/github  GitHub webhook deliveries
 //	POST /webhooks/{forge} Gitea, Forgejo, GitLab and Bitbucket deliveries
 //	GET  /agent/ws         agent WebSocket connections
+//	PUT  /agent/jobs/...   artifacts from agents
 //	GET  /api/jobs/...     jobs and logs (see JobsAPI)
 //	     /api/repos/...    repository secrets, builds, badges and notifications
 //	GET  /auth/{forge}/... signing in through a forge (see oauth.go)
@@ -107,6 +113,9 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	if h.Notifications != nil {
 		h.Notifications.register(limited)
 	}
+	if h.Artifacts != nil {
+		h.Artifacts.register(limited)
+	}
 	var limitedHandler http.Handler = limited
 	if h.RateLimit != nil {
 		limitedHandler = h.RateLimit.Wrap(limited)
@@ -117,6 +126,9 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	mux.Handle("/api/", limitedHandler)
 	mux.Handle("/auth/", limitedHandler)
 	mux.Handle("GET /agent/ws", h.Agents)
+	if h.ArtifactUploads != nil {
+		mux.Handle("PUT /agent/jobs/{id}/artifacts/{name...}", h.ArtifactUploads)
+	}
 	if h.Metrics != nil {
 		mux.Handle("GET /metrics", access.Wrap(h.Metrics))
 	}

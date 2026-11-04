@@ -80,6 +80,6 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 ## Faz 8: Daha hızlı ve daha dolu pipeline'lar
 
 - [x] Paralel adımlar: `.cisid.yml`'de `depends_on`, ilk kırılma diğer adımları durdurur; agent'lar her adımın durumunu ve süresini bildirir, arayüz canlı gösterir ([docs/pipeline.md](docs/tr/pipeline.md#paralel-adımlar)).
-- [ ] Artifact'lar: build'in ürettiği dosyaları saklamak ve job sayfasından indirmek.
+- [x] Artifact'lar: `.cisid.yml`'de `artifacts`; adımlar geçince toplanır, agent yükler, loglarla birlikte PostgreSQL'de saklanır ve job sayfasından indirilir ([docs/pipeline.md](docs/tr/pipeline.md#artifactlar)).
 - [ ] Agent etiketleri: job'ları yalnızca ihtiyaç duyduklarına sahip agent'lara göndermek (ör. `arm64`, `gpu`).
 - [ ] Fork'lardan gelen pull request'ler için onay: build'lerini bir maintainer başlatır.

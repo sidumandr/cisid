@@ -23,6 +23,10 @@ A job's steps (clone, test, chart…) are drawn as segments side by side. A segm
 - On the job page the strip is large and clickable. The UI shows the log of the step you click. When the page opens, it selects the running step; if there is none, the failed step; if there is none either, the last step. While the job runs, the selection follows the currently running step until you click a step.
 - Agents report when each step starts and ends (`step_results`, [api.md](api.md)), so the strip shows steps that run at the same time ([parallel steps](pipeline.md#parallel-steps)) and, on the job page, how long each step took. For jobs run by older agents, the running step is the one whose log arrived last (`current_step`).
 
+## Artifacts
+
+Below the log, the job page lists the files the build kept ([pipeline.md](pipeline.md#artifacts)) with their sizes; clicking one downloads it.
+
 ## Logs
 
 - Logs arrive through an SSE stream ([api.md](api.md#live-stream)). ANSI color codes are stripped, and stderr lines are shown dimmer.

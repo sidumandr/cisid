@@ -51,6 +51,7 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_BUILD_FORKS` | `false` | `true` ise fork'lardan gelen pull request'ler de derlenir; bu job'lara secret verilmez ([webhook.md](webhook.md#pull-requestler)) |
 | `CISID_POLL_INTERVAL` | `1m` | İzlenen branch'lerin yoklanma aralığı, en az `10s`; `0` kapatır ([polling.md](polling.md)) |
 | `CISID_SMTP_HOST`, `CISID_SMTP_PORT`, `CISID_SMTP_TLS`, `CISID_SMTP_USERNAME`, `CISID_SMTP_PASSWORD`, `CISID_SMTP_FROM` | yok, `587`, `starttls` | E-posta bildirimlerinin gittiği SMTP sunucusu; host yoksa e-posta kapalıdır ([notifications.md](notifications.md#e-posta)) |
+| `CISID_ARTIFACT_MAX_SIZE` | `100MB` | Kabul edilen en büyük artifact; byte olarak ya da `KB`, `MB`, `GB` ile (1024'ün kuvvetleri), en fazla `10GB` ([pipeline.md](pipeline.md#artifactlar)) |
 | `CISID_PUBLIC_BADGES` | `false` | `true` ise okumak giriş istese de build rozetlerini herkes görür ([notifications.md](notifications.md#rozetler)) |
 | `CISID_LOG_RETENTION` | `90d` | Biten job'ların loglarının saklanma süresi (`30d`, `72h` gibi). `0` logları sonsuza dek saklar. Süresi dolan loglar saatlik temizlikte silinir, job kaydı kalır. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` vb. | — | Trace'lerin gönderileceği OTLP/HTTP collector. Verilmezse trace kapalıdır ([tracing.md](tracing.md)). |
@@ -64,6 +65,7 @@ Eksik ya da hatalı bütün değerler tek bir hata mesajında raporlanır. Yapı
 | `POST /webhooks/github` | GitHub webhook'ları ([webhook.md](webhook.md)) |
 | `POST /webhooks/{gitea,forgejo,gitlab,bitbucket}` | Diğer sağlayıcıların webhook'ları ([forges.md](forges.md)); secret'ı verilmeyen sağlayıcınınki `404` döner |
 | `GET /agent/ws` | Agent WebSocket bağlantıları ([hub.md](hub.md)) |
+| `PUT /agent/jobs/{id}/artifacts/{name}` | Agent'lardan artifact yüklemeleri, agent token'ıyla ([agent.md](agent.md#job-yürütme)) |
 | `GET /api/jobs/...` | Job'lar, loglar ve canlı log akışı ([api.md](api.md)) |
 | `/api/repos/{owner}/{repo}/secrets` | Repo secret'ları ([secrets.md](secrets.md)) |
 | `/api/repos/{owner}/{repo}/builds`, `…/schedules` | Elle ve zamanlanmış build'ler ([api.md](api.md#elle-ve-zamanlanmış-buildler)) |

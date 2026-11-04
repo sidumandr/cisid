@@ -87,6 +87,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `server.adminUser` | `admin` | The account that `secrets.adminPassword` creates |
 | `server.oauthClientIDs.<forge>` | — | Client ID of the OAuth app; needs its secret and `server.publicURL` (or an ingress) |
 | `server.oauthSignupRole` | — | `viewer` or `maintainer`: forge users without an account get one on their first sign-in |
+| `server.artifactMaxSize` | `100MB` | The largest artifact the server accepts; artifacts are kept in PostgreSQL ([pipeline](../../../docs/pipeline.md#artifacts)) |
 | `server.publicBadges` | `false` | Lets anyone see build badges even when reading needs a sign-in ([notifications](../../../docs/notifications.md#badges)) |
 | `server.smtp.host`, `.port`, `.username`, `.from`, `.tls` | none, `0` (587, or 465 with `tls`), none, none, `starttls` | The SMTP relay for email notifications; `from` is required with a host. The password goes in `secrets.smtpPassword` ([notifications](../../../docs/notifications.md#email)). |
 | `server.pollInterval` | `1m` | Polling interval for watched branches; `0` turns polling off ([polling](../../../docs/polling.md)) |

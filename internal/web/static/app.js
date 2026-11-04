@@ -33,6 +33,7 @@ const ICONS = {
   search: ["M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM20 20l-4.6-4.6"],
   copy: ["M9 9h10v11H9zM5 15V4h10"],
   check: ["M5 12.5l4.5 4.5L19 7.5"],
+  download: ["M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"],
 };
 
 function icon(name, size = 16) {
@@ -100,6 +101,19 @@ function fmtDuration(s) {
 }
 
 const shortSHA = (sha) => (sha || "").slice(0, 7);
+
+// byteSize writes a size for people: 512 B, 1.5 KB, 20.0 MB.
+function byteSize(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(1)} ${units[i]}`;
+}
 
 function matrixLabel(m) {
   return Object.keys(m || {}).sort().map((k) => `${k}=${m[k]}`).join(", ");
@@ -655,7 +669,30 @@ function renderJob(id) {
   const logBody = el("div");
   const pane = el("section", { class: "logs", "aria-label": "Log" },
     el("div", { class: "logs-head" }, el("div", { class: "stack" }, logTitle, logMeta)), logBody);
-  app.replaceChildren(top, facts, steps, pane);
+  const artifacts = el("section", { class: "artifacts", "aria-label": "Artifacts", hidden: true });
+  app.replaceChildren(top, facts, steps, pane, artifacts);
+
+  // showArtifacts lists the files the build kept, once it has finished.
+  let artifactsLoaded = false;
+  async function showArtifacts(j) {
+    if (artifactsLoaded || !FINISHED.has(j.status)) return;
+    artifactsLoaded = true;
+    try {
+      const list = await getJSON(`/api/jobs/${id}/artifacts`);
+      if (!list.length) return;
+      const total = list.reduce((n, a) => n + a.size, 0);
+      artifacts.replaceChildren(
+        el("div", { class: "section-head" }, el("h2", {}, "Artifacts"),
+          el("span", { class: "muted small num" }, `${list.length} ${list.length === 1 ? "file" : "files"}, ${byteSize(total)}`)),
+        el("ul", { class: "artifact-list" }, list.map((a) => el("li", {},
+          el("a", { href: `/api/jobs/${id}/artifacts/${a.name.split("/").map(encodeURIComponent).join("/")}`, download: a.name.split("/").pop() },
+            icon("download", 14), el("span", { class: "artifact-name" }, a.name)),
+          el("span", { class: "num muted" }, byteSize(a.size))))));
+      artifacts.hidden = false;
+    } catch {
+      artifactsLoaded = false; // tried again with the next status
+    }
+  }
 
   function pre(step) {
     let p = logs.get(step);
@@ -766,6 +803,7 @@ function renderJob(id) {
     showHeader(j);
     showFacts(j);
     showSteps(j);
+    showArtifacts(j);
   }
 
   async function act(button, url, openResult) {

@@ -32,6 +32,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../../.cisi
 | `services` | hayır | Adımlardan önce başlatılan en fazla 10 servis ([Servisler](#servisler)) |
 | `matrix` | hayır | Pipeline'ı her değer kombinasyonu için ayrı bir job olarak çalıştırır ([Matrix](#matrix)) |
 | `cache` | hayır | Repo'nun job'ları arasında saklanacak en fazla 10 dizin, mutlak yol olarak ([Önbellek](#önbellek)) |
+| `artifacts` | hayır | Adımlar geçince saklanacak en fazla 20 dosya ya da dizin; workspace'e göre yol, joker karakterler kullanılabilir ([Artifact'lar](#artifactlar)) |
 | `steps[].name` | evet | Harf, rakam, `.`, `_`, `-`. En fazla 63 karakter, benzersiz olmalı. `clone` adı ayrılmıştır. |
 | `steps[].image` | evet | Adımın çalışacağı Docker image'ı. `/bin/sh` içermeli. |
 | `steps[].commands` | evet | Shell komutları |
@@ -165,6 +166,32 @@ steps:
 - En fazla 8 eksen ve 16 kombinasyon olabilir. Eksen adları ortam değişkeni adı olmalıdır, ayrılmış adlar kullanılamaz ve bir adımın `environment` alanıyla çakışamaz.
 - Her kombinasyon GitHub'da kendi commit status'unu alır, örneğin `cisid (GO_VERSION=1.27, POSTGRES=18)` ([commit-status.md](commit-status.md)).
 - Bir matrix job'u yeniden çalıştırılırsa sadece kendi kombinasyonu tekrar koşar.
+
+## Artifact'lar
+
+```yaml
+steps:
+  - name: build
+    image: golang:1.27
+    commands: [go build -o dist/ ./cmd/...]
+  - name: test
+    image: golang:1.27
+    commands: [go test -coverprofile=coverage.out ./...]
+
+artifacts:
+  - dist
+  - coverage.out
+  - reports/*.xml
+```
+
+Bütün adımlar geçince cisid bir adım daha çalıştırır: `artifacts`. Bu adım listelenen dosyaları `/workspace`'ten toplar ve server'a yükler. Dosyalar job sayfasında, her biri için indirme bağlantısıyla listelenir ([ui.md](ui.md)); API'de de bulunur ([api.md](api.md#artifactlar)).
+
+- Yollar `/workspace`'e göredir. `*`, `?` ve `[...]` bir yol parçasının içinde eşleşir (`reports/*.xml`); bir dizin içindeki bütün dosyaları saklar. Hiçbir şeyle eşleşmeyen yol adımın loguna yazılır, job'u kırmaz.
+- Her dosya ayrı bir artifact'tır ve yoluyla adlanır, ör. `dist/app`. Bir job en fazla 100 dosya saklar, her biri en fazla `CISID_ARTIFACT_MAX_SIZE` (varsayılan 100 MB, [server.md](server.md)). Sınırı aşan dosya `artifacts` adımını, dolayısıyla job'u kırar.
+- Bir adım kırılırsa ya da job iptal edilirse artifact toplanmaz.
+- Adım clone image'ında (`alpine/git`) çalışır, logu yüklediği her dosyayı gösterir. `artifacts` adı bu adıma ayrılmıştır.
+- Artifact'lar PostgreSQL'de saklanır ve `CISID_LOG_RETENTION` dolunca job'un loglarıyla birlikte silinir. Veritabanının boyutunu buna göre planlayın.
+- Fork'lardan gelen pull request'ler de artifact saklar; job'u okuyabilen herkes indirebilir.
 
 ## Önbellek
 

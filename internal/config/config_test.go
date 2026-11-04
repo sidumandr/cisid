@@ -49,7 +49,20 @@ func TestLoadDefaults(t *testing.T) {
 		PublicRead:      true,
 		SessionTTL:      7 * 24 * time.Hour,
 		AdminUser:       "admin",
+		ArtifactMaxSize: 100 << 20,
 	}, cfg)
+}
+
+func TestLoadArtifactMaxSize(t *testing.T) {
+	for v, want := range map[string]int64{"512KB": 512 << 10, "250mb": 250 << 20, "2GB": 2 << 30, "1048576": 1 << 20, "10 MB": 10 << 20} {
+		cfg, err := Load(env(with(map[string]string{"CISID_ARTIFACT_MAX_SIZE": v})))
+		require.NoError(t, err, v)
+		assert.Equal(t, want, cfg.ArtifactMaxSize, v)
+	}
+	for _, v := range []string{"lots", "-1MB", "0", "11GB", "1.5GB"} {
+		_, err := Load(env(with(map[string]string{"CISID_ARTIFACT_MAX_SIZE": v})))
+		assert.ErrorContains(t, err, "CISID_ARTIFACT_MAX_SIZE", v)
+	}
 }
 
 func TestLoadAccounts(t *testing.T) {

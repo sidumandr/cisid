@@ -51,6 +51,11 @@ const (
 	traceFlushTimeout = 5 * time.Second
 	deliveryRetention = 8 * 24 * time.Hour
 	expireBatch       = 100
+	// maxArtifacts bounds the artifacts of one job.
+	maxArtifacts = 100
+	// staleUploads is when an artifact upload that never finished is
+	// deleted.
+	staleUploads = 24 * time.Hour
 )
 
 func main() {
@@ -224,6 +229,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Access:    access,
 			Triggers:  triggersAPI,
 			Badges:    api.NewBadgeAPI(store, forges, access, cfg.PublicBadges, log),
+			Artifacts: api.NewArtifactsAPI(store, access, log),
+			ArtifactUploads: agents.ArtifactUploads(store,
+				db.ArtifactLimits{MaxSize: cfg.ArtifactMaxSize, MaxCount: maxArtifacts}),
 			// A nil interface, not a nil *notify.Service, turns it off.
 			Notifications: api.NewNotificationsAPI(notifications, access, log),
 			DB:            store,
@@ -408,8 +416,8 @@ func rateLimiter(cfg config.Config) *api.RateLimiter {
 
 // housekeep runs hourly. It prunes old webhook deliveries, which outlive
 // the 7-day replay window a little so a replay inside it is always caught,
-// forgets expired sessions, and deletes the logs of jobs that finished
-// logRetention ago (0 keeps them).
+// forgets expired sessions and unfinished artifact uploads, and deletes the
+// logs and artifacts of jobs that finished logRetention ago (0 keeps them).
 func housekeep(ctx context.Context, store *db.Store, logRetention time.Duration, log *slog.Logger) error {
 	tick := time.NewTicker(time.Hour)
 	defer tick.Stop()
@@ -424,6 +432,11 @@ func housekeep(ctx context.Context, store *db.Store, logRetention time.Duration,
 			log.WarnContext(pctx, "prune sessions", "error", err)
 		} else if n > 0 {
 			log.InfoContext(pctx, "pruned expired sessions", "count", n)
+		}
+		if n, err := store.PruneArtifacts(pctx, staleUploads); err != nil {
+			log.WarnContext(pctx, "prune unfinished artifact uploads", "error", err)
+		} else if n > 0 {
+			log.InfoContext(pctx, "pruned unfinished artifact uploads", "count", n)
 		}
 		if logRetention > 0 {
 			expireLogs(pctx, store, logRetention, log)

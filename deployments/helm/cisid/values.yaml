@@ -111,6 +111,9 @@ server:
   # Let anyone see build badges, for READMEs, even when reading needs a
   # sign-in. A badge shows only whether a branch's latest build passed.
   publicBadges: false
+  # The largest artifact the server accepts, e.g. 100MB or 1GB. Artifacts
+  # are kept in PostgreSQL, so size the database for them.
+  artifactMaxSize: 100MB
   # The relay notifications are emailed through; email is off without a
   # host. The password goes in secrets.smtpPassword.
   smtp:

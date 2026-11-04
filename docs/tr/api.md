@@ -14,6 +14,8 @@ Server, job'ları ve loglarını bir HTTP API üzerinden sunar (`internal/api/jo
 | `GET /api/jobs/{id}` | Tek job |
 | `GET /api/jobs/{id}/logs?after=0` | `seq` > `after` olan log parçaları, istek başına en fazla 1000 |
 | `GET /api/jobs/{id}/logs/stream` | Canlı log akışı (SSE) |
+| `GET /api/jobs/{id}/artifacts` | Job'un artifact'ları: `name`, `size`, `sha256`, `created_at` ([Artifact'lar](#artifactlar)) |
+| `GET /api/jobs/{id}/artifacts/{name}` | Bir artifact'ın içeriği, indirme olarak |
 | `POST /api/jobs/{id}/cancel` | Job'u iptal et (maintainer) |
 | `POST /api/jobs/{id}/rerun` | Aynı commit için yeni job oluştur (maintainer) |
 
@@ -74,6 +76,14 @@ curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 ## Polling
 
 Webhook'u server'a ulaşamayan sağlayıcılar için branch'ler yoklanabilir: `GET`, `POST /api/repos/{owner}/{repo}/watches` ve `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Ayrıntılar: [polling.md](polling.md).
+
+## Artifact'lar
+
+Build'in sakladığı dosyalar ([pipeline.md](pipeline.md#artifactlar)) job'lar gibi okunur: `GET /api/jobs/{id}/artifacts` listeler, `GET /api/jobs/{id}/artifacts/{name}` birini indirir; addaki `/` olduğu gibi yazılır (`.../artifacts/dist/app`). İndirmeler `application/octet-stream` ve `Content-Disposition: attachment` ile gelir; böylece tarayıcı, içinde ne olursa olsun dosyayı açmak yerine kaydeder. `ETag` içeriğin SHA-256'sıdır.
+
+```bash
+curl -fLO http://localhost:8080/api/jobs/42/artifacts/dist/app
+```
 
 ## Bildirimler ve rozetler
 

@@ -75,7 +75,8 @@ Someone who can push to a repository can read the secrets defined for that repos
 
 - SQL text is never concatenated with request data; all values are sent as query parameters.
 - Secret values, tokens and the database password are not written to the server and agent logs. In the configuration logged at startup, the password in the database URL is hidden as `xxxxx`, and for tokens only whether they are set is logged.
-- Job logs are stored in the database as plain text (in their masked form).
+- Job logs are stored in the database as plain text (in their masked form). So are artifacts, unmasked: a step that writes a secret into a kept file publishes it to everyone who can read the job.
+- Only an agent token uploads artifacts, and only for a job running on the agent that sends it. Names must be clean paths inside the workspace. Downloads are sent as attachments (`application/octet-stream`, `nosniff`, a sandboxing CSP), so an HTML or SVG artifact never runs in the server's origin.
 - Traces carry the repository, branch, commit, step name and image. Secret values, environment variables and step output are not written to spans. User info in the collector address is hidden in logs ([tracing.md](tracing.md)).
 
 ## Production checklist

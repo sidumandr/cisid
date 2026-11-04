@@ -23,6 +23,10 @@ Her job'un adımları (clone, test, chart…) yan yana segmentler olarak çizili
 - Job sayfasında şerit büyüktür ve tıklanır. Tıklanan adımın logu gösterilir. Sayfa açılınca çalışan adım, yoksa kırılan adım, o da yoksa son adım seçilir. Job çalışırken seçim, siz bir adıma tıklayana kadar o an çalışan adımı izler.
 - Agent'lar her adımın ne zaman başlayıp bittiğini bildirir (`step_results`, [api.md](api.md)); böylece şerit aynı anda çalışan adımları ([paralel adımlar](pipeline.md#paralel-adımlar)) ve job sayfasında her adımın ne kadar sürdüğünü gösterir. Eski agent'ların çalıştırdığı job'larda çalışan adım, logu en son akan adımdır (`current_step`).
 
+## Artifact'lar
+
+Job sayfasında logun altında build'in sakladığı dosyalar ([pipeline.md](pipeline.md#artifactlar)) boyutlarıyla listelenir; birine tıklamak onu indirir.
+
 ## Loglar
 
 - Loglar SSE akışıyla gelir ([api.md](api.md#canlı-akış)). ANSI renk kodları temizlenir, stderr satırları daha soluk gösterilir.

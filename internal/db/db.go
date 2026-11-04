@@ -162,9 +162,9 @@ func (s *Store) PruneDeliveries(ctx context.Context, age time.Duration) (int, er
 	return int(tag.RowsAffected()), nil
 }
 
-// ExpireLogs deletes the logs of up to batch jobs that finished more than
-// age ago and returns how many jobs it expired. The jobs themselves stay,
-// marked with logs_expired_at.
+// ExpireLogs deletes the logs and artifacts of up to batch jobs that
+// finished more than age ago and returns how many jobs it expired. The jobs
+// themselves stay, marked with logs_expired_at.
 func (s *Store) ExpireLogs(ctx context.Context, age time.Duration, batch int) (int, error) {
 	const q = `
 		WITH expired AS (
@@ -175,6 +175,8 @@ func (s *Store) ExpireLogs(ctx context.Context, age time.Duration, batch int) (i
 			FOR UPDATE SKIP LOCKED
 		), deleted AS (
 			DELETE FROM job_logs WHERE job_id IN (SELECT id FROM expired)
+		), deleted_artifacts AS (
+			DELETE FROM artifacts WHERE job_id IN (SELECT id FROM expired)
 		)
 		UPDATE jobs SET logs_expired_at = now() WHERE id IN (SELECT id FROM expired)`
 

@@ -87,6 +87,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
 | `server.oauthClientIDs.<sağlayıcı>` | — | OAuth uygulamasının client id'si; secret'ı ve `server.publicURL` (ya da ingress) gerekir |
 | `server.oauthSignupRole` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte hesap açılır |
+| `server.artifactMaxSize` | `100MB` | Server'ın kabul ettiği en büyük artifact; artifact'lar PostgreSQL'de saklanır ([pipeline](../../../docs/tr/pipeline.md#artifactlar)) |
 | `server.publicBadges` | `false` | Okumak giriş istese de build rozetlerini herkese açar ([bildirimler](../../../docs/tr/notifications.md#rozetler)) |
 | `server.smtp.host`, `.port`, `.username`, `.from`, `.tls` | yok, `0` (587, `tls` ile 465), yok, yok, `starttls` | E-posta bildirimleri için SMTP sunucusu; host ile `from` zorunludur. Şifre `secrets.smtpPassword`'e yazılır ([bildirimler](../../../docs/tr/notifications.md#e-posta)). |
 | `server.pollInterval` | `1m` | İzlenen branch'lerin yoklanma aralığı; `0` polling'i kapatır ([polling](../../../docs/tr/polling.md)) |

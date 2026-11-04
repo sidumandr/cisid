@@ -14,6 +14,8 @@ The server exposes jobs and their logs over an HTTP API (`internal/api/jobs.go`)
 | `GET /api/jobs/{id}` | A single job |
 | `GET /api/jobs/{id}/logs?after=0` | Log chunks with `seq` > `after`, at most 1000 per request |
 | `GET /api/jobs/{id}/logs/stream` | Live log stream (SSE) |
+| `GET /api/jobs/{id}/artifacts` | The job's artifacts: `name`, `size`, `sha256`, `created_at` ([Artifacts](#artifacts)) |
+| `GET /api/jobs/{id}/artifacts/{name}` | An artifact's content, as a download |
 | `POST /api/jobs/{id}/cancel` | Cancel the job (maintainer) |
 | `POST /api/jobs/{id}/rerun` | Create a new job for the same commit (maintainer) |
 
@@ -74,6 +76,14 @@ curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 ## Polling
 
 For forges whose webhooks cannot reach the server, branches can be polled: `GET`, `POST /api/repos/{owner}/{repo}/watches` and `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Details: [polling.md](polling.md).
+
+## Artifacts
+
+The files a build kept ([pipeline.md](pipeline.md#artifacts)) are read like jobs: `GET /api/jobs/{id}/artifacts` lists them, and `GET /api/jobs/{id}/artifacts/{name}` downloads one, with the `/` in its name as it is (`.../artifacts/dist/app`). Downloads come as `application/octet-stream` with `Content-Disposition: attachment`, so a browser saves them instead of opening them, whatever they contain. The `ETag` is the content's SHA-256.
+
+```bash
+curl -fLO http://localhost:8080/api/jobs/42/artifacts/dist/app
+```
 
 ## Notifications and badges
 

@@ -31,6 +31,7 @@ const (
 	// workspacePath is where agents mount the job's checkout.
 	workspacePath = "/workspace"
 	maxServices   = 10
+	maxArtifacts  = 20
 )
 
 var (
@@ -79,6 +80,9 @@ type Config struct {
 	// for the steps they name (and clone), and the others run at the same
 	// time. Without it, steps run one after another.
 	Parallel bool
+	// Artifacts lists the files kept once the steps pass: paths relative to
+	// the workspace, with shell wildcards; a directory keeps every file in it.
+	Artifacts []string
 }
 
 // Service is a container started before the steps and stopped after them.
@@ -124,10 +128,11 @@ func (s Step) RunsFor(job models.Job) bool {
 var events = []string{models.EventPush, models.EventPullRequest, models.EventManual, models.EventSchedule}
 
 type rawConfig struct {
-	Steps    []rawStep             `yaml:"steps"`
-	Services []rawService          `yaml:"services"`
-	Matrix   map[string]stringList `yaml:"matrix"`
-	Cache    []string              `yaml:"cache"`
+	Steps     []rawStep             `yaml:"steps"`
+	Services  []rawService          `yaml:"services"`
+	Matrix    map[string]stringList `yaml:"matrix"`
+	Cache     []string              `yaml:"cache"`
+	Artifacts []string              `yaml:"artifacts"`
 }
 
 type rawService struct {
@@ -165,6 +170,26 @@ func validateCache(paths []string) []error {
 			problems = append(problems, fmt.Errorf("cache[%d]: %q cannot be cached", i, p))
 		case seen[p]:
 			problems = append(problems, fmt.Errorf("cache[%d]: %q is listed twice", i, p))
+		}
+		seen[p] = true
+	}
+	return problems
+}
+
+// validateArtifacts checks the artifact paths: clean relative paths inside
+// the workspace, each once.
+func validateArtifacts(paths []string) []error {
+	var problems []error
+	if len(paths) > maxArtifacts {
+		problems = append(problems, fmt.Errorf("artifacts: at most %d paths are allowed, got %d", maxArtifacts, len(paths)))
+	}
+	seen := map[string]bool{}
+	for i, p := range paths {
+		switch {
+		case !models.ValidArtifactName(p):
+			problems = append(problems, fmt.Errorf("artifacts[%d]: %q must be a clean path inside the workspace, like dist/*.tar.gz", i, p))
+		case seen[p]:
+			problems = append(problems, fmt.Errorf("artifacts[%d]: %q is listed twice", i, p))
 		}
 		seen[p] = true
 	}
@@ -209,6 +234,8 @@ func ParseConfig(data []byte) (Config, error) {
 	}
 	problems = append(problems, validateCache(raw.Cache)...)
 	cfg.Cache = raw.Cache
+	problems = append(problems, validateArtifacts(raw.Artifacts)...)
+	cfg.Artifacts = raw.Artifacts
 	for i, rs := range raw.Steps {
 		bad := func(format string, args ...any) {
 			problems = append(problems, fmt.Errorf("steps[%d]: "+format, append([]any{i}, args...)...))
@@ -217,7 +244,7 @@ func ParseConfig(data []byte) (Config, error) {
 		switch {
 		case rs.Name == "":
 			bad("name is required")
-		case rs.Name == cloneStepName:
+		case rs.Name == cloneStepName, rs.Name == artifactsStepName:
 			bad("name %q is reserved", rs.Name)
 		case !stepNameRe.MatchString(rs.Name):
 			bad("name %q may only contain letters, digits, '.', '_' and '-'", rs.Name)

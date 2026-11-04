@@ -75,7 +75,8 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 - SQL metni hiçbir zaman istek verisiyle birleştirilmez, tüm değerler sorgu parametresi olarak gönderilir.
 - Secret değerleri, token'lar ve veritabanı şifresi server ve agent loglarına yazılmaz. Başlangıçta yazılan yapılandırmada veritabanı adresinin şifresi `xxxxx` ile gizlenir, token'lar için yalnızca tanımlı olup olmadıkları yazılır.
-- Job logları veritabanında açık metin olarak saklanır (maskelenmiş hâliyle).
+- Job logları veritabanında açık metin olarak saklanır (maskelenmiş hâliyle). Artifact'lar da saklanır, maskelenmeden: saklanan bir dosyaya secret yazan adım onu job'u okuyabilen herkese açar.
+- Artifact'ları yalnızca agent token'ı yükler, ve yalnızca gönderen agent'ta çalışan job için. Adlar workspace içinde temiz yollar olmalıdır. İndirmeler ek dosya olarak gönderilir (`application/octet-stream`, `nosniff`, sandbox'lı bir CSP); böylece bir HTML ya da SVG artifact server'ın origin'inde hiçbir zaman çalışmaz.
 - Trace'ler repo, branch, commit, adım adı ve image bilgisi taşır. Secret değerleri, ortam değişkenleri ve adım çıktısı span'lara yazılmaz. Collector adresindeki kullanıcı bilgisi loglarda gizlenir ([tracing.md](tracing.md)).
 
 ## Production kontrol listesi

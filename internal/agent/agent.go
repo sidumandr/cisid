@@ -91,9 +91,11 @@ type Agent struct {
 	runner StepRunner
 	log    *slog.Logger
 	client *http.Client
-	tracer trace.Tracer
-	out    *outbox
-	busy   atomic.Bool
+	// artifacts is where artifacts are uploaded under.
+	artifacts *url.URL
+	tracer    trace.Tracer
+	out       *outbox
+	busy      atomic.Bool
 	// runningJob is the job accepted last whose result the server has not
 	// yet acknowledged; 0 when there is none. Reported in the hello.
 	runningJob atomic.Int64
@@ -135,8 +137,12 @@ func New(cfg Config, r StepRunner, log *slog.Logger) (*Agent, error) {
 	if tp == nil {
 		tp = noop.NewTracerProvider()
 	}
+	artifacts, err := artifactsBase(cfg.ServerURL)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidConfig, err)
+	}
 	return &Agent{
-		cfg: cfg, runner: r, log: log, client: newHTTPClient(cfg.TLS), tracer: tp.Tracer(tracerName),
+		cfg: cfg, runner: r, log: log, client: newHTTPClient(cfg.TLS), artifacts: artifacts, tracer: tp.Tracer(tracerName),
 		out: newOutbox(outboxSize), cancelLater: map[int64]bool{},
 	}, nil
 }

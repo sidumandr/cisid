@@ -12,6 +12,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/sidumandr/cisid/internal/forge"
 	"github.com/sidumandr/cisid/internal/secrets"
@@ -24,6 +25,9 @@ const DefaultCloneImage = "alpine/git:2.52.0"
 const (
 	cloneStepName       = "clone"
 	cloneTimeoutSeconds = 600
+	// artifactsStepName collects the artifacts once the other steps pass.
+	artifactsStepName       = "artifacts"
+	artifactsTimeoutSeconds = 600
 )
 
 var (
@@ -150,6 +154,16 @@ func (p Planner) steps(ctx context.Context, job models.Job, cfg Config, combo ma
 	}
 	if cfg.Parallel {
 		setDependencies(cfg, steps)
+	}
+	if len(cfg.Artifacts) > 0 {
+		collect := p.artifactsStep(job, cfg)
+		if cfg.Parallel {
+			// It needs every other step to have passed.
+			for i := range steps {
+				collect.DependsOn = append(collect.DependsOn, i)
+			}
+		}
+		steps = append(steps, collect)
 	}
 
 	var services []models.ServiceSpec
@@ -308,6 +322,38 @@ func (p Planner) cloneStep(job models.Job) models.StepSpec {
 		env["GIT_CONFIG_VALUE_0"] = credentialHelper
 		env["CISID_CLONE_USER"] = user
 		step.Secrets = map[string]string{"CISID_CLONE_TOKEN": token}
+	}
+	return step
+}
+
+// artifactsScript writes a tar stream of the files the paths in
+// CISID_ARTIFACT_PATHS (one per line) match to stdout. The paths come from
+// the environment, never the script, and only newlines split them. Without
+// CISID_ARTIFACT_UPLOAD=1, set by agents that upload, it only lists them.
+var artifactsScript = []string{
+	"IFS='\n'",
+	"list=$(mktemp)",
+	`for match in $CISID_ARTIFACT_PATHS; do if [ -d "$match" ]; then find "$match" -type f >> "$list"; elif [ -f "$match" ]; then printf '%s\n' "$match" >> "$list"; else echo "no file matches $match" >&2; fi; done`,
+	`if [ ! -s "$list" ]; then echo "no artifacts found" >&2; exit 0; fi`,
+	`if [ "$CISID_ARTIFACT_UPLOAD" != 1 ]; then echo "this agent does not upload artifacts; update it" >&2; cat "$list" >&2; exit 0; fi`,
+	`tar -cf - -T "$list"`,
+}
+
+// artifactsStep collects the artifacts once every other step has passed.
+func (p Planner) artifactsStep(job models.Job, cfg Config) models.StepSpec {
+	image := p.CloneImage
+	if image == "" {
+		image = DefaultCloneImage
+	}
+	env := jobEnv(job)
+	env["CISID_ARTIFACT_PATHS"] = strings.Join(cfg.Artifacts, "\n")
+	step := models.StepSpec{
+		Name:           artifactsStepName,
+		Image:          image,
+		Commands:       artifactsScript,
+		Env:            env,
+		TimeoutSeconds: artifactsTimeoutSeconds,
+		Artifacts:      true,
 	}
 	return step
 }

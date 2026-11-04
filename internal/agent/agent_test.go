@@ -94,6 +94,35 @@ type fakeServer struct {
 	noAck atomic.Bool
 	// token, if set, is required from agents.
 	token string
+	// uploads are the artifacts agents uploaded; uploadStatus, if set,
+	// answers them instead of 201.
+	uploadMu     sync.Mutex
+	uploads      []upload
+	uploadStatus int
+}
+
+type upload struct {
+	path, agent, auth, body string
+	length                  int64
+}
+
+func (fs *fakeServer) handleUpload(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	fs.uploadMu.Lock()
+	defer fs.uploadMu.Unlock()
+	fs.uploads = append(fs.uploads, upload{path: r.URL.Path, agent: r.Header.Get(agentHeader),
+		auth: r.Header.Get("Authorization"), body: string(body), length: r.ContentLength})
+	if fs.uploadStatus != 0 {
+		http.Error(w, "artifact too large", fs.uploadStatus)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (fs *fakeServer) uploaded() []upload {
+	fs.uploadMu.Lock()
+	defer fs.uploadMu.Unlock()
+	return append([]upload(nil), fs.uploads...)
 }
 
 type serverConn struct {
@@ -114,6 +143,10 @@ func newFakeServer(t *testing.T) *fakeServer {
 	t.Helper()
 	fs := &fakeServer{conns: make(chan *serverConn, 10)}
 	fs.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			fs.handleUpload(w, r)
+			return
+		}
 		attempt := int(fs.dials.Add(1))
 		if fs.reject != nil && fs.reject(attempt) {
 			http.Error(w, "starting up", http.StatusServiceUnavailable)

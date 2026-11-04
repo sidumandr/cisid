@@ -209,6 +209,10 @@
         "publicBadges": {
           "type": "boolean"
         },
+        "artifactMaxSize": {
+          "type": "string",
+          "pattern": "^[0-9]+ ?([KMG]B|B)?$"
+        },
         "smtp": {
           "type": "object",
           "additionalProperties": false,

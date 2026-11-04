@@ -52,6 +52,8 @@ Each message is a JSON envelope. The types are in `pkg/models/protocol.go`.
 
 ## Job execution
 
+- **Artifacts:** The `artifacts` step writes a tar stream of the files to keep to its stdout. The agent does not log it: it uploads each file as it arrives with `PUT /agent/jobs/{id}/artifacts/{name}` on the server, over HTTP(S) at the address of its WebSocket endpoint, with its token and its name in `X-Cisid-Agent`. The server accepts files only for a job running on that agent. A refused upload fails the step ([pipeline.md](pipeline.md#artifacts)).
+
 - The agent runs **one** job at a time. It answers an assignment that arrives while it is busy with `job_rejected`. It also answers an assignment that arrives during shutdown with `job_rejected`, with the reason `"agent shutting down"`.
 - If the assignment has services, the agent first creates a Docker network for the job and starts the services on that network, with their names as host names. Steps run on the same network. When the job ends, the services and the network are removed ([pipeline.md](pipeline.md#services)).
 - Steps run in order, and the job stops at the first failing step.

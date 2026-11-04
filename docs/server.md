@@ -51,6 +51,7 @@ To run PostgreSQL, the server and the agent together as containers, see [deploym
 | `CISID_BUILD_FORKS` | `false` | If `true`, pull requests from forks are built too; these jobs get no secrets ([webhook.md](webhook.md#pull-requests)) |
 | `CISID_POLL_INTERVAL` | `1m` | How often watched branches are polled, at least `10s`; `0` turns polling off ([polling.md](polling.md)) |
 | `CISID_SMTP_HOST`, `CISID_SMTP_PORT`, `CISID_SMTP_TLS`, `CISID_SMTP_USERNAME`, `CISID_SMTP_PASSWORD`, `CISID_SMTP_FROM` | none, `587`, `starttls` | The SMTP relay email notifications go through; without a host, email is off ([notifications.md](notifications.md#email)) |
+| `CISID_ARTIFACT_MAX_SIZE` | `100MB` | The largest artifact accepted, as bytes or with `KB`, `MB`, `GB` (powers of 1024), at most `10GB` ([pipeline.md](pipeline.md#artifacts)) |
 | `CISID_PUBLIC_BADGES` | `false` | If `true`, anyone can see build badges even when reading needs a sign-in ([notifications.md](notifications.md#badges)) |
 | `CISID_LOG_RETENTION` | `90d` | How long the logs of finished jobs are kept (such as `30d`, `72h`). `0` keeps logs forever. Expired logs are deleted in the hourly cleanup; the job record stays. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` etc. | — | The OTLP/HTTP collector to send traces to. If unset, tracing is off ([tracing.md](tracing.md)). |
@@ -64,6 +65,7 @@ All missing or invalid values are reported in a single error message. When the c
 | `POST /webhooks/github` | GitHub webhooks ([webhook.md](webhook.md)) |
 | `POST /webhooks/{gitea,forgejo,gitlab,bitbucket}` | Webhooks from the other forges ([forges.md](forges.md)); a forge whose secret is not set returns `404` |
 | `GET /agent/ws` | Agent WebSocket connections ([hub.md](hub.md)) |
+| `PUT /agent/jobs/{id}/artifacts/{name}` | Artifact uploads from agents, with the agent token ([agent.md](agent.md#job-execution)) |
 | `GET /api/jobs/...` | Jobs, logs and the live log stream ([api.md](api.md)) |
 | `/api/repos/{owner}/{repo}/secrets` | Repository secrets ([secrets.md](secrets.md)) |
 | `/api/repos/{owner}/{repo}/builds`, `…/schedules` | Manual and scheduled builds ([api.md](api.md#manual-and-scheduled-builds)) |

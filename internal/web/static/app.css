@@ -483,6 +483,15 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
   overflow-wrap: anywhere;
 }
 .logs pre .err { color: var(--muted); }
+
+/* ---------- artifacts: the files a build kept ---------- */
+.artifacts { margin-top: 24px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.artifact-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--border); }
+.artifact-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; border-bottom: 1px solid var(--rule); }
+.artifact-list a { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--text); text-decoration: none; }
+.artifact-list a:hover .artifact-name { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.artifact-name { font-family: var(--mono); font-size: var(--fs-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .logs-note { margin: 0; padding: 16px; color: var(--muted); }
 .logs-error { padding: 12px 16px 0; color: var(--negative); }
 

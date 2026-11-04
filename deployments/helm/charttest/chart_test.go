@@ -410,6 +410,7 @@ func TestNotificationSettingsReachTheServer(t *testing.T) {
 	assert.Equal(t, "smtp-password", env(c, "CISID_SMTP_PASSWORD").ValueFrom.SecretKeyRef.Key)
 	assert.Equal(t, "smtp-secret", string(m.secrets["ci-cisid"].Data["smtp-password"]))
 	assert.Equal(t, "true", env(c, "CISID_PUBLIC_BADGES").Value)
+	assert.Equal(t, "100MB", env(c, "CISID_ARTIFACT_MAX_SIZE").Value, "the default")
 
 	m = render(t, with(vals, "server.smtp.port", 2525))
 	assert.Equal(t, "2525", env(container(t, m.server(t).Spec.Template.Spec, "server"), "CISID_SMTP_PORT").Value)
@@ -422,6 +423,8 @@ func TestNotificationSettingsReachTheServer(t *testing.T) {
 	_, err := renderFiles(with(required(), "server.smtp.host", "smtp.example.com"))
 	assert.ErrorContains(t, err, "server.smtp.from is required")
 	_, err = renderFiles(with(required(), "server.smtp.tls", "ssl"))
+	assert.ErrorContains(t, err, "values don't meet the specifications of the schema")
+	_, err = renderFiles(with(required(), "server.artifactMaxSize", "a lot"))
 	assert.ErrorContains(t, err, "values don't meet the specifications of the schema")
 }
 
