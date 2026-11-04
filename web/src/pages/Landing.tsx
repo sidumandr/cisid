@@ -10,7 +10,7 @@ import { useMe } from "../lib/session";
 import type { Job } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { Icon } from "../ui/Icon";
-import { Wordmark } from "../ui/Logo";
+import { LogoMark, Wordmark } from "../ui/Logo";
 import { useTheme } from "../ui/Shell";
 import { Pill, Strip } from "../ui/parts";
 
@@ -242,6 +242,7 @@ export function Landing() {
           </div>
           {/* The cisid mark, large, behind the glass the builds sit on. */}
           <div className="hero-visual">
+            <span className="hero-logo" aria-hidden="true"><LogoMark size={640} /></span>
             <LiveBuilds publicRead={me.public_read} />
           </div>
         </section>
@@ -296,21 +297,24 @@ export function Landing() {
         </section>
 
         <section className="cta" aria-labelledby="cta-title">
-          <div>
-            <h2 id="cta-title">{signupOpen ? "Start building here." : "Sign in to build."}</h2>
-            <p>
-              {me.signup === "first"
-                ? "Create the first account. It can add your team, connect forges and run the first build."
-                : signupOpen
-                  ? "Create an account, or sign in with the one you have."
-                  : me.providers?.length
-                    ? "Accounts on this server are made by its admins. Sign in with yours, or through your forge."
-                    : "Accounts on this server are made by its admins. Sign in with yours."}
-            </p>
-          </div>
-          <div className="hero-actions">
-            {primary}
-            {signupOpen ? <Link className="btn big" to="/login">Sign in</Link> : null}
+          <span className="cta-logo" aria-hidden="true"><LogoMark size={560} /></span>
+          <div className="cta-card">
+            <div>
+              <h2 id="cta-title">{signupOpen ? "Start building here." : "Sign in to build."}</h2>
+              <p>
+                {me.signup === "first"
+                  ? "Create the first account. It can add your team, connect forges and run the first build."
+                  : signupOpen
+                    ? "Create an account, or sign in with the one you have."
+                    : me.providers?.length
+                      ? "Accounts on this server are made by its admins. Sign in with yours, or through your forge."
+                      : "Accounts on this server are made by its admins. Sign in with yours."}
+              </p>
+            </div>
+            <div className="hero-actions">
+              {primary}
+              {signupOpen ? <Link className="btn big" to="/login">Sign in</Link> : null}
+            </div>
           </div>
         </section>
       </main>

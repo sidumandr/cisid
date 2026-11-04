@@ -108,33 +108,30 @@
 .hero-actions .text-action { color: var(--muted); }
 .hero-note { margin: 24px 0 0; max-width: 44ch; color: var(--accent-text); }
 
-/* The latest builds sit on glass, over the cisid mark set large: two
-   steps passed and one running, blurred where the glass covers them. */
+/* The latest builds sit on glass, over the cisid mark set large and
+   softened, so it shows through the glass as a blur. */
+.hero-visual, .cta { --glass-thin: color-mix(in srgb, var(--raised) 58%, transparent); }
 .hero-visual { position: relative; isolation: isolate; }
-.hero-visual::before {
-  content: "";
+.hero-logo {
   position: absolute;
   z-index: -1;
-  top: 16%;
-  left: -6%;
+  top: 50%;
+  left: 50%;
   width: 112%;
-  height: 44%;
-  border-radius: 14px;
-  background: linear-gradient(90deg,
-    var(--positive) 0 32%, transparent 32% 34%,
-    var(--positive) 34% 66%, transparent 66% 68%,
-    var(--accent) 68% 100%);
-  opacity: 0.75;
-  transform: rotate(-6deg);
+  transform: translate(-50%, -50%);
+  filter: blur(3px);
+  opacity: 0.9;
+  pointer-events: none;
 }
+.hero-logo svg { display: block; width: 100%; height: auto; }
 .hero-screen {
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--glass-edge);
   border-radius: 14px;
-  background: var(--glass-raised);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
-  backdrop-filter: blur(28px) saturate(150%);
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
 }
 .hero-screen figcaption,
 .yaml figcaption {
@@ -160,7 +157,7 @@
   margin: 0;
   padding: 18px 20px 20px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
   font-family: var(--mono);
   font-size: var(--fs-mono);
   line-height: 1.65;
@@ -215,27 +212,41 @@
 .feature-col li { position: relative; padding-left: 16px; line-height: 1.45; }
 .feature-col li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 6px; height: 6px; background: var(--positive); }
 
-/* ---------- call to action: a field of orange ---------- */
+/* ---------- call to action: the same glass as the builds, over the mark ---------- */
 .cta {
+  position: relative;
+  isolation: isolate;
+  max-width: calc(var(--site-max) - 2 * var(--site-pad));
+  margin: 0 auto clamp(64px, 8vw, 112px);
+}
+.site .cta { width: calc(100% - 2 * var(--site-pad)); }
+.cta-logo {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: 4%;
+  width: min(520px, 46%);
+  transform: translateY(-50%);
+  filter: blur(3px);
+  opacity: 0.9;
+  pointer-events: none;
+}
+.cta-logo svg { display: block; width: 100%; height: auto; }
+.cta-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  max-width: calc(var(--site-max) - 2 * var(--site-pad));
-  margin: 0 auto clamp(64px, 8vw, 112px);
   padding: clamp(32px, 5vw, 64px);
-  border-radius: 12px;
-  background: var(--accent);
-  color: var(--on-accent);
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  background: var(--glass-thin);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
 }
-.site .cta { width: calc(100% - 2 * var(--site-pad)); }
 .cta h2 { max-width: 18ch; }
-.cta p { max-width: 48ch; margin: 14px 0 0; font-size: var(--fs-lead); }
+.cta p { max-width: 48ch; margin: 14px 0 0; color: var(--muted); font-size: var(--fs-lead); }
 .cta .hero-actions { margin-top: 0; flex: none; }
-.cta .btn { border-color: var(--on-accent); color: var(--on-accent); }
-.cta .btn:hover { background: color-mix(in srgb, var(--on-accent) 12%, transparent); }
-.cta .btn.primary { background: var(--on-accent); color: var(--accent); }
-.cta .btn.primary:hover { background: var(--on-accent); color: var(--text); }
 
 .site-foot {
   display: flex;
@@ -334,7 +345,8 @@
   .hero, .pipeline { grid-template-columns: minmax(0, 1fr); }
   .hero h1 { max-width: 16ch; }
   .flow-steps, .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 24px; }
-  .cta { flex-direction: column; align-items: flex-start; }
+  .cta-card { flex-direction: column; align-items: flex-start; }
+  .cta-logo { right: 50%; width: min(520px, 92%); transform: translate(50%, -50%); }
 }
 @media (max-width: 760px) {
   .site-nav nav { gap: 8px; }
