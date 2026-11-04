@@ -190,7 +190,7 @@ func badgeSVG(state string) string {
 		`<clipPath id="r"><rect width="%d" height="20" rx="3"/></clipPath>`+
 		`<g clip-path="url(#r)"><rect width="%d" height="20" fill="#0d0d0d"/><rect x="%d" width="%d" height="20" fill="%s"/></g>`+
 		`<g font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11" text-anchor="middle">`+
-		`<text x="%.1f" y="14" fill="#ff8a47" textLength="%d">cisid</text>`+
+		`<text x="%.1f" y="14" fill="#f26b1d" textLength="%d">cisid</text>`+
 		`<text x="%.1f" y="14" fill="#ffffff" textLength="%d">%s</text>`+
 		`</g></svg>`,
 		w, state, state, w, badgeLabelWidth, badgeLabelWidth, s.width, s.color,

@@ -30,14 +30,14 @@
   --text: #f5f5f5;
   --muted: #b4b4b4;
   --faint: #8a8c92;
-  --accent: #ff6b1a;
-  --accent-text: #ff8a47;      /* orange as text, 4.5:1 or more on the ground */
+  --accent: #f26b1d;           /* the logo's orange, on dark ground */
+  --accent-text: #f26b1d;      /* orange as text, 4.5:1 or more on the ground (6.4:1) */
   --on-accent: #0d0d0d;
   --positive: #3fc07a;
   --negative: #e5566f;
   --pill-positive-bg: #12251a; --pill-positive-ink: #3fc07a;
   --pill-negative-bg: #2c1a20; --pill-negative-ink: #f07186;
-  --pill-running-bg: #2b1a0c;  --pill-running-ink: #ff8a47;
+  --pill-running-bg: #2d1a0f;  --pill-running-ink: #f26b1d;
   --pill-neutral-bg: #1c1c1c;  --pill-neutral-ink: #b4b4b4;
   --seg-idle: #2a2a2a;
   --brand: #f26b1d;
@@ -72,14 +72,14 @@
   --text: #111111;
   --muted: #55595e;
   --faint: #6b6b6b;
-  --accent: #f2620f;
-  --accent-text: #b34a00;
+  --accent: #e0560b;           /* the logo's orange, on light ground */
+  --accent-text: #b84508;      /* the same orange, darker, for text: 5.4:1 on white */
   --on-accent: #111111;
   --positive: #1f7a4a;
   --negative: #c4242a;
   --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
   --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
-  --pill-running-bg: #fff0e3;  --pill-running-ink: #8a3a00;
+  --pill-running-bg: #fceee7;  --pill-running-ink: #b84508;
   --pill-neutral-bg: #efefef;  --pill-neutral-ink: #3d3d3d;
   --seg-idle: #e2e2e2;
   --brand: #e0560b;
@@ -101,14 +101,14 @@
     --text: #111111;
     --muted: #55595e;
     --faint: #6b6b6b;
-    --accent: #f2620f;
-    --accent-text: #b34a00;
+    --accent: #e0560b;
+    --accent-text: #b84508;
     --on-accent: #111111;
     --positive: #1f7a4a;
     --negative: #c4242a;
     --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
     --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
-    --pill-running-bg: #fff0e3;  --pill-running-ink: #8a3a00;
+    --pill-running-bg: #fceee7;  --pill-running-ink: #b84508;
     --pill-neutral-bg: #efefef;  --pill-neutral-ink: #3d3d3d;
     --seg-idle: #e2e2e2;
     --brand: #e0560b;
@@ -251,7 +251,7 @@ h2 { margin: 0; font-size: var(--fs-section); line-height: 22px; font-weight: 60
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.6; cursor: progress; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.btn.primary:hover { background: var(--accent-text); border-color: var(--accent-text); }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, var(--text)); border-color: color-mix(in srgb, var(--accent) 86%, var(--text)); }
 .btn.danger { color: var(--negative); }
 .btn.small { height: var(--control-height); padding: 0 12px; }
 
