@@ -82,4 +82,4 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Paralel adımlar: `.cisid.yml`'de `depends_on`, ilk kırılma diğer adımları durdurur; agent'lar her adımın durumunu ve süresini bildirir, arayüz canlı gösterir ([docs/pipeline.md](docs/tr/pipeline.md#paralel-adımlar)).
 - [x] Artifact'lar: `.cisid.yml`'de `artifacts`; adımlar geçince toplanır, agent yükler, loglarla birlikte PostgreSQL'de saklanır ve job sayfasından indirilir ([docs/pipeline.md](docs/tr/pipeline.md#artifactlar)).
 - [x] Agent etiketleri: `.cisid.yml`'de `labels`, agent'larda `CISID_AGENT_LABELS`; job yalnızca bütün etiketlere sahip agent'lara gider ([docs/pipeline.md](docs/tr/pipeline.md#etiketler)).
-- [ ] Fork'lardan gelen pull request'ler için onay: build'lerini bir maintainer başlatır.
+- [x] Fork'lardan gelen pull request'ler için onay: `CISID_BUILD_FORKS=approve` ile her fork commit'ini çalışmadan önce bir maintainer onaylar ([docs/webhook.md](docs/tr/webhook.md#pull-requestler)).

@@ -4,7 +4,7 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1–7 tamam, Faz 8 sürüyor. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/tr/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.tr.md).
+> Durum: Faz 1–8 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/tr/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.tr.md).
 
 ## Dokümanlar
 

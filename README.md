@@ -4,7 +4,7 @@
 
 A self-hosted, Docker-based CI/CD system written in Go.
 
-> Status: Phases 1–7 are done; phase 8 is under way. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
+> Status: Phases 1–8 are done. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 

@@ -428,6 +428,16 @@ func TestNotificationSettingsReachTheServer(t *testing.T) {
 	assert.ErrorContains(t, err, "values don't meet the specifications of the schema")
 }
 
+func TestForkApproval(t *testing.T) {
+	forks := func(vals map[string]any) string {
+		return env(container(t, render(t, vals).server(t).Spec.Template.Spec, "server"), "CISID_BUILD_FORKS").Value
+	}
+	assert.Equal(t, "false", forks(required()))
+	assert.Equal(t, "true", forks(with(required(), "server.buildForks", true)))
+	assert.Equal(t, "approve", forks(with(with(required(), "server.buildForks", true), "server.approveForks", true)))
+	assert.Equal(t, "false", forks(with(required(), "server.approveForks", true)), "approval alone builds nothing")
+}
+
 func TestAgentLabels(t *testing.T) {
 	m := render(t, with(required(), "agent.labels", []any{"arm64", "gpu"}))
 	c := container(t, m.agent(t).Spec.Template.Spec, "agent")

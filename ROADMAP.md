@@ -82,4 +82,4 @@ Goal: logs stream live, and dropped connections lose no work.
 - [x] Parallel steps: `depends_on` in `.cisid.yml`, the first failure stops the other steps; agents report each step's state and duration, shown live in the UI ([docs/pipeline.md](docs/pipeline.md#parallel-steps)).
 - [x] Artifacts: `artifacts` in `.cisid.yml`, collected once the steps pass, uploaded by the agent, kept in PostgreSQL with the logs and downloaded from the job page ([docs/pipeline.md](docs/pipeline.md#artifacts)).
 - [x] Agent labels: `labels` in `.cisid.yml` and `CISID_AGENT_LABELS` on agents; a job goes only to agents that have every label ([docs/pipeline.md](docs/pipeline.md#labels)).
-- [ ] Approval for pull requests from forks: a maintainer starts their builds.
+- [x] Approval for pull requests from forks: with `CISID_BUILD_FORKS=approve` a maintainer approves each fork commit before it runs ([docs/webhook.md](docs/webhook.md#pull-requests)).

@@ -104,6 +104,26 @@ func TestWebhookPullRequestFromFork(t *testing.T) {
 	}
 }
 
+func TestWebhookPullRequestFromForkNeedsApproval(t *testing.T) {
+	store := &mockJobCreator{}
+	store.On("QueueJob", mock.Anything, mock.MatchedBy(func(j models.Job) bool {
+		return j.Fork && j.NeedsApproval
+	}), mock.Anything, mock.Anything).Return(int64(11), nil).Once()
+	rec := deliver(t, prHandler(t, store, WithForkBuilds(true), WithForkApproval(true)), "pull_request",
+		prPayload(t, "opened", "someone/cisid"))
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	store.AssertExpectations(t)
+
+	own := &mockJobCreator{}
+	own.On("QueueJob", mock.Anything, mock.MatchedBy(func(j models.Job) bool {
+		return !j.Fork && !j.NeedsApproval
+	}), mock.Anything, mock.Anything).Return(int64(12), nil).Once()
+	rec = deliver(t, prHandler(t, own, WithForkBuilds(true), WithForkApproval(true)), "pull_request",
+		prPayload(t, "opened", "sidumandr/cisid"))
+	assert.Equal(t, http.StatusAccepted, rec.Code, "the repository's own branches need no approval")
+	own.AssertExpectations(t)
+}
+
 func TestWebhookPullRequestIgnoredEvents(t *testing.T) {
 	store := &mockJobCreator{}
 	h := prHandler(t, store)

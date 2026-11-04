@@ -84,6 +84,10 @@ type Job struct {
 	// Labels are what an agent needs to run the job, once a planning found
 	// that the agent it was planned on lacks them.
 	Labels []string `json:"labels,omitempty"`
+	// NeedsApproval holds a pending job from a fork until a maintainer
+	// approves it; ApprovedBy is who did.
+	NeedsApproval bool   `json:"needs_approval,omitempty"`
+	ApprovedBy    string `json:"approved_by,omitempty"`
 }
 
 // Schedule builds the head of a branch at the times its cron spec matches.

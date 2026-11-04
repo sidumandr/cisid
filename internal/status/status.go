@@ -214,6 +214,9 @@ func Describe(job models.Job) forge.CommitStatus {
 	switch job.Status {
 	case models.JobStatusPending:
 		st.State, st.Description = forge.StatePending, "Waiting for an agent"
+		if job.NeedsApproval {
+			st.Description = "Waiting for a maintainer to approve the build"
+		}
 	case models.JobStatusRunning:
 		st.State, st.Description = forge.StateRunning, "Running on "+job.Agent
 	case models.JobStatusSuccess:

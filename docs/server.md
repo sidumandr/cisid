@@ -48,7 +48,7 @@ To run PostgreSQL, the server and the agent together as containers, see [deploym
 | `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` or `maintainer`: forge users without an account get one |
 | `CISID_SECRET_KEY` | — | 32-byte key that encrypts secrets, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | The URL users reach the server at. Used in commit status links ([commit-status.md](commit-status.md)). |
-| `CISID_BUILD_FORKS` | `false` | If `true`, pull requests from forks are built too; these jobs get no secrets ([webhook.md](webhook.md#pull-requests)) |
+| `CISID_BUILD_FORKS` | `false` | If `true`, pull requests from forks are built too; these jobs get no secrets. `approve` builds them once a maintainer approves each ([webhook.md](webhook.md#pull-requests)) |
 | `CISID_POLL_INTERVAL` | `1m` | How often watched branches are polled, at least `10s`; `0` turns polling off ([polling.md](polling.md)) |
 | `CISID_SMTP_HOST`, `CISID_SMTP_PORT`, `CISID_SMTP_TLS`, `CISID_SMTP_USERNAME`, `CISID_SMTP_PASSWORD`, `CISID_SMTP_FROM` | none, `587`, `starttls` | The SMTP relay email notifications go through; without a host, email is off ([notifications.md](notifications.md#email)) |
 | `CISID_ARTIFACT_MAX_SIZE` | `100MB` | The largest artifact accepted, as bytes or with `KB`, `MB`, `GB` (powers of 1024), at most `10GB` ([pipeline.md](pipeline.md#artifacts)) |

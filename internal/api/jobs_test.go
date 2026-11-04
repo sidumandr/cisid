@@ -46,6 +46,11 @@ func (m *mockJobReader) RerunJob(ctx context.Context, id int64, traceParent stri
 	return args.Get(0).(models.Job), args.Error(1)
 }
 
+func (m *mockJobReader) ApproveJob(ctx context.Context, id int64, by string) (models.Job, error) {
+	args := m.Called(ctx, id, by)
+	return args.Get(0).(models.Job), args.Error(1)
+}
+
 func (m *mockJobReader) JobLogsAfter(ctx context.Context, id, after int64, limit int) ([]models.JobLog, error) {
 	args := m.Called(ctx, id, after, limit)
 	logs, _ := args.Get(0).([]models.JobLog)
@@ -431,6 +436,27 @@ func TestCancelJob(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, post(t, h, "/api/jobs/4/cancel", writeToken).Code)
 	assert.Equal(t, []int64{1, 2}, changed)
 	store.AssertExpectations(t)
+}
+
+func TestApproveJob(t *testing.T) {
+	store := &mockJobReader{}
+	approved := runningJob(7)
+	approved.Status = models.JobStatusPending
+	approved.ApprovedBy = "API token"
+	store.On("ApproveJob", mock.Anything, int64(7), "API token").Return(approved, nil).Once()
+	store.On("ApproveJob", mock.Anything, int64(8), mock.Anything).Return(models.Job{}, db.ErrNoApprovalNeeded).Once()
+	store.On("ApproveJob", mock.Anything, int64(9), mock.Anything).Return(models.Job{}, db.ErrJobNotFound).Once()
+	var changed []int64
+	_, h := newJobsAPI(t, store, &fakeEvents{}, WithAccess(tokenAccess("")),
+		WithJobChanged(func(id int64) { changed = append(changed, id) }))
+
+	assert.Equal(t, http.StatusUnauthorized, post(t, h, "/api/jobs/7/approve", "").Code, "maintainers only")
+	rec := post(t, h, "/api/jobs/7/approve", writeToken)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"approved_by":"API token"`)
+	assert.Equal(t, []int64{7}, changed, "the hub is woken to dispatch it")
+	assert.Equal(t, http.StatusConflict, post(t, h, "/api/jobs/8/approve", writeToken).Code)
+	assert.Equal(t, http.StatusNotFound, post(t, h, "/api/jobs/9/approve", writeToken).Code)
 }
 
 func TestRerunJob(t *testing.T) {

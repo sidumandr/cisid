@@ -209,6 +209,9 @@
         "publicBadges": {
           "type": "boolean"
         },
+        "approveForks": {
+          "type": "boolean"
+        },
         "artifactMaxSize": {
           "type": "string",
           "pattern": "^[0-9]+ ?([KMG]B|B)?$"

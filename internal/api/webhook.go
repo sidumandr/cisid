@@ -62,18 +62,25 @@ type CommitResolver interface {
 // WebhookHandler handles one forge's webhook deliveries and queues a job
 // for every push to a branch and every change to a pull request.
 type WebhookHandler struct {
-	forge      string
-	secret     []byte
-	jobs       JobCreator
-	log        *slog.Logger
-	now        func() time.Time
-	buildForks bool
-	commits    CommitResolver
-	src        webhookSource
+	forge        string
+	secret       []byte
+	jobs         JobCreator
+	log          *slog.Logger
+	now          func() time.Time
+	buildForks   bool
+	approveForks bool
+	commits      CommitResolver
+	src          webhookSource
 }
 
 // WebhookOption configures a WebhookHandler.
 type WebhookOption func(*WebhookHandler)
+
+// WithForkApproval holds the jobs of pull requests from forks, built with
+// WithForkBuilds, until a maintainer approves each.
+func WithForkApproval(enabled bool) WebhookOption {
+	return func(h *WebhookHandler) { h.approveForks = enabled }
+}
 
 // WithForkBuilds builds pull requests from forks too, without secrets.
 // They run code from outside the repository on the agents.
@@ -219,6 +226,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			act.reason = forkReason
 			continue
 		}
+		job.NeedsApproval = job.Fork && h.approveForks
 		jobs = append(jobs, job)
 	}
 	if len(jobs) == 0 {

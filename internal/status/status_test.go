@@ -34,6 +34,7 @@ func TestDescribe(t *testing.T) {
 		desc  string
 	}{
 		{"pending", models.Job{Status: models.JobStatusPending}, "pending", "Waiting for an agent"},
+		{"waiting for approval", models.Job{Status: models.JobStatusPending, NeedsApproval: true}, "pending", "Waiting for a maintainer to approve the build"},
 		{"running", models.Job{Status: models.JobStatusRunning, Agent: "worker-1"}, "running", "Running on worker-1"},
 		{"success", models.Job{Status: models.JobStatusSuccess, StartedAt: &start, FinishedAt: &end}, "success", "Passed in 1m23s"},
 		{"success without times", models.Job{Status: models.JobStatusSuccess}, "success", "Passed"},

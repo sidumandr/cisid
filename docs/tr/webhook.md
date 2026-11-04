@@ -44,6 +44,7 @@ Aynı secret, server'a da verilmelidir. Secret boşsa `NewWebhookHandler` `ErrEm
 - PR'a yeni bir commit gelince aynı PR'ın bitmemiş eski job'ları iptal edilir: bekleyenler hemen, çalışanlar agent'ları tarafından durdurularak.
 - PR kapanınca (merge dahil) bitmemiş job'ları iptal edilir.
 - **Fork'lar:** Başka bir repodan gelen PR'lar varsayılan olarak derlenmez, çünkü dışarıdan gelen kodu agent'larda çalıştırır. `CISID_BUILD_FORKS=true` ile açılır. Açıksa da fork PR'larına hiçbir secret verilmez ([secrets.md](secrets.md)).
+- **Fork onayı:** `CISID_BUILD_FORKS=approve` ile fork PR'ları kuyruğa alınır ama bir maintainer her job'u onaylayana kadar hiçbir agent çalıştırmaz; onay job sayfasındaki **Approve** düğmesiyle ya da `POST /api/jobs/{id}/approve` ile verilir ([api.md](api.md)). Commit status onay beklendiğini söyler. PR'a gelen her yeni commit yeni kod getirdiği için yeniden onay ister; PR'ın kendi reposundaki branch'ler hiçbir zaman onay istemez.
 - `pull_request.updated_at` 7 günden eskiyse olay yok sayılır (`stale delivery`).
 
 ## Tekrar (replay) koruması

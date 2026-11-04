@@ -247,6 +247,7 @@ function finding(j) {
       return `Running ${what}${j.agent ? ` on ${j.agent}` : ""} for ${took}.`;
     }
     default:
+      if (j.needs_approval) return `Queued ${ago(j.created_at)}, waiting for a maintainer to approve this build from a fork.`;
       if (j.labels && j.labels.length) return `Waiting for an agent labelled ${listWords(j.labels)} since ${ago(j.created_at)}.`;
       return `Waiting for an agent since ${ago(j.created_at)}.`;
   }
@@ -709,13 +710,27 @@ function renderJob(id) {
     const actions = FINISHED.has(j.status)
       ? [el("button", { class: "btn primary", type: "button", onclick: (e) => act(e.currentTarget, `/api/jobs/${j.id}/rerun`, true) }, "Rerun")]
       : [el("button", { class: "btn", type: "button", onclick: (e) => act(e.currentTarget, `/api/jobs/${j.id}/cancel`) }, "Cancel")];
+    if (j.needs_approval && j.status === "pending") {
+      actions.unshift(el("button", { class: "btn primary", type: "button",
+        onclick: (e) => act(e.currentTarget, `/api/jobs/${j.id}/approve`) }, "Approve"));
+    }
+    lede = el("p", { class: "lede" }, finding(j),
+      j.status === "failed" && j.error && j.failed_step !== undefined && j.failed_step !== null ? ` ${j.error}` : "");
     top.replaceChildren(header({
       crumbs: [el("a", { href: "/" }, "Jobs"), el("span", { "aria-hidden": "true" }, "/"), el("a", { href: repoPath(j.repo) }, j.repo)],
       title: [el("span", {}, j.repo), el("span", { class: "num" }, "#" + j.id), pill(j.status)],
-      lede: el("p", { class: "lede" }, finding(j),
-        j.status === "failed" && j.error && j.failed_step !== undefined && j.failed_step !== null ? ` ${j.error}` : ""),
+      lede,
       actions,
     }));
+  }
+
+  // tick moves the running clocks on: the sentence and the duration. It
+  // leaves the buttons in place, so a click is never lost to a redraw.
+  let lede = null;
+  let duration = null;
+  function tick(j) {
+    if (lede) lede.textContent = finding(j);
+    if (duration && j.started_at) duration.textContent = fmtDuration(seconds(j));
   }
 
   function showFacts(j) {
@@ -730,7 +745,7 @@ function renderJob(id) {
       ["Commit", [el("span", { class: "num" }, shortSHA(j.commit_sha)), copy]],
       ["Agent", j.agent ? el("span", {}, j.agent) : dash()],
       ["Started", j.started_at ? el("span", { class: "num", title: j.started_at }, stamp(j.started_at)) : dash()],
-      ["Duration", j.started_at ? el("span", { class: "num" }, fmtDuration(seconds(j))) : dash()],
+      ["Duration", j.started_at ? (duration = el("span", { class: "num" }, fmtDuration(seconds(j)))) : dash()],
     ];
     if (j.matrix) items.splice(1, 0, ["Matrix", el("span", {}, matrixLabel(j.matrix))]);
     facts.style.setProperty("--n", items.length);
@@ -812,7 +827,8 @@ function renderJob(id) {
     try {
       const result = await request("POST", url, { token: true });
       if (result && openResult) navigate("/jobs/" + result.id);
-      else if (result) show({ ...job, ...result });
+      // The API leaves out fields that are false, such as needs_approval.
+      else if (result) show({ ...job, needs_approval: false, ...result });
     } catch (err) {
       await openDialog({ title: "That did not work", text: err.message, submit: "Close" });
     } finally {
@@ -872,10 +888,7 @@ function renderJob(id) {
     });
 
   const ticker = setInterval(() => {
-    if (job && !FINISHED.has(job.status)) {
-      showHeader(job);
-      showFacts(job);
-    }
+    if (job && !FINISHED.has(job.status)) tick(job);
   }, 1000);
   return () => {
     stopped = true;

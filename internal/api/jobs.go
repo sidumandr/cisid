@@ -38,6 +38,7 @@ type JobStore interface {
 	JobReader
 	CancelJob(ctx context.Context, id int64) (models.Job, error)
 	RerunJob(ctx context.Context, id int64, traceParent string) (models.Job, error)
+	ApproveJob(ctx context.Context, id int64, by string) (models.Job, error)
 }
 
 var _ JobStore = (*db.Store)(nil)
@@ -118,6 +119,35 @@ func (j *JobsAPI) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/jobs/{id}/logs/stream", j.access.wrapFunc(j.stream))
 	mux.HandleFunc("POST /api/jobs/{id}/cancel", j.access.require(auth.RoleMaintainer, j.cancel))
 	mux.HandleFunc("POST /api/jobs/{id}/rerun", j.access.require(auth.RoleMaintainer, j.rerun))
+	mux.HandleFunc("POST /api/jobs/{id}/approve", j.access.require(auth.RoleMaintainer, j.approve))
+}
+
+// approve lets agents run a job from a fork that waits for a maintainer
+// (200, the job), or answers 409 when it does not wait.
+func (j *JobsAPI) approve(w http.ResponseWriter, r *http.Request) {
+	id, ok := jobID(w, r)
+	if !ok {
+		return
+	}
+	by := "API token"
+	if p, ok := caller(r); ok && p.name != "" {
+		by = p.name
+	}
+	job, err := j.store.ApproveJob(r.Context(), id, by)
+	switch {
+	case errors.Is(err, db.ErrJobNotFound):
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	case errors.Is(err, db.ErrNoApprovalNeeded):
+		writeError(w, http.StatusConflict, "job does not wait for approval")
+		return
+	case err != nil:
+		j.internalError(w, r, "approve job", err)
+		return
+	}
+	j.log.InfoContext(r.Context(), "job approved", "job_id", id, "by", by)
+	j.changed(id)
+	writeJSON(w, http.StatusOK, job)
 }
 
 // cancel cancels a pending job (200) or asks the agent of a running one to

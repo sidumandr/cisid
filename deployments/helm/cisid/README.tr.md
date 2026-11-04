@@ -96,6 +96,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
 | `server.tls.secretName` | — | Server için HTTPS, agent'lar için `wss://` |
 | `server.buildForks` | `false` | Fork'lardan gelen pull request'leri de derler, secret vermeden |
+| `server.approveForks` | `false` | `buildForks` ile birlikte: her fork build'i çalışmadan önce bir maintainer onaylar ([webhook](../../../docs/tr/webhook.md#pull-requestler)) |
 | `server.logRetention` | `90d` | Biten job'ların loglarının saklanma süresi, `0` sonsuza dek saklar |
 | `agent.replicaCount` | `1` | Agent sayısı. Her agent aynı anda bir job çalıştırır. |
 | `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Adım ve servis container'larının sınırları |

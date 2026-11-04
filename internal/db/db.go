@@ -69,7 +69,8 @@ type querier interface {
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at, step_names,
 	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent, logs_expired_at,
-	event, COALESCE(pull_request, 0), COALESCE(target_branch, ''), fork, labels`
+	event, COALESCE(pull_request, 0), COALESCE(target_branch, ''), fork, labels,
+	needs_approval, COALESCE(approved_by, '')`
 
 // leaseUntil is the SQL expression for a lease of $N seconds from now,
 // measured on the database clock so servers need not agree on the time.
@@ -98,13 +99,13 @@ func (s *Store) Ping(ctx context.Context) error {
 // insertJob is the statement CreateJob and QueueJob insert a job with.
 const insertJob = `
 	INSERT INTO jobs (repo, clone_url, branch, commit_sha, status, trace_parent,
-		event, pull_request, target_branch, fork)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, 0), NULLIF($9, ''), $10)
+		event, pull_request, target_branch, fork, needs_approval)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, 0), NULLIF($9, ''), $10, $11)
 	RETURNING id`
 
 func insertJobArgs(job models.Job) []any {
 	return []any{job.Repo, job.CloneURL, job.Branch, job.CommitSHA, job.Status, job.TraceParent,
-		cmp.Or(job.Event, models.EventPush), job.PullRequest, job.TargetBranch, job.Fork}
+		cmp.Or(job.Event, models.EventPush), job.PullRequest, job.TargetBranch, job.Fork, job.NeedsApproval}
 }
 
 // CreateJob inserts job and returns its generated ID.
@@ -264,7 +265,7 @@ func (s *Store) ClaimJob(ctx context.Context, agent string, labels []string, lea
 			    lease_expires_at = ` + leaseUntil(2) + `
 			WHERE id = (
 				SELECT id FROM jobs
-				WHERE status = 'pending' AND (labels IS NULL OR labels <@ $3::text[])
+				WHERE status = 'pending' AND NOT needs_approval AND (labels IS NULL OR labels <@ $3::text[])
 				ORDER BY created_at, id
 				FOR UPDATE SKIP LOCKED
 				LIMIT 1
@@ -409,6 +410,35 @@ func cancelPullRequestJobs(ctx context.Context, q querier, repo string, number i
 		}
 	}
 	return ids, nil
+}
+
+// ErrNoApprovalNeeded is returned for approving a job that is not waiting
+// for approval.
+var ErrNoApprovalNeeded = errors.New("job does not wait for approval")
+
+// ApproveJob lets agents run job id, a pending job waiting for approval,
+// and records that by approved it. It returns ErrJobNotFound or
+// ErrNoApprovalNeeded.
+func (s *Store) ApproveJob(ctx context.Context, id int64, by string) (models.Job, error) {
+	const q = `
+		WITH approved AS (
+			UPDATE jobs SET needs_approval = false, approved_by = $2, approved_at = now(), updated_at = now()
+			WHERE id = $1 AND status = 'pending' AND needs_approval
+			RETURNING id
+		)
+		SELECT pg_notify('` + JobEventsChannel + `', id::text) FROM approved`
+	tag, err := s.pool.Exec(ctx, q, id, by)
+	if err != nil {
+		return models.Job{}, fmt.Errorf("approve job %d: %w", id, err)
+	}
+	job, err := s.GetJob(ctx, id)
+	if err != nil {
+		return models.Job{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return job, fmt.Errorf("%w: %d", ErrNoApprovalNeeded, id)
+	}
+	return job, nil
 }
 
 // RerunJob queues a new job for the same commit as job id and returns it.
@@ -774,6 +804,7 @@ func scanJob(row pgx.Row) (models.Job, error) {
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
 		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt,
 		&j.Matrix, &j.ParentID, &j.TraceParent, &j.LogsExpiredAt,
-		&j.Event, &j.PullRequest, &j.TargetBranch, &j.Fork, &j.Labels)
+		&j.Event, &j.PullRequest, &j.TargetBranch, &j.Fork, &j.Labels,
+		&j.NeedsApproval, &j.ApprovedBy)
 	return j, err
 }

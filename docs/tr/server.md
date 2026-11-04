@@ -48,7 +48,7 @@ PostgreSQL, server ve agent'ı birlikte container olarak çalıştırmak için [
 | `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına hesap açılır |
 | `CISID_SECRET_KEY` | — | Secret'ları şifreleyen 32 byte'lık anahtar, base64 ([secrets.md](secrets.md)) |
 | `CISID_PUBLIC_URL` | — | Kullanıcıların server'a eriştiği adres. Commit status bağlantılarında kullanılır ([commit-status.md](commit-status.md)). |
-| `CISID_BUILD_FORKS` | `false` | `true` ise fork'lardan gelen pull request'ler de derlenir; bu job'lara secret verilmez ([webhook.md](webhook.md#pull-requestler)) |
+| `CISID_BUILD_FORKS` | `false` | `true` ise fork'lardan gelen pull request'ler de derlenir; bu job'lara secret verilmez. `approve` ise her birini bir maintainer onaylayınca derler ([webhook.md](webhook.md#pull-requestler)) |
 | `CISID_POLL_INTERVAL` | `1m` | İzlenen branch'lerin yoklanma aralığı, en az `10s`; `0` kapatır ([polling.md](polling.md)) |
 | `CISID_SMTP_HOST`, `CISID_SMTP_PORT`, `CISID_SMTP_TLS`, `CISID_SMTP_USERNAME`, `CISID_SMTP_PASSWORD`, `CISID_SMTP_FROM` | yok, `587`, `starttls` | E-posta bildirimlerinin gittiği SMTP sunucusu; host yoksa e-posta kapalıdır ([notifications.md](notifications.md#e-posta)) |
 | `CISID_ARTIFACT_MAX_SIZE` | `100MB` | Kabul edilen en büyük artifact; byte olarak ya da `KB`, `MB`, `GB` ile (1024'ün kuvvetleri), en fazla `10GB` ([pipeline.md](pipeline.md#artifactlar)) |

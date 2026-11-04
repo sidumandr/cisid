@@ -44,6 +44,7 @@ In a `pull_request` event only these actions create a job: `opened`, `reopened` 
 - When a new commit arrives on a PR, the unfinished older jobs of the same PR are canceled: pending jobs immediately, running jobs by their agents, which stop them.
 - When a PR is closed (merges included), its unfinished jobs are canceled.
 - **Forks:** PRs from another repository are not built by default, because building them runs outside code on the agents. Enable them with `CISID_BUILD_FORKS=true`. Even then, fork PRs get no secrets ([secrets.md](secrets.md)).
+- **Approving forks:** With `CISID_BUILD_FORKS=approve`, fork PRs are queued but no agent runs them until a maintainer approves each job, with **Approve** on the job page or `POST /api/jobs/{id}/approve` ([api.md](api.md)). The commit status says it waits for approval. Every new commit on the PR needs approving again, as it brings new code; the PR's own repository branches never need it.
 - If `pull_request.updated_at` is older than 7 days, the event is ignored (`stale delivery`).
 
 ## Replay protection

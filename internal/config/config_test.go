@@ -238,6 +238,12 @@ func TestLoadBuildForks(t *testing.T) {
 	cfg, err := Load(env(with(map[string]string{"CISID_BUILD_FORKS": "true"})))
 	require.NoError(t, err)
 	assert.True(t, cfg.BuildForks)
+	assert.False(t, cfg.ApproveForks)
+
+	cfg, err = Load(env(with(map[string]string{"CISID_BUILD_FORKS": "approve"})))
+	require.NoError(t, err)
+	assert.True(t, cfg.BuildForks)
+	assert.True(t, cfg.ApproveForks, "built once a maintainer approves")
 
 	_, err = Load(env(with(map[string]string{"CISID_BUILD_FORKS": "sometimes"})))
 	assert.ErrorIs(t, err, ErrInvalidConfig)

@@ -96,6 +96,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `server.trustProxy` | `true` with an ingress | Takes the client IP from `X-Forwarded-For` |
 | `server.tls.secretName` | — | HTTPS for the server, `wss://` for the agents |
 | `server.buildForks` | `false` | Also builds pull requests from forks, without secrets |
+| `server.approveForks` | `false` | With `buildForks`, a maintainer approves each fork's build before it runs ([webhook](../../../docs/webhook.md#pull-requests)) |
 | `server.logRetention` | `90d` | How long logs of finished jobs are kept; `0` keeps them forever |
 | `agent.replicaCount` | `1` | Number of agents. Each agent runs one job at a time. |
 | `agent.stepMemory`, `agent.stepCPUs`, `agent.stepPids` | —, —, `4096` | Limits for step and service containers |

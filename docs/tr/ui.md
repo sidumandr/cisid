@@ -47,7 +47,7 @@ Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yap�
 
 - **Run build**, **Cancel**, **Rerun**, zamanlama, polling, bildirim ve secret işlemleri `maintainer` ister ([accounts.md](accounts.md)). Giriş yapılmamışsa ilk kullanımda bir giriş diyaloğu açılır: kullanıcı adı ve şifre, ya da bir token. Server'ın API token'ı yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur; kişisel token ve şifre tarayıcıda bir oturum açar.
 - Kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını açar: rol, şifre değiştirme, kişisel token'lar, çıkış. Admin'ler **Kullanıcılar** sayfasında kullanıcı ekler, rollerini ve sağlayıcı hesaplarını değiştirir, devre dışı bırakır ve siler.
-- Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir.
+- Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir. Onay bekleyen fork build'inde ayrıca **Approve** görünür.
 - `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.
 
 ## Güvenlik

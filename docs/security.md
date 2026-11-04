@@ -24,7 +24,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 - At most 25 MB of the body is read.
 - The same signed body creates a job only once. The deduplication key is the SHA-256 hash of the body, and the record is written in the same transaction as the job. If `repository.pushed_at` is older than 7 days, the request is rejected. Records are deleted after 8 days ([webhook.md](webhook.md#replay-protection)).
 - All repositories use a single webhook secret.
-- Pull requests are built too. Pull requests from forks are not built by default; with `CISID_BUILD_FORKS=true` they are built but get no secrets ([webhook.md](webhook.md#pull-requests)).
+- Pull requests are built too. Pull requests from forks are not built by default; with `CISID_BUILD_FORKS=true` they are built but get no secrets ([webhook.md](webhook.md#pull-requests)). With `CISID_BUILD_FORKS=approve`, a maintainer looks at each fork commit and approves it before it runs on the agents.
 
 ## Agent connection
 

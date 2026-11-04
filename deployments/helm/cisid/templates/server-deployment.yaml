@@ -91,7 +91,7 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             - name: CISID_BUILD_FORKS
-              value: {{ .Values.server.buildForks | quote }}
+              value: {{ if and .Values.server.buildForks .Values.server.approveForks }}"approve"{{ else }}{{ .Values.server.buildForks | quote }}{{ end }}
             - name: CISID_PUBLIC_BADGES
               value: {{ .Values.server.publicBadges | quote }}
             - name: CISID_ARTIFACT_MAX_SIZE

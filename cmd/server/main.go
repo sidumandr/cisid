@@ -372,7 +372,7 @@ func webhookHandlers(cfg config.Config, jobs api.JobCreator, bb *bitbucket.Clien
 		if secret == "" {
 			continue
 		}
-		h, err := api.NewWebhookHandler([]byte(secret), jobs, log, api.WithForkBuilds(cfg.BuildForks),
+		h, err := api.NewWebhookHandler([]byte(secret), jobs, log, api.WithForkBuilds(cfg.BuildForks), api.WithForkApproval(cfg.ApproveForks),
 			api.WithForge(name), api.WithCommitResolver(bb))
 		if err != nil {
 			return nil, fmt.Errorf("create %s webhook handler: %w", name, err)

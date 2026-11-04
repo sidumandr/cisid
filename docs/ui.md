@@ -47,7 +47,7 @@ The design follows the app-screen rules of the `design-taste-frontend` skill (da
 
 - **Run build**, **Cancel**, **Rerun**, schedule, polling, notification and secret actions require `maintainer` ([accounts.md](accounts.md)). If you are not signed in, a sign-in dialog opens on first use: a username and password, or a token. The UI keeps the server's API token only in that tab's session (`sessionStorage`); a personal token or a password opens a session in the browser.
 - The person icon at the bottom of the sidebar opens the **Account** page: role, password change, personal tokens, sign-out. On the **Users** page, admins add users, change their roles and forge logins, disable them and delete them.
-- A running job shows only **Cancel**, and a finished job shows only **Rerun**.
+- A running job shows only **Cancel**, and a finished job shows only **Rerun**. A build from a fork that waits for approval also shows **Approve**.
 - If `CISID_PUBLIC_URL` is set, GitHub commit status links go to the job page (`/jobs/{id}`).
 
 ## Security

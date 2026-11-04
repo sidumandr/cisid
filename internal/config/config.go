@@ -40,7 +40,8 @@ type Config struct {
 	RateLimit       float64       // CISID_RATE_LIMIT, requests per second per client, default 10, 0 disables
 	TrustProxy      bool          // CISID_TRUST_PROXY, take the client from X-Forwarded-For
 	LogRetention    time.Duration // CISID_LOG_RETENTION, how long finished jobs keep their logs, default 90 days, 0 forever
-	BuildForks      bool          // CISID_BUILD_FORKS, build pull requests from forks (without secrets)
+	BuildForks      bool          // CISID_BUILD_FORKS, build pull requests from forks (without secrets): true, false or approve
+	ApproveForks    bool          // CISID_BUILD_FORKS=approve: a maintainer approves each fork job first
 	PollInterval    time.Duration // CISID_POLL_INTERVAL, how often watched branches are polled, default 1m, at least 10s, 0 turns polling off
 	PublicRead      bool          // CISID_READ_ACCESS: "public" (default without a read token) lets anyone read, "signed-in" needs a sign-in or token
 	SessionTTL      time.Duration // CISID_SESSION_TTL, how long a sign-in lasts, default 7d
@@ -321,10 +322,12 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	if v := getenv("CISID_BUILD_FORKS"); v != "" {
+	if v := getenv("CISID_BUILD_FORKS"); v == "approve" {
+		cfg.BuildForks, cfg.ApproveForks = true, true
+	} else if v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
-			problems = append(problems, fmt.Errorf("CISID_BUILD_FORKS: %w", err))
+			problems = append(problems, fmt.Errorf("CISID_BUILD_FORKS must be true, false or approve"))
 		}
 		cfg.BuildForks = b
 	}
@@ -512,6 +515,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("trust_proxy", c.TrustProxy),
 		slog.Duration("log_retention", c.LogRetention),
 		slog.Bool("build_forks", c.BuildForks),
+		slog.Bool("approve_forks", c.ApproveForks),
 		slog.Duration("poll_interval", c.PollInterval),
 		slog.Bool("public_read", c.PublicRead),
 		slog.Duration("session_ttl", c.SessionTTL),
