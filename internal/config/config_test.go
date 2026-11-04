@@ -124,6 +124,58 @@ func TestLoadPollInterval(t *testing.T) {
 	assert.ErrorContains(t, err, "CISID_POLL_INTERVAL")
 }
 
+func TestLoadSMTP(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{
+		"CISID_SMTP_HOST":     "smtp.example.com",
+		"CISID_SMTP_FROM":     "cisid <ci@example.com>",
+		"CISID_SMTP_USERNAME": "ci",
+		"CISID_SMTP_PASSWORD": "mail-secret",
+	})))
+	require.NoError(t, err)
+	assert.Equal(t, SMTP{Host: "smtp.example.com", Port: 587, Username: "ci", Password: "mail-secret",
+		From: "cisid <ci@example.com>", TLS: "starttls"}, cfg.SMTP)
+	assert.True(t, cfg.SMTP.Enabled())
+
+	cfg, err = Load(env(with(map[string]string{"CISID_SMTP_HOST": "smtp.example.com", "CISID_SMTP_FROM": "ci@example.com", "CISID_SMTP_TLS": "tls"})))
+	require.NoError(t, err)
+	assert.Equal(t, 465, cfg.SMTP.Port, "implicit TLS defaults to 465")
+
+	cfg, err = Load(env(with(map[string]string{"CISID_SMTP_HOST": "relay", "CISID_SMTP_FROM": "ci@example.com",
+		"CISID_SMTP_TLS": "none", "CISID_SMTP_PORT": "25"})))
+	require.NoError(t, err)
+	assert.Equal(t, 25, cfg.SMTP.Port)
+	assert.Equal(t, "none", cfg.SMTP.TLS)
+
+	cfg, err = Load(env(required))
+	require.NoError(t, err)
+	assert.False(t, cfg.SMTP.Enabled(), "email is off by default")
+
+	for _, c := range []struct {
+		vars map[string]string
+		want string
+	}{
+		{map[string]string{"CISID_SMTP_FROM": "ci@example.com"}, "CISID_SMTP_HOST is required"},
+		{map[string]string{"CISID_SMTP_HOST": "smtp.example.com"}, "CISID_SMTP_FROM is required"},
+		{map[string]string{"CISID_SMTP_HOST": "smtp.example.com", "CISID_SMTP_FROM": "nobody"}, "CISID_SMTP_FROM must be an email address"},
+		{map[string]string{"CISID_SMTP_HOST": "h", "CISID_SMTP_FROM": "a@b.c", "CISID_SMTP_TLS": "ssl"}, "CISID_SMTP_TLS must be"},
+		{map[string]string{"CISID_SMTP_HOST": "h", "CISID_SMTP_FROM": "a@b.c", "CISID_SMTP_PORT": "x"}, "CISID_SMTP_PORT"},
+		{map[string]string{"CISID_SMTP_HOST": "h", "CISID_SMTP_FROM": "a@b.c", "CISID_SMTP_USERNAME": "u"}, "must be set together"},
+	} {
+		_, err := Load(env(with(c.vars)))
+		assert.ErrorContains(t, err, c.want, c.vars)
+	}
+}
+
+func TestLoadPublicBadges(t *testing.T) {
+	cfg, err := Load(env(with(map[string]string{"CISID_PUBLIC_BADGES": "true", "CISID_READ_ACCESS": "signed-in"})))
+	require.NoError(t, err)
+	assert.True(t, cfg.PublicBadges)
+	assert.False(t, cfg.PublicRead)
+
+	_, err = Load(env(with(map[string]string{"CISID_PUBLIC_BADGES": "sometimes"})))
+	assert.ErrorContains(t, err, "CISID_PUBLIC_BADGES")
+}
+
 func TestLoadWithoutWebhooks(t *testing.T) {
 	cfg, err := Load(env(map[string]string{"CISID_DATABASE_URL": required["CISID_DATABASE_URL"]}))
 	require.NoError(t, err, "a server that only polls or builds by hand needs no webhook secret")
@@ -296,7 +348,9 @@ func TestLoadErrors(t *testing.T) {
 
 func TestConfigLogValueRedactsSecrets(t *testing.T) {
 	cfg, err := Load(env(with(map[string]string{"CISID_GITHUB_TOKEN": "ghp_secret", "CISID_API_TOKEN": "api-secret-0123456789",
-		"CISID_ADMIN_PASSWORD": "admin-password-secret", "CISID_GITLAB_TOKEN": "glpat-secret"})))
+		"CISID_ADMIN_PASSWORD": "admin-password-secret", "CISID_GITLAB_TOKEN": "glpat-secret",
+		"CISID_SMTP_HOST": "smtp.example.com", "CISID_SMTP_FROM": "ci@example.com",
+		"CISID_SMTP_USERNAME": "ci", "CISID_SMTP_PASSWORD": "mail-secret"})))
 	require.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -309,6 +363,8 @@ func TestConfigLogValueRedactsSecrets(t *testing.T) {
 	assert.NotContains(t, out, "api-secret")
 	assert.NotContains(t, out, "admin-password-secret")
 	assert.NotContains(t, out, "glpat-secret")
+	assert.NotContains(t, out, "mail-secret")
+	assert.Contains(t, out, "config.smtp.host=smtp.example.com")
 	assert.Contains(t, out, "config.api_token_set=true")
 	assert.Contains(t, out, "config.secret_key_set=false")
 	assert.Contains(t, out, "config.github_token_set=true")

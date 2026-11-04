@@ -53,6 +53,14 @@ services:
       CISID_PUBLIC_URL: ${CISID_PUBLIC_URL:-}
       CISID_LOG_RETENTION: ${CISID_LOG_RETENTION:-}
       CISID_BUILD_FORKS: ${CISID_BUILD_FORKS:-}
+      CISID_PUBLIC_BADGES: ${CISID_PUBLIC_BADGES:-}
+      # Email notifications; see docs/notifications.md.
+      CISID_SMTP_HOST: ${CISID_SMTP_HOST:-}
+      CISID_SMTP_PORT: ${CISID_SMTP_PORT:-}
+      CISID_SMTP_USERNAME: ${CISID_SMTP_USERNAME:-}
+      CISID_SMTP_PASSWORD: ${CISID_SMTP_PASSWORD:-}
+      CISID_SMTP_FROM: ${CISID_SMTP_FROM:-}
+      CISID_SMTP_TLS: ${CISID_SMTP_TLS:-}
       # Tracing is off unless a collector is given; see docs/tracing.md.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     ports:

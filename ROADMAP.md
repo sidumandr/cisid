@@ -71,3 +71,8 @@ Goal: logs stream live, and dropped connections lose no work.
 - [x] User accounts and roles (viewer, maintainer, admin), password sign-in, personal API tokens, CSRF protection ([docs/accounts.md](docs/accounts.md)).
 - [x] Sign-in through forges (OAuth): GitHub, Gitea, Forgejo, GitLab, Bitbucket; accounts match on the forge's immutable user ID, with optional automatic account creation ([docs/accounts.md](docs/accounts.md#signing-in-through-a-forge)).
 - [x] Documentation in English and Turkish: English at the usual paths, Turkish in `docs/tr/` and the `.tr.md` files.
+
+## Phase 7: Hearing about builds
+
+- [x] Notifications: Slack-compatible chats, signed webhooks and email, for every failure, breaks, fixes or every result, per branch and optionally for pull requests; each result is sent once even with several server replicas ([docs/notifications.md](docs/notifications.md)).
+- [x] Build badges for READMEs, with `CISID_PUBLIC_BADGES` for servers where reading needs a sign-in ([docs/notifications.md](docs/notifications.md#badges)).

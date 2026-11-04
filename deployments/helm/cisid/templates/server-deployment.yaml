@@ -92,6 +92,26 @@ spec:
             {{- end }}
             - name: CISID_BUILD_FORKS
               value: {{ .Values.server.buildForks | quote }}
+            - name: CISID_PUBLIC_BADGES
+              value: {{ .Values.server.publicBadges | quote }}
+            {{- with .Values.server.smtp }}
+            {{- if .host }}
+            - name: CISID_SMTP_HOST
+              value: {{ .host | quote }}
+            - name: CISID_SMTP_FROM
+              value: {{ .from | quote }}
+            - name: CISID_SMTP_TLS
+              value: {{ .tls | quote }}
+            {{- if .port }}
+            - name: CISID_SMTP_PORT
+              value: {{ .port | quote }}
+            {{- end }}
+            {{- with .username }}
+            - name: CISID_SMTP_USERNAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- range $env, $url := dict "CISID_GITHUB_API_URL" .Values.server.githubAPIURL "CISID_GITEA_URL" .Values.server.giteaURL "CISID_FORGEJO_URL" .Values.server.forgejoURL "CISID_GITLAB_URL" .Values.server.gitlabURL }}
             {{- with $url }}
             - name: {{ $env }}

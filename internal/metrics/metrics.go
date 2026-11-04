@@ -47,6 +47,11 @@ var (
 		Help: "Commit statuses posted to the forges by outcome: sent, retry (forge unavailable), failed or skipped (statuses off for the forge).",
 	}, []string{"result"})
 
+	Notifications = factory.NewCounterVec(prometheus.CounterOpts{
+		Name: "cisid_notifications_total",
+		Help: "Build results announced by kind (slack, webhook, email) and outcome: sent or failed.",
+	}, []string{"kind", "result"})
+
 	LogChunks = factory.NewCounter(prometheus.CounterOpts{
 		Name: "cisid_log_chunks_total",
 		Help: "Log chunks received from agents.",

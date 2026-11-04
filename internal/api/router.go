@@ -53,6 +53,11 @@ type Handlers struct {
 	Access *Access
 	// Triggers serves manual builds and schedules; omitted when nil.
 	Triggers *TriggersAPI
+	// Badges draws build badges; omitted when nil.
+	Badges *BadgeAPI
+	// Notifications manages where build results are announced; omitted
+	// when nil.
+	Notifications *NotificationsAPI
 	// TracerProvider traces webhook and API requests; nil traces nothing.
 	TracerProvider trace.TracerProvider
 }
@@ -63,7 +68,7 @@ type Handlers struct {
 //	POST /webhooks/{forge} Gitea, Forgejo, GitLab and Bitbucket deliveries
 //	GET  /agent/ws         agent WebSocket connections
 //	GET  /api/jobs/...     jobs and logs (see JobsAPI)
-//	     /api/repos/...    repository secrets (see SecretsAPI)
+//	     /api/repos/...    repository secrets, builds, badges and notifications
 //	GET  /auth/{forge}/... signing in through a forge (see oauth.go)
 //	GET  /, /jobs/{id}     browser UI
 //	GET  /healthz          liveness: the process is serving requests
@@ -95,6 +100,12 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	access.register(limited)
 	if h.Triggers != nil {
 		h.Triggers.register(limited)
+	}
+	if h.Badges != nil {
+		h.Badges.register(limited)
+	}
+	if h.Notifications != nil {
+		h.Notifications.register(limited)
 	}
 	var limitedHandler http.Handler = limited
 	if h.RateLimit != nil {

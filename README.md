@@ -4,7 +4,7 @@
 
 A self-hosted, Docker-based CI/CD system written in Go.
 
-> Status: Phases 1–6 are done. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
+> Status: Phases 1–7 are done. Moving the agent protocol to gRPC is postponed ([ADR 001](docs/adr/001-agent-protocol-websocket.md)). For details, see [ROADMAP.md](ROADMAP.md).
 
 ## Documentation
 
@@ -18,6 +18,7 @@ A self-hosted, Docker-based CI/CD system written in Go.
 - [docs/tracing.md](docs/tracing.md): OpenTelemetry traces: one trace from the webhook to the steps
 - [docs/accounts.md](docs/accounts.md): User accounts, roles, sign-in and personal tokens
 - [docs/polling.md](docs/polling.md): Push builds without webhooks: polling branches
+- [docs/notifications.md](docs/notifications.md): Build results in a chat, a webhook or email, and build badges
 - [docs/forges.md](docs/forges.md): Setting up GitHub, Gitea, Forgejo, GitLab and Bitbucket, repository names and private repositories
 - [docs/commit-status.md](docs/commit-status.md): Showing job results on the forges as commit statuses
 - [docs/webhook.md](docs/webhook.md): Webhook setup and behavior

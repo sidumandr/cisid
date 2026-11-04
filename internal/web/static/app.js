@@ -287,7 +287,7 @@ async function signIn({ change = false, retry = false } = {}) {
     el("a", { class: "btn provider", href: `/auth/${p}/login?next=${next}`, "data-external": "1" }, "Sign in with " + forgeName(p)));
   const values = await openDialog({
     title: retry ? "That did not work" : "Sign in",
-    text: change ? "Running builds, cancelling, rerunning and managing schedules and secrets need a maintainer."
+    text: change ? "Running builds, cancelling, rerunning and managing schedules, notifications and secrets need a maintainer."
       : "This server shows jobs and logs to signed-in users.",
     extra: providers.length ? el("div", { class: "providers" }, providers) : null,
     fields,
@@ -343,7 +343,9 @@ function openDialog({ title, text, fields = [], submit, danger = false, onSubmit
     const inputs = fields.map((f) => {
       const id = "f-" + f.name;
       const input = f.options
-        ? el("select", { id, name: f.name }, f.options.map((o) => el("option", { value: o }, o)))
+        ? el("select", { id, name: f.name }, f.options.map((o) => typeof o === "string"
+          ? el("option", { value: o }, o)
+          : el("option", { value: o.value }, o.label)))
         : f.multiline
           ? el("textarea", { id, name: f.name, rows: 4, autocomplete: "off", spellcheck: "false" })
           : el("input", { id, name: f.name, type: f.type || "text", autocomplete: f.autocomplete || "off", spellcheck: "false", list: f.list });
@@ -861,8 +863,45 @@ const REPO_TABS = [
   { id: "builds", label: "Builds" },
   { id: "schedules", label: "Schedules" },
   { id: "polling", label: "Polling" },
+  { id: "notifications", label: "Notifications" },
   { id: "secrets", label: "Secrets" },
 ];
+
+const NOTIFY_KINDS = [
+  { value: "slack", label: "Slack, or a chat that takes its webhooks" },
+  { value: "webhook", label: "Webhook (JSON)" },
+  { value: "email", label: "Email" },
+];
+const KIND_WORD = { slack: "Chat", webhook: "Webhook", email: "Email" };
+const NOTIFY_WHEN = [
+  { value: "failed,fixed", label: "Every failure, and when fixed" },
+  { value: "broken,fixed", label: "Only when it breaks or is fixed" },
+  { value: "failed", label: "Every failure" },
+  { value: "failed,passed", label: "Every result" },
+];
+const RESULT_WORD = { failed: "failures", broken: "breaks", fixed: "fixes", passed: "passes" };
+const splitList = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
+// showBadge offers the repository's build badge for a README.
+function showBadge(repo) {
+  const path = `/api/repos/${repoURL(repo)}/badge.svg`;
+  const markdown = `[![cisid](${location.origin}${path})](${location.origin}${repoPath(repo)})`;
+  const notes = ["Shows how the latest build of the default branch went. Add ?branch=name to the image URL for another branch."];
+  if (!me.public_read) notes.push("Reading needs a sign-in on this server, so the badge shows elsewhere only with CISID_PUBLIC_BADGES=true.");
+  openDialog({
+    title: "Build badge",
+    text: notes.join(" "),
+    extra: el("div", { class: "badge-preview" },
+      el("img", { src: path, alt: `Build status of ${repo}`, height: "20" }),
+      el("pre", { class: "snippet" }, markdown)),
+    submit: "Copy Markdown",
+    onSubmit: async () => {
+      await navigator.clipboard.writeText(markdown).catch(() => {
+        throw new Error("Couldn't copy. Select the text above and copy it.");
+      });
+    },
+  });
+}
 
 function renderRepo(owner, name) {
   setNav("repos");
@@ -874,6 +913,7 @@ function renderRepo(owner, name) {
 
   const lede = el("p", { class: "lede" }, "Loading builds");
   const run = el("button", { class: "btn primary", type: "button", onclick: () => runBuild(repo) }, "Run build");
+  const badge = el("button", { class: "btn", type: "button", onclick: () => showBadge(repo) }, "Badge");
   const tabs = tabBar(REPO_TABS, tab, (t) => { tab = t; showTab(); });
   const body = el("div");
   app.replaceChildren(
@@ -881,7 +921,7 @@ function renderRepo(owner, name) {
       crumbs: [el("a", { href: "/repos" }, "Repositories"), el("span", { "aria-hidden": "true" }, "/"), el("span", {}, repo)],
       title: repo,
       lede,
-      actions: [run],
+      actions: [badge, run],
     }),
     tabs.el,
     body);
@@ -892,6 +932,7 @@ function renderRepo(owner, name) {
     if (tab === "builds") builds();
     else if (tab === "schedules") schedules();
     else if (tab === "polling") polling();
+    else if (tab === "notifications") notifications();
     else secrets();
   }
 
@@ -1039,6 +1080,117 @@ function renderRepo(owner, name) {
     }
     load();
     timer = setInterval(load, 10000);
+  }
+
+  // notifications says where build results are announced: a chat, a
+  // webhook or email.
+  function notifications() {
+    const add = el("button", { class: "btn small", type: "button" }, "Add notification");
+    const rows = el("div", { class: "table", role: "table", "aria-label": "Notifications" });
+    body.replaceChildren(el("div", { class: "toolbar" },
+      el("span", { class: "muted small" }, "Build results of this repository, sent to a chat, a webhook or email."), add), rows);
+    const head = () => el("div", { class: "tr th notify-grid", role: "row" },
+      el("span", { role: "columnheader" }, "Name"), el("span", { role: "columnheader" }, "Sends to"),
+      el("span", { role: "columnheader" }, "For"), el("span", { role: "columnheader" }, "Last sent"),
+      el("span", { role: "columnheader" }, ""));
+
+    add.addEventListener("click", async () => {
+      const done = await openDialog({
+        title: "Add a notification",
+        text: `Announces build results of ${repo}. Saving a name again replaces it.`,
+        fields: [
+          { name: "name", label: "Name", placeholder: "team-chat", hint: "Lowercase letters, digits, dots, dashes and underscores." },
+          { name: "kind", label: "Sends to", options: NOTIFY_KINDS },
+          { name: "target", label: "URL or addresses", placeholder: "https://hooks.slack.com/services/...",
+            hint: "A chat's incoming webhook URL, a webhook URL, or email addresses separated by commas. URLs are kept encrypted and never shown again." },
+          { name: "when", label: "When", options: NOTIFY_WHEN },
+          { name: "branches", label: "Branches", placeholder: "main, release/*", hint: "Optional. Empty means every branch." },
+          { name: "prs", label: "Pull requests", options: [
+            { value: "no", label: "Not announced" },
+            { value: "yes", label: "Announced, by the branch they merge into" },
+          ] },
+          { name: "secret", label: "Signing secret", type: "password", hint: "Webhooks only, optional: signs each body in X-Cisid-Signature." },
+        ],
+        submit: "Save notification",
+        onSubmit: async (v) => {
+          const payload = { kind: v.kind, on: v.when.split(","), branches: splitList(v.branches), pull_requests: v.prs === "yes" };
+          if (v.kind === "email") payload.to = splitList(v.target);
+          else payload.url = v.target.trim();
+          if (v.secret) payload.secret = v.secret;
+          const saved = await request("PUT", `${base}/notifications/${encodeURIComponent(v.name.trim())}`, { body: payload, token: true })
+            .catch((err) => {
+              // "invalid notification: url must be ..." reads as "Url must be ...".
+              const why = err.message.replace(/^invalid notification: /, "");
+              throw new Error(why.charAt(0).toUpperCase() + why.slice(1) + (why.endsWith(".") ? "" : "."));
+            });
+          if (!saved) throw new Error("Saving a notification needs a maintainer.");
+        },
+      });
+      if (done) load();
+    });
+
+    async function test(n, button) {
+      button.disabled = true;
+      button.textContent = "Sending";
+      try {
+        await request("POST", `${base}/notifications/${encodeURIComponent(n.name)}/test`, { token: true });
+      } catch {
+        // The row shows why, from the notification's last error.
+      }
+      load();
+    }
+
+    async function remove(n) {
+      const ok = await openDialog({
+        title: `Delete ${n.name}?`,
+        text: `Build results of ${repo} stop going to ${n.target}.`,
+        submit: "Delete notification",
+        danger: true,
+        onSubmit: async () => {
+          const done = await request("DELETE", `${base}/notifications/${encodeURIComponent(n.name)}`, { token: true });
+          if (!done) throw new Error("Deleting needs a maintainer.");
+        },
+      });
+      if (ok) load();
+    }
+
+    function scope(n) {
+      const branches = n.branches && n.branches.length ? n.branches.join(", ") : "every branch";
+      return n.pull_requests ? `${branches}, with pull requests` : branches;
+    }
+
+    async function load() {
+      try {
+        const list = await request("GET", `${base}/notifications`, { token: true });
+        if (!list) {
+          rows.replaceChildren(note("Notifications are for maintainers.",
+            el("button", { class: "text-action", type: "button", onclick: load }, "Sign in")));
+          return;
+        }
+        tabs.count("notifications", list.length);
+        if (list.length === 0) {
+          rows.replaceChildren(note("No notifications. Add one to hear when a branch breaks or is fixed."));
+          return;
+        }
+        rows.replaceChildren(head(), ...list.map((n) => {
+          const testButton = el("button", { class: "text-action", type: "button" }, "Test");
+          testButton.addEventListener("click", () => test(n, testButton));
+          return el("div", { class: "tr notify-grid", role: "row" },
+            el("div", { role: "cell" }, el("div", { class: "line1" }, el("span", { class: "name" }, n.name)),
+              el("div", { class: "line2" }, scope(n))),
+            el("div", { role: "cell" }, el("div", { class: "line1" }, KIND_WORD[n.kind] || n.kind),
+              el("div", { class: "line2" }, n.target)),
+            el("div", { role: "cell" }, n.on.map((r) => RESULT_WORD[r] || r).join(", ")),
+            el("div", { role: "cell" }, el("div", { class: "num" }, n.last_sent_at ? ago(n.last_sent_at) : "never"),
+              n.last_error ? el("div", { class: "line2 failing" }, n.last_error) : null),
+            el("div", { role: "cell", class: "right row-actions" }, testButton,
+              el("button", { class: "text-action danger", type: "button", onclick: () => remove(n) }, "Delete")));
+        }));
+      } catch (err) {
+        rows.replaceChildren(errorNote(`Couldn't load notifications: ${err.message}`, load));
+      }
+    }
+    load();
   }
 
   function secrets() {

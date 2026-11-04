@@ -35,6 +35,7 @@ import (
 	"github.com/sidumandr/cisid/internal/gitlab"
 	"github.com/sidumandr/cisid/internal/hub"
 	"github.com/sidumandr/cisid/internal/metrics"
+	"github.com/sidumandr/cisid/internal/notify"
 	"github.com/sidumandr/cisid/internal/pipeline"
 	"github.com/sidumandr/cisid/internal/secrets"
 	"github.com/sidumandr/cisid/internal/status"
@@ -112,8 +113,10 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 
 	// Interfaces stay nil (not a nil *Vault) when secrets are off.
 	var (
-		vault     api.SecretVault
-		secretSrc pipeline.SecretSource
+		vault         api.SecretVault
+		secretSrc     pipeline.SecretSource
+		notifier      *notify.Service
+		notifications api.NotificationService
 	)
 	if cfg.SecretKey != nil {
 		c, err := secrets.NewCipher(cfg.SecretKey)
@@ -122,21 +125,37 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		}
 		v := secrets.NewVault(store, c)
 		vault, secretSrc = v, v
+		if notifier, err = newNotifier(cfg, store, c, log); err != nil {
+			return err
+		}
+		notifications = notifier
 	} else {
-		log.InfoContext(ctx, "secrets disabled: CISID_SECRET_KEY is not set")
+		log.InfoContext(ctx, "secrets and notifications disabled: CISID_SECRET_KEY is not set")
 	}
 	planner := pipeline.Planner{Configs: forges, Secrets: secretSrc, Clones: forges}
 
 	// Commit statuses need a token with write access to them; forges
 	// without one are skipped.
-	var reporter *status.Reporter
-	jobChanged := func(int64) {}
+	var (
+		reporter *status.Reporter
+		wakers   []func()
+	)
 	if anyForgeToken(cfg) {
 		reporter = status.New(store, forges, status.WithLogger(log), status.WithJobURL(jobURL(cfg.PublicURL)),
 			status.WithTracerProvider(tracing.Provider))
-		jobChanged = func(int64) { reporter.Wake() }
+		wakers = append(wakers, reporter.Wake)
 	} else {
 		log.InfoContext(ctx, "commit statuses disabled: no forge token is set")
+	}
+	if notifier != nil {
+		wakers = append(wakers, notifier.Wake)
+	}
+	// jobChanged reports and announces a job's change at once instead of
+	// on the next poll.
+	jobChanged := func(int64) {
+		for _, wake := range wakers {
+			wake()
+		}
 	}
 
 	if len(cfg.AgentTokens) == 0 {
@@ -204,7 +223,10 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Metrics:   metrics.Handler(),
 			Access:    access,
 			Triggers:  triggersAPI,
-			DB:        store,
+			Badges:    api.NewBadgeAPI(store, forges, access, cfg.PublicBadges, log),
+			// A nil interface, not a nil *notify.Service, turns it off.
+			Notifications: api.NewNotificationsAPI(notifications, access, log),
+			DB:            store,
 			// Webhook and API requests start the traces jobs continue.
 			TracerProvider: httpTracing,
 		}, log),
@@ -234,6 +256,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if reporter != nil {
 		g.Go(func() error { return reporter.Run(gctx) })
 	}
+	if notifier != nil {
+		g.Go(func() error { return notifier.Run(gctx) })
+	}
 	g.Go(func() error { return housekeep(gctx, store, cfg.LogRetention, log) })
 	g.Go(func() error { return scheduler.Run(gctx) })
 	if poller != nil {
@@ -255,6 +280,23 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	}
 	log.InfoContext(ctx, "server stopped")
 	return nil
+}
+
+// newNotifier returns the service that announces build results, sealing
+// their targets with c; email is on when an SMTP relay is configured.
+func newNotifier(cfg config.Config, store *db.Store, c *secrets.Cipher, log *slog.Logger) (*notify.Service, error) {
+	opts := []notify.Option{notify.WithLogger(log), notify.WithPublicURL(cfg.PublicURL)}
+	if cfg.SMTP.Enabled() {
+		m, err := notify.NewMailer(notify.MailConfig{
+			Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username, Password: cfg.SMTP.Password,
+			From: cfg.SMTP.From, TLS: cfg.SMTP.TLS,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("set up email: %w", err)
+		}
+		opts = append(opts, notify.WithMailer(m))
+	}
+	return notify.New(store, c, opts...), nil
 }
 
 // forgeClients returns the clients of the configured forges. Bitbucket's

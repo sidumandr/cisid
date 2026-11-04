@@ -393,6 +393,38 @@ func TestOAuthSettingsReachTheServer(t *testing.T) {
 	assert.NotContains(t, data, "github-oauth-client-secret")
 }
 
+func TestNotificationSettingsReachTheServer(t *testing.T) {
+	vals := with(required(), "server.smtp.host", "smtp.example.com")
+	vals = with(vals, "server.smtp.from", "cisid <ci@example.com>")
+	vals = with(vals, "server.smtp.username", "ci")
+	vals = with(vals, "secrets.smtpPassword", "smtp-secret")
+	vals = with(vals, "server.publicBadges", true)
+	m := render(t, vals)
+
+	c := container(t, m.server(t).Spec.Template.Spec, "server")
+	assert.Equal(t, "smtp.example.com", env(c, "CISID_SMTP_HOST").Value)
+	assert.Equal(t, "cisid <ci@example.com>", env(c, "CISID_SMTP_FROM").Value)
+	assert.Equal(t, "starttls", env(c, "CISID_SMTP_TLS").Value)
+	assert.Equal(t, "ci", env(c, "CISID_SMTP_USERNAME").Value)
+	assert.Nil(t, env(c, "CISID_SMTP_PORT"), "the server picks the port for the TLS mode")
+	assert.Equal(t, "smtp-password", env(c, "CISID_SMTP_PASSWORD").ValueFrom.SecretKeyRef.Key)
+	assert.Equal(t, "smtp-secret", string(m.secrets["ci-cisid"].Data["smtp-password"]))
+	assert.Equal(t, "true", env(c, "CISID_PUBLIC_BADGES").Value)
+
+	m = render(t, with(vals, "server.smtp.port", 2525))
+	assert.Equal(t, "2525", env(container(t, m.server(t).Spec.Template.Spec, "server"), "CISID_SMTP_PORT").Value)
+
+	plain := container(t, render(t, required()).server(t).Spec.Template.Spec, "server")
+	assert.Nil(t, env(plain, "CISID_SMTP_HOST"), "email is off by default")
+	assert.Nil(t, env(plain, "CISID_SMTP_TLS"))
+	assert.Equal(t, "false", env(plain, "CISID_PUBLIC_BADGES").Value)
+
+	_, err := renderFiles(with(required(), "server.smtp.host", "smtp.example.com"))
+	assert.ErrorContains(t, err, "server.smtp.from is required")
+	_, err = renderFiles(with(required(), "server.smtp.tls", "ssl"))
+	assert.ErrorContains(t, err, "values don't meet the specifications of the schema")
+}
+
 func TestNoWebhookSecretIsFine(t *testing.T) {
 	m := render(t, with(required(), "secrets.webhookSecret", ""))
 	assert.NotContains(t, m.secrets["ci-cisid"].Data, "webhook-secret", "a server that polls needs no webhook")

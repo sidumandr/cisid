@@ -38,6 +38,7 @@ import (
 	"github.com/sidumandr/cisid/internal/config"
 	"github.com/sidumandr/cisid/internal/db"
 	"github.com/sidumandr/cisid/internal/db/dbtest"
+	"github.com/sidumandr/cisid/internal/notify"
 	"github.com/sidumandr/cisid/internal/runner"
 	"github.com/sidumandr/cisid/internal/telemetry"
 	"github.com/sidumandr/cisid/internal/telemetry/telemetrytest"
@@ -275,6 +276,31 @@ func TestRunEndToEnd(t *testing.T) {
 	putResp.Body.Close()
 	require.Equal(t, http.StatusNoContent, putResp.StatusCode)
 
+	// Announce passing builds to a webhook.
+	var (
+		hookMu     sync.Mutex
+		hookBodies []string
+		hookSigs   []string
+	)
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		hookMu.Lock()
+		defer hookMu.Unlock()
+		hookBodies = append(hookBodies, string(b))
+		hookSigs = append(hookSigs, r.Header.Get("X-Cisid-Signature"))
+	}))
+	t.Cleanup(hook.Close)
+	const hookPath = "/hooks/e2e-hook-credential"
+	noteReq, err := http.NewRequestWithContext(t.Context(), http.MethodPut,
+		base+"/api/repos/sidumandr/cisid/notifications/audit",
+		strings.NewReader(`{"kind":"webhook","url":"`+hook.URL+hookPath+`","secret":"hook-signing","on":["passed"]}`))
+	require.NoError(t, err)
+	noteReq.Header.Set("Authorization", "Bearer "+apiToken)
+	noteResp, err := client.Do(noteReq)
+	require.NoError(t, err)
+	noteResp.Body.Close()
+	require.Equal(t, http.StatusNoContent, noteResp.StatusCode)
+
 	agentTracing, err := telemetry.Setup(t.Context(), "cisid-agent", func(k string) string {
 		return map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": collector.URL()}[k]
 	})
@@ -354,6 +380,30 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("https://ci.example.com/jobs/%d", queued.JobID), last.TargetURL)
 	assert.True(t, strings.HasPrefix(last.Description, "Passed in "), last.Description)
 
+	// The webhook hears that the build passed, signed.
+	require.Eventually(t, func() bool {
+		hookMu.Lock()
+		defer hookMu.Unlock()
+		return len(hookBodies) > 0
+	}, testTimeout, 20*time.Millisecond, "the notification was not sent")
+	hookMu.Lock()
+	require.Len(t, hookBodies, 1)
+	var announced notify.WebhookBody
+	require.NoError(t, json.Unmarshal([]byte(hookBodies[0]), &announced))
+	assert.Equal(t, "passed", announced.Result)
+	assert.Equal(t, fmt.Sprintf("https://ci.example.com/jobs/%d", queued.JobID), announced.URL)
+	assert.Equal(t, notify.Signature("hook-signing", []byte(hookBodies[0])), hookSigs[0])
+	hookMu.Unlock()
+
+	// So does the branch's badge.
+	badgeResp, err := client.Get(base + "/api/repos/sidumandr/cisid/badge.svg?branch=main")
+	require.NoError(t, err)
+	badge, err := io.ReadAll(badgeResp.Body)
+	badgeResp.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, "image/svg+xml", badgeResp.Header.Get("Content-Type"))
+	assert.Contains(t, string(badge), ">passing</text>")
+
 	// The API serves the job and replays its logs as a finished stream.
 	listResp, err := client.Get(base + "/api/jobs")
 	require.NoError(t, err)
@@ -423,6 +473,7 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Contains(t, out, "trace_id="+webhook.TraceID, "logs carry the trace ID")
 	assert.NotContains(t, out, secret, "secrets must not be logged")
 	assert.NotContains(t, out, "dep_e2e_s3cret")
+	assert.NotContains(t, out, hookPath, "a notification's URL is a credential")
 	assert.NotContains(t, out, apiToken)
 	assert.Contains(t, out, "job assigned")
 	assert.Contains(t, out, "job finished")

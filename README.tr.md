@@ -4,7 +4,7 @@
 
 Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 
-> Durum: Faz 1–6 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/tr/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.tr.md).
+> Durum: Faz 1–7 tamam. Agent protokolünün gRPC'ye taşınması ertelendi ([ADR 001](docs/tr/adr/001-agent-protokolu-websocket.md)). Ayrıntılar için [ROADMAP.md](ROADMAP.tr.md).
 
 ## Dokümanlar
 
@@ -18,6 +18,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/tracing.md](docs/tr/tracing.md): OpenTelemetry trace'leri: webhook'tan adımlara tek trace
 - [docs/accounts.md](docs/tr/accounts.md): Kullanıcı hesapları, roller, giriş ve kişisel token'lar
 - [docs/polling.md](docs/tr/polling.md): Webhook'suz push build'leri: branch'leri yoklama
+- [docs/notifications.md](docs/tr/notifications.md): Build sonuçları sohbete, webhook'a ya da e-postayla; build rozetleri
 - [docs/forges.md](docs/tr/forges.md): GitHub, Gitea, Forgejo, GitLab ve Bitbucket kurulumu, repo adları ve özel repolar
 - [docs/commit-status.md](docs/tr/commit-status.md): Job sonuçlarının sağlayıcılarda commit status olarak gösterilmesi
 - [docs/webhook.md](docs/tr/webhook.md): Webhook kurulumu ve davranışı

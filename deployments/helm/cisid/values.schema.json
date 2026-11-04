@@ -70,6 +70,9 @@
         "adminPassword": {
           "type": "string"
         },
+        "smtpPassword": {
+          "type": "string"
+        },
         "oauthClientSecrets": {
           "type": "object",
           "additionalProperties": false,
@@ -202,6 +205,20 @@
         "logRetention": {
           "type": "string",
           "pattern": "^(0|[0-9]+d|([0-9]+([.][0-9]+)?(ns|us|µs|ms|s|m|h))+)$"
+        },
+        "publicBadges": {
+          "type": "boolean"
+        },
+        "smtp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {"type": "string"},
+            "port": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "username": {"type": "string"},
+            "from": {"type": "string"},
+            "tls": {"type": "string", "enum": ["starttls", "tls", "none"]}
+          }
         },
         "shutdownTimeout": {
           "type": "string",

@@ -69,7 +69,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `secrets.agentToken` | — | **Zorunlu.** Agent token'ı, en az 16 karakter |
 | `secrets.apiToken` | — | İptal, yeniden çalıştırma ve secret uç noktalarını açar |
 | `secrets.readToken` | — | Job'ları, logları ve metrikleri okumak için token ister. Yoksa server'a ulaşan herkes okur. |
-| `secrets.secretKey` | — | Repo secret'larını şifreleyen anahtar (base64, 32 byte). Bir kopyasını ayrıca saklayın. |
+| `secrets.secretKey` | yok | Repo secret'larını ve bildirimlerin nereye gittiğini şifreleyen anahtar (base64, 32 byte); ikisini de açar. Bir kopyasını ayrıca saklayın. |
 | `secrets.githubToken` | — | Özel repolar, rate limit ve commit status için |
 | `secrets.giteaToken`, `secrets.giteaWebhookSecret` | — | Gitea'nın token'ı ve webhook secret'ı (`server.giteaURL` ile) |
 | `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo'nun token'ı ve webhook secret'ı (`server.forgejoURL` ile) |
@@ -77,6 +77,7 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud'un token'ı ve webhook secret'ı |
 | `secrets.oauthClientSecrets.<sağlayıcı>` | — | Sağlayıcıyla giriş için OAuth uygulamasının client secret'ı (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
 | `secrets.adminPassword` | — | İlk açılışta `server.adminUser`'ı admin olarak oluşturur, en az 10 karakter ([hesaplar](../../../docs/tr/accounts.md)) |
+| `secrets.smtpPassword` | yok | `server.smtp.username`'in şifresi |
 | `secrets.existingSecret` | — | Yukarıdakileri sizin yönettiğiniz bir Secret'tan okur (aşağıya bakın) |
 | `server.replicaCount` | `1` | Server kopyası |
 | `server.giteaURL`, `server.forgejoURL` | — | Gitea ve Forgejo sunucularının adresi; verilince açılırlar |
@@ -86,6 +87,8 @@ Tamamı ve açıklamaları [values.yaml](values.yaml)'dadır. `values.schema.jso
 | `server.adminUser` | `admin` | `secrets.adminPassword`'ün oluşturduğu hesap |
 | `server.oauthClientIDs.<sağlayıcı>` | — | OAuth uygulamasının client id'si; secret'ı ve `server.publicURL` (ya da ingress) gerekir |
 | `server.oauthSignupRole` | — | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte hesap açılır |
+| `server.publicBadges` | `false` | Okumak giriş istese de build rozetlerini herkese açar ([bildirimler](../../../docs/tr/notifications.md#rozetler)) |
+| `server.smtp.host`, `.port`, `.username`, `.from`, `.tls` | yok, `0` (587, `tls` ile 465), yok, yok, `starttls` | E-posta bildirimleri için SMTP sunucusu; host ile `from` zorunludur. Şifre `secrets.smtpPassword`'e yazılır ([bildirimler](../../../docs/tr/notifications.md#e-posta)). |
 | `server.pollInterval` | `1m` | İzlenen branch'lerin yoklanma aralığı; `0` polling'i kapatır ([polling](../../../docs/tr/polling.md)) |
 | `server.publicURL` | ilk ingress host'u | Commit status bağlantıları için dış adres |
 | `server.trustProxy` | ingress varsa `true` | İstemci IP'sini `X-Forwarded-For`'dan alır |
@@ -113,7 +116,7 @@ Secret'ları bir secrets operator'ı ya da GitOps aracıyla yönetiyorsanız `se
 | `agent-token` | Zorunlu |
 | `postgres-password` | Dahili PostgreSQL ile zorunlu |
 | `database-url` | Harici veritabanıyla zorunlu (`postgres://...`) |
-| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password` | İsteğe bağlı |
+| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password`, `smtp-password` | İsteğe bağlı |
 
 Agent token'ını değiştirmek için anahtara önce `yeni,eski` yazın: server ikisini de kabul eder, agent'lar ilkini gönderir. Bütün agent'lar yeniden başladıktan sonra yalnızca `yeni`yi bırakın.
 

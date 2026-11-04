@@ -75,6 +75,10 @@ curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 
 Webhook'u server'a ulaşamayan sağlayıcılar için branch'ler yoklanabilir: `GET`, `POST /api/repos/{owner}/{repo}/watches` ve `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Ayrıntılar: [polling.md](polling.md).
 
+## Bildirimler ve rozetler
+
+Bir reponun build sonuçlarının nereye bildirileceği (sohbet, webhook, e-posta): `GET /api/repos/{owner}/{repo}/notifications`, `PUT` ve `DELETE .../notifications/{name}`, `POST .../notifications/{name}/test`, hepsi `maintainer` ister. Bir branch'in son sonucu SVG rozet olarak: `GET /api/repos/{owner}/{repo}/badge.svg?branch=main`. Ayrıntılar: [notifications.md](notifications.md).
+
 ## Elle ve zamanlanmış build'ler
 
 Bir branch'in son commit'i push beklemeden derlenebilir. Server commit'i ve clone adresini reponun sağlayıcısının API'sinden alır (özel repolar için sağlayıcının token'ı gerekir). Diğer sağlayıcıların repoları adreste önekiyle yazılır, ör. `/api/repos/gitea:office/app/builds` ya da `/api/repos/gitlab:group%2Fsub/project/builds` ([forges.md](forges.md#repo-adları)). Bu uç noktalar `maintainer` ister; zamanlamaları listelemek okuma erişimi ister.

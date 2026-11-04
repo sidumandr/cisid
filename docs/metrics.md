@@ -14,6 +14,7 @@ The server serves Prometheus metrics at `GET /metrics` (`internal/metrics`). Lab
 | `cisid_log_chunks_total` | counter | — | Log chunks received from agents |
 | `cisid_webhook_deliveries_total` | counter | `result` | `queued`, `ignored`, `duplicate`, `canceled` (closed pull request), `invalid_signature`, `invalid_payload`, `error` |
 | `cisid_commit_statuses_total` | counter | `result` | `sent`, `retry` (forge unreachable), `failed`, `skipped` (no token for the forge) |
+| `cisid_notifications_total` | counter | `kind`, `result` | Build results announced ([notifications.md](notifications.md)): `kind` is `slack`, `webhook` or `email`, `result` is `sent` or `failed` (after the retries) |
 | `go_*`, `process_*` | | | Go runtime and process metrics |
 
 If the database is unreachable, `cisid_jobs` is skipped in that scrape. The other metrics are still served.

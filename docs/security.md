@@ -34,7 +34,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 
 ## API and web UI
 
-- Endpoints that make changes (build, cancel, rerun, schedules, polling, secrets) require `maintainer`, and user management requires `admin` ([accounts.md](accounts.md)). If there is neither a `CISID_API_TOKEN` nor any user, these endpoints are closed (`403`).
+- Endpoints that make changes (build, cancel, rerun, schedules, polling, notifications, secrets) require `maintainer`, and user management requires `admin` ([accounts.md](accounts.md)). If there is neither a `CISID_API_TOKEN` nor any user, these endpoints are closed (`403`).
 - Passwords are stored with PBKDF2-HMAC-SHA256 (600,000 iterations, salted); sessions and personal tokens only as SHA-256 hashes. An unknown user and a wrong password get the same response in the same time.
 - Signing in through a forge (OAuth) is bound by `state`, the return address can only be a path on the site, and the forge's access token is not stored. Accounts match on the forge's immutable user ID. Do not enable `CISID_OAUTH_SIGNUP_ROLE` on public forges ([accounts.md](accounts.md#signing-in-through-a-forge)).
 - The session cookie is HttpOnly and `SameSite=Lax`. Changes that arrive with a cookie also require the `X-Cisid-Request` header (CSRF).
@@ -48,6 +48,13 @@ Someone who can push to a repository can read the secrets defined for that repos
 - The API never returns secret values; it only lists their names.
 - Values are given as environment variables only to steps that request them with `secrets:`. On the server side, `branches` can limit a secret to protected branches; then pull requests do not get it either ([secrets.md](secrets.md#limiting-a-secret-to-branches)). `when.branch` is not a security boundary, because `.cisid.yml` is read from the commit being built.
 - The agent masks secret values in step output with `***`, including values split across chunks. Values shorter than 3 characters are not masked. Masking is not a security boundary: it does not stop a step that transforms the value (e.g. base64) and prints it ([secrets.md](secrets.md)).
+
+## Notifications
+
+- Where notifications go (a chat's webhook URL, which is a credential, or email addresses) is encrypted like secrets, bound to the repository and the notification's name, and never returned; the API shows only the URL's host or the addresses ([notifications.md](notifications.md)).
+- A notification's URL is chosen by a maintainer, so the server would send requests where a maintainer says. To keep that from reaching what only the server can reach, chats and webhooks are not posted to link-local, multicast or known cloud metadata addresses, and redirects are not followed. Private networks are allowed; if the server can reach internal services a maintainer must not, block them at the network level (e.g. an egress NetworkPolicy).
+- Errors and logs name only the URL's host. Webhook bodies can be signed (`X-Cisid-Signature`). SMTP uses STARTTLS by default and refuses a relay that does not offer it; the password never goes over an unencrypted connection except to `localhost`.
+- Badges show whether a branch's latest build passed. They follow read access unless `CISID_PUBLIC_BADGES=true`.
 
 ## Clone tokens
 

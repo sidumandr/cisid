@@ -11,9 +11,9 @@ Server, job'ları izlemek ve yönetmek için bir web arayüzü sunar (`internal/
 | `/` | Son 200 job. Üstte durumu özetleyen tek cümle: kaç job çalışıyor, son 24 saatte kaçı kırıldı, en sonuncusu hangi adımda. Sekmeler (Tümü, Çalışanlar, Kırılanlar, Pull request'ler) sayılarıyla birlikte; repo, branch ya da commit ile filtre. 5 saniyede bir yenilenir. |
 | `/jobs/{id}` | Job'un durumu tek cümlede ("Failed at test with exit code 1 after 1m 48s."), tetikleyen olay, commit, agent, başlama zamanı ve süre. Altında adım şeridi ve seçilen adımın canlı logu. |
 | `/repos` | Son job'larda görünen repolar: son build'leri, durumları, build sayıları. |
-| `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları, yoklanan branch'leri ([polling](polling.md)) ve secret'ları, sekmelerde. Diğer sağlayıcıların repoları önekiyle açılır, ör. `/repos/gitea:office/app` ya da iç içe GitLab grupları için `/repos/gitlab:group%2Fsub/project`. |
+| `/repos/{owner}/{repo}` | Bir reponun build'leri, zamanlamaları, yoklanan branch'leri ([polling](polling.md)), bildirimleri ([bildirimler](notifications.md)) ve secret'ları, sekmelerde. **Badge** düğmesi reponun build rozetinin Markdown'ını verir. Diğer sağlayıcıların repoları önekiyle açılır, ör. `/repos/gitea:office/app` ya da iç içe GitLab grupları için `/repos/gitlab:group%2Fsub/project`. |
 
-Diyaloglar: **Run build** (repo ve branch), API token'ı, okuma için oturum açma, yeni zamanlama, yeni secret ve silme onayları.
+Diyaloglar: **Run build** (repo ve branch), API token'ı, okuma için oturum açma, yeni zamanlama, yeni bildirim, yeni secret, rozet ve silme onayları.
 
 ## Adım şeridi
 
@@ -41,7 +41,7 @@ Tasarım, `design-taste-frontend` skill'inin uygulama ekranı kurallarıyla yap�
 
 ## Eylemler ve token'lar
 
-- **Run build**, **Cancel**, **Rerun**, zamanlama, polling ve secret işlemleri `maintainer` ister ([accounts.md](accounts.md)). Giriş yapılmamışsa ilk kullanımda bir giriş diyaloğu açılır: kullanıcı adı ve şifre, ya da bir token. Server'ın API token'ı yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur; kişisel token ve şifre tarayıcıda bir oturum açar.
+- **Run build**, **Cancel**, **Rerun**, zamanlama, polling, bildirim ve secret işlemleri `maintainer` ister ([accounts.md](accounts.md)). Giriş yapılmamışsa ilk kullanımda bir giriş diyaloğu açılır: kullanıcı adı ve şifre, ya da bir token. Server'ın API token'ı yalnızca o sekmenin oturumunda (`sessionStorage`) tutulur; kişisel token ve şifre tarayıcıda bir oturum açar.
 - Kenar çubuğunun altındaki kişi simgesi **Hesap** sayfasını açar: rol, şifre değiştirme, kişisel token'lar, çıkış. Admin'ler **Kullanıcılar** sayfasında kullanıcı ekler, rollerini ve sağlayıcı hesaplarını değiştirir, devre dışı bırakır ve siler.
 - Çalışan bir job'da yalnızca **Cancel**, biten bir job'da yalnızca **Rerun** gösterilir.
 - `CISID_PUBLIC_URL` tanımlıysa GitHub commit status bağlantıları job sayfasına (`/jobs/{id}`) gider.

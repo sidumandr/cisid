@@ -11,9 +11,9 @@ The server serves a web UI for watching and managing jobs (`internal/web`). The 
 | `/` | The last 200 jobs. At the top, one sentence sums up the state: how many jobs are running, how many failed in the last 24 hours, and at which step the latest one failed. Tabs (All, Running, Failed, Pull requests) with their counts; filter by repository, branch or commit. Refreshes every 5 seconds. |
 | `/jobs/{id}` | The job's status in one sentence ("Failed at test with exit code 1 after 1m 48s."), the triggering event, commit, agent, start time and duration. Below that, the step strip and the live log of the selected step. |
 | `/repos` | The repositories that appear in recent jobs: their latest builds, statuses and build counts. |
-| `/repos/{owner}/{repo}` | A repository's builds, schedules, polled branches ([polling](polling.md)) and secrets, in tabs. Repositories on other forges open with their prefix, e.g. `/repos/gitea:office/app`, or `/repos/gitlab:group%2Fsub/project` for nested GitLab groups. |
+| `/repos/{owner}/{repo}` | A repository's builds, schedules, polled branches ([polling](polling.md)), notifications ([notifications](notifications.md)) and secrets, in tabs. The **Badge** button gives the Markdown of the repository's build badge. Repositories on other forges open with their prefix, e.g. `/repos/gitea:office/app`, or `/repos/gitlab:group%2Fsub/project` for nested GitLab groups. |
 
-Dialogs: **Run build** (repository and branch), API token, sign-in for reading, new schedule, new secret and delete confirmations.
+Dialogs: **Run build** (repository and branch), API token, sign-in for reading, new schedule, new notification, new secret, the badge and delete confirmations.
 
 ## Step strip
 
@@ -41,7 +41,7 @@ The design follows the app-screen rules of the `design-taste-frontend` skill (da
 
 ## Actions and tokens
 
-- **Run build**, **Cancel**, **Rerun**, schedule, polling and secret actions require `maintainer` ([accounts.md](accounts.md)). If you are not signed in, a sign-in dialog opens on first use: a username and password, or a token. The UI keeps the server's API token only in that tab's session (`sessionStorage`); a personal token or a password opens a session in the browser.
+- **Run build**, **Cancel**, **Rerun**, schedule, polling, notification and secret actions require `maintainer` ([accounts.md](accounts.md)). If you are not signed in, a sign-in dialog opens on first use: a username and password, or a token. The UI keeps the server's API token only in that tab's session (`sessionStorage`); a personal token or a password opens a session in the browser.
 - The person icon at the bottom of the sidebar opens the **Account** page: role, password change, personal tokens, sign-out. On the **Users** page, admins add users, change their roles and forge logins, disable them and delete them.
 - A running job shows only **Cancel**, and a finished job shows only **Rerun**.
 - If `CISID_PUBLIC_URL` is set, GitHub commit status links go to the job page (`/jobs/{id}`).

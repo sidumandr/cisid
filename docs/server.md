@@ -50,6 +50,8 @@ To run PostgreSQL, the server and the agent together as containers, see [deploym
 | `CISID_PUBLIC_URL` | — | The URL users reach the server at. Used in commit status links ([commit-status.md](commit-status.md)). |
 | `CISID_BUILD_FORKS` | `false` | If `true`, pull requests from forks are built too; these jobs get no secrets ([webhook.md](webhook.md#pull-requests)) |
 | `CISID_POLL_INTERVAL` | `1m` | How often watched branches are polled, at least `10s`; `0` turns polling off ([polling.md](polling.md)) |
+| `CISID_SMTP_HOST`, `CISID_SMTP_PORT`, `CISID_SMTP_TLS`, `CISID_SMTP_USERNAME`, `CISID_SMTP_PASSWORD`, `CISID_SMTP_FROM` | none, `587`, `starttls` | The SMTP relay email notifications go through; without a host, email is off ([notifications.md](notifications.md#email)) |
+| `CISID_PUBLIC_BADGES` | `false` | If `true`, anyone can see build badges even when reading needs a sign-in ([notifications.md](notifications.md#badges)) |
 | `CISID_LOG_RETENTION` | `90d` | How long the logs of finished jobs are kept (such as `30d`, `72h`). `0` keeps logs forever. Expired logs are deleted in the hourly cleanup; the job record stays. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` etc. | — | The OTLP/HTTP collector to send traces to. If unset, tracing is off ([tracing.md](tracing.md)). |
 
@@ -65,6 +67,7 @@ All missing or invalid values are reported in a single error message. When the c
 | `GET /api/jobs/...` | Jobs, logs and the live log stream ([api.md](api.md)) |
 | `/api/repos/{owner}/{repo}/secrets` | Repository secrets ([secrets.md](secrets.md)) |
 | `/api/repos/{owner}/{repo}/builds`, `…/schedules` | Manual and scheduled builds ([api.md](api.md#manual-and-scheduled-builds)) |
+| `/api/repos/{owner}/{repo}/notifications`, `GET …/badge.svg` | Notifications and the build badge ([notifications.md](notifications.md)) |
 | `GET /`, `GET /jobs/{id}` | Web UI ([ui.md](ui.md)) |
 | `GET /metrics` | Prometheus metrics ([metrics.md](metrics.md)) |
 | `GET /auth/{forge}/login`, `/callback` | Sign-in through a forge ([accounts.md](accounts.md#signing-in-through-a-forge)) |

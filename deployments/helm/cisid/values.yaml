@@ -23,8 +23,9 @@ secrets:
   # Makes reading jobs, logs and metrics need this token (or the API
   # token), 16+ characters. Without it anyone who reaches the server reads.
   readToken: ""
-  # Base64 of 32 random bytes; encrypts repository secrets. Keep a copy:
-  # stored secrets cannot be read without it.
+  # Base64 of 32 random bytes; encrypts repository secrets and where
+  # notifications go, and enables both. Keep a copy: stored secrets cannot
+  # be read without it.
   secretKey: ""
   # For private repositories, rate limits and commit statuses.
   githubToken: ""
@@ -48,6 +49,8 @@ secrets:
   # Creates server.adminUser as an admin on the first start, 10+
   # characters. Change the password in the UI afterwards.
   adminPassword: ""
+  # The password of server.smtp.username.
+  smtpPassword: ""
 
 # The database to use when postgresql.enabled is false.
 database:
@@ -105,6 +108,21 @@ server:
   # viewer or maintainer: forge users without an account get one on their
   # first sign-in. Empty: only users an admin linked sign in.
   oauthSignupRole: ""
+  # Let anyone see build badges, for READMEs, even when reading needs a
+  # sign-in. A badge shows only whether a branch's latest build passed.
+  publicBadges: false
+  # The relay notifications are emailed through; email is off without a
+  # host. The password goes in secrets.smtpPassword.
+  smtp:
+    host: ""
+    # 0: 587, or 465 with tls "tls".
+    port: 0
+    username: ""
+    # The sender, e.g. "cisid <ci@example.com>"; required with a host.
+    from: ""
+    # starttls (port 587), tls (port 465) or none (a relay on a trusted
+    # network only).
+    tls: starttls
   # How long shutdown waits for in-flight requests.
   shutdownTimeout: 15s
   # Keeps serving this long after the pod is told to stop, while the

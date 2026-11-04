@@ -61,6 +61,13 @@ func (m *branchMatcher) Matches(branch string) bool {
 	return false
 }
 
+// MatchBranch reports whether branch matches any of the glob patterns, as
+// when.branch matches them. No patterns match nothing.
+func MatchBranch(patterns []string, branch string) bool {
+	m, err := newBranchMatcher(patterns)
+	return err == nil && m.Matches(branch)
+}
+
 func globToRegexp(glob string) *regexp.Regexp {
 	var b strings.Builder
 	b.WriteString("^")

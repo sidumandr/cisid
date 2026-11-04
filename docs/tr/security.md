@@ -34,7 +34,7 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 
 ## API ve web arayüzü
 
-- Değişiklik yapan uç noktalar (build, iptal, yeniden çalıştırma, zamanlama, polling, secret'lar) `maintainer`, kullanıcı yönetimi `admin` ister ([accounts.md](accounts.md)). Ne `CISID_API_TOKEN` ne kullanıcı varsa bu uç noktalar kapalıdır (`403`).
+- Değişiklik yapan uç noktalar (build, iptal, yeniden çalıştırma, zamanlama, polling, bildirimler, secret'lar) `maintainer`, kullanıcı yönetimi `admin` ister ([accounts.md](accounts.md)). Ne `CISID_API_TOKEN` ne kullanıcı varsa bu uç noktalar kapalıdır (`403`).
 - Şifreler PBKDF2-HMAC-SHA256 ile (600.000 tur, tuzlu) saklanır; oturumlar ve kişisel token'lar yalnızca SHA-256 özetleriyle. Bilinmeyen kullanıcıyla yanlış şifre aynı yanıtı aynı sürede alır.
 - Sağlayıcıyla giriş (OAuth) `state` ile bağlanır, dönüş adresi yalnızca site içi bir yol olabilir, sağlayıcının erişim token'ı saklanmaz. Hesaplar sağlayıcının değişmeyen kullanıcı numarasıyla eşleşir; `CISID_OAUTH_SIGNUP_ROLE` herkese açık sağlayıcılarda açılmamalıdır ([accounts.md](accounts.md#sağlayıcıyla-giriş)).
 - Oturum cookie'si HttpOnly ve `SameSite=Lax`'tır; cookie ile gelen değişiklikler ayrıca `X-Cisid-Request` başlığını ister (CSRF).
@@ -48,6 +48,13 @@ Repoya push edebilen biri, o repo için tanımlı secret'ları okuyabilir ve age
 - API secret değerlerini hiçbir zaman geri döndürmez, yalnızca adlarını listeler.
 - Değerler yalnızca `secrets:` ile isteyen adımlara ortam değişkeni olarak verilir. Bir secret, server tarafında `branches` ile korumalı branch'lere sınırlanabilir; o zaman pull request'lere de verilmez ([secrets.md](secrets.md#secretı-branchlere-sınırlamak)). `when.branch` bir güvenlik sınırı değildir, çünkü `.cisid.yml` derlenen commit'ten okunur.
 - Agent, adımların çıktısında secret değerlerini `***` ile maskeler, parçalara bölünmüş değerler dahil. 3 karakterden kısa değerler maskelenmez. Maskeleme bir güvenlik sınırı değildir: değeri dönüştürüp (ör. base64) yazdıran bir adımı durdurmaz ([secrets.md](secrets.md)).
+
+## Bildirimler
+
+- Bildirimlerin nereye gittiği (bir kimlik bilgisi olan sohbet webhook adresi ya da e-posta adresleri) secret'lar gibi şifrelenir, repoya ve bildirimin adına bağlanır ve hiçbir zaman geri döndürülmez; API yalnızca adresin host'unu ya da e-posta adreslerini gösterir ([notifications.md](notifications.md)).
+- Bildirimin adresini bir `maintainer` seçer; yani server, bir `maintainer`'ın söylediği yere istek gönderir. Bunun yalnızca server'ın ulaşabildiği yerlere varmaması için sohbet ve webhook istekleri link-local, multicast ve bilinen bulut metadata adreslerine gönderilmez, yönlendirmeler izlenmez. Özel ağlara izin verilir; server, `maintainer`'ların erişmemesi gereken iç servislere ulaşabiliyorsa bunları ağ düzeyinde engelleyin (ör. çıkış yönünde bir NetworkPolicy).
+- Hatalar ve loglar adresin yalnızca host'unu söyler. Webhook gövdeleri imzalanabilir (`X-Cisid-Signature`). SMTP varsayılan olarak STARTTLS kullanır ve sunmayan sunucuyu reddeder; şifre, `localhost` dışında hiçbir zaman şifresiz bağlantıdan gitmez.
+- Rozetler bir branch'in son build'inin geçip geçmediğini gösterir. `CISID_PUBLIC_BADGES=true` değilse okuma erişimine uyarlar.
 
 ## Clone token'ları
 

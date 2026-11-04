@@ -138,6 +138,7 @@ gitlab-webhook-secret: {{ .Values.secrets.gitlabWebhookSecret | quote }}
 bitbucket-token: {{ .Values.secrets.bitbucketToken | quote }}
 bitbucket-webhook-secret: {{ .Values.secrets.bitbucketWebhookSecret | quote }}
 admin-password: {{ .Values.secrets.adminPassword | quote }}
+smtp-password: {{ .Values.secrets.smtpPassword | quote }}
 {{- range $forge, $secret := .Values.secrets.oauthClientSecrets }}
 {{ $forge }}-oauth-client-secret: {{ $secret | quote }}
 {{- end }}
@@ -159,6 +160,7 @@ CISID_GITLAB_WEBHOOK_SECRET: gitlab-webhook-secret
 CISID_BITBUCKET_TOKEN: bitbucket-token
 CISID_BITBUCKET_WEBHOOK_SECRET: bitbucket-webhook-secret
 CISID_ADMIN_PASSWORD: admin-password
+CISID_SMTP_PASSWORD: smtp-password
 {{- range $forge := list "github" "gitea" "forgejo" "gitlab" "bitbucket" }}
 CISID_{{ upper $forge }}_OAUTH_CLIENT_SECRET: {{ $forge }}-oauth-client-secret
 {{- end }}
@@ -189,6 +191,9 @@ CISID_{{ upper $forge }}_OAUTH_CLIENT_SECRET: {{ $forge }}-oauth-client-secret
 {{- else if not .Values.database.url }}
 {{- fail "database.url is required when postgresql.enabled is false" }}
 {{- end }}
+{{- end }}
+{{- if and .Values.server.smtp.host (not .Values.server.smtp.from) }}
+{{- fail "server.smtp.from is required with server.smtp.host" }}
 {{- end }}
 {{- if and .Values.ingress.enabled (not .Values.ingress.hosts) }}
 {{- fail "ingress.hosts needs at least one host when ingress.enabled is true" }}

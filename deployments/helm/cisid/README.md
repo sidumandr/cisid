@@ -69,7 +69,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `secrets.agentToken` | — | **Required.** Agent token, at least 16 characters |
 | `secrets.apiToken` | — | Enables the cancel, rerun and secret endpoints |
 | `secrets.readToken` | — | Requires a token to read jobs, logs and metrics. Without it, anyone who reaches the server can read them. |
-| `secrets.secretKey` | — | Key that encrypts repository secrets (base64, 32 bytes). Keep a separate copy of it. |
+| `secrets.secretKey` | none | Key that encrypts repository secrets and where notifications go (base64, 32 bytes); enables both. Keep a separate copy of it. |
 | `secrets.githubToken` | — | For private repositories, rate limits and commit status |
 | `secrets.giteaToken`, `secrets.giteaWebhookSecret` | — | Gitea's token and webhook secret (with `server.giteaURL`) |
 | `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo's token and webhook secret (with `server.forgejoURL`) |
@@ -77,6 +77,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud's token and webhook secret |
 | `secrets.oauthClientSecrets.<forge>` | — | Client secret of the OAuth app for signing in through a forge (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
 | `secrets.adminPassword` | — | Creates `server.adminUser` as an admin on first start, at least 10 characters ([accounts](../../../docs/accounts.md)) |
+| `secrets.smtpPassword` | none | The password of `server.smtp.username` |
 | `secrets.existingSecret` | — | Reads the values above from a Secret you manage (see below) |
 | `server.replicaCount` | `1` | Server replicas |
 | `server.giteaURL`, `server.forgejoURL` | — | Addresses of the Gitea and Forgejo servers; setting them turns them on |
@@ -86,6 +87,8 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `server.adminUser` | `admin` | The account that `secrets.adminPassword` creates |
 | `server.oauthClientIDs.<forge>` | — | Client ID of the OAuth app; needs its secret and `server.publicURL` (or an ingress) |
 | `server.oauthSignupRole` | — | `viewer` or `maintainer`: forge users without an account get one on their first sign-in |
+| `server.publicBadges` | `false` | Lets anyone see build badges even when reading needs a sign-in ([notifications](../../../docs/notifications.md#badges)) |
+| `server.smtp.host`, `.port`, `.username`, `.from`, `.tls` | none, `0` (587, or 465 with `tls`), none, none, `starttls` | The SMTP relay for email notifications; `from` is required with a host. The password goes in `secrets.smtpPassword` ([notifications](../../../docs/notifications.md#email)). |
 | `server.pollInterval` | `1m` | Polling interval for watched branches; `0` turns polling off ([polling](../../../docs/polling.md)) |
 | `server.publicURL` | first ingress host | External address for commit status links |
 | `server.trustProxy` | `true` with an ingress | Takes the client IP from `X-Forwarded-For` |
@@ -113,7 +116,7 @@ If you manage secrets with a secrets operator or a GitOps tool, pass the Secret'
 | `agent-token` | Required |
 | `postgres-password` | Required with the built-in PostgreSQL |
 | `database-url` | Required with an external database (`postgres://...`) |
-| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password` | Optional |
+| `api-token`, `read-token`, `secret-key`, `github-token`, `gitea-token`, `gitea-webhook-secret`, `forgejo-token`, `forgejo-webhook-secret`, `gitlab-token`, `gitlab-webhook-secret`, `bitbucket-token`, `bitbucket-webhook-secret`, `admin-password`, `smtp-password` | Optional |
 
 To rotate the agent token, first set the key to `new,old`: the server accepts both, and agents send the first one. After all agents restart, keep only `new`.
 

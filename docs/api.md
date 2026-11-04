@@ -75,6 +75,10 @@ curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 
 For forges whose webhooks cannot reach the server, branches can be polled: `GET`, `POST /api/repos/{owner}/{repo}/watches` and `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Details: [polling.md](polling.md).
 
+## Notifications and badges
+
+Where a repository's build results are announced (a chat, a webhook, email): `GET /api/repos/{owner}/{repo}/notifications`, `PUT` and `DELETE .../notifications/{name}`, `POST .../notifications/{name}/test`, all for maintainers. A branch's latest result as an SVG badge: `GET /api/repos/{owner}/{repo}/badge.svg?branch=main`. Details: [notifications.md](notifications.md).
+
 ## Manual and scheduled builds
 
 You can build the latest commit of a branch without waiting for a push. The server gets the commit and the clone URL from the API of the repository's forge (private repositories need the forge's token). Repositories on other forges carry their prefix in the path, e.g. `/api/repos/gitea:office/app/builds` or `/api/repos/gitlab:group%2Fsub/project/builds` ([forges.md](forges.md#repository-names)). These endpoints require a maintainer; listing schedules requires read access.

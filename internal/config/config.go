@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/url"
 	"strconv"
 	"strings"
@@ -47,6 +48,8 @@ type Config struct {
 	AdminPassword   string        // CISID_ADMIN_PASSWORD, optional: creates AdminUser as an admin if it does not exist
 	GitHubOAuth     OAuthApp      // CISID_GITHUB_OAUTH_CLIENT_ID, CISID_GITHUB_OAUTH_CLIENT_SECRET: sign in through GitHub
 	OAuthSignupRole string        // CISID_OAUTH_SIGNUP_ROLE, viewer or maintainer: forge users without an account get one; empty: only linked users sign in
+	PublicBadges    bool          // CISID_PUBLIC_BADGES, lets anyone see build badges even when reading needs a sign-in
+	SMTP            SMTP          // CISID_SMTP_*: the relay notifications are emailed through
 
 	// The other forges. Gitea and Forgejo are on when their URL is set;
 	// GitLab (GitLab.com by default) and Bitbucket Cloud always are, as
@@ -89,6 +92,74 @@ func loadOAuth(getenv func(string) string, prefix string, problems *[]error) OAu
 
 // Enabled reports whether the forge is configured.
 func (f Forge) Enabled() bool { return f.URL != "" }
+
+// SMTP is the relay notifications are emailed through.
+type SMTP struct {
+	Host     string // CISID_SMTP_HOST; empty turns email off
+	Port     int    // CISID_SMTP_PORT, default 587, or 465 with TLS "tls"
+	Username string // CISID_SMTP_USERNAME, optional, with Password
+	Password string // CISID_SMTP_PASSWORD
+	From     string // CISID_SMTP_FROM, required with Host, e.g. "cisid <ci@example.com>"
+	TLS      string // CISID_SMTP_TLS: starttls (default), tls or none
+}
+
+// Enabled reports whether email can be sent.
+func (s SMTP) Enabled() bool { return s.Host != "" }
+
+func (s SMTP) logValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("host", s.Host),
+		slog.Int("port", s.Port),
+		slog.String("tls", s.TLS),
+		slog.String("from", s.From),
+		slog.Bool("auth", s.Username != ""),
+	)
+}
+
+// loadSMTP reads the CISID_SMTP_* settings, which need CISID_SMTP_HOST.
+func loadSMTP(getenv func(string) string, problems *[]error) SMTP {
+	s := SMTP{
+		Host:     getenv("CISID_SMTP_HOST"),
+		Username: getenv("CISID_SMTP_USERNAME"),
+		Password: getenv("CISID_SMTP_PASSWORD"),
+		From:     getenv("CISID_SMTP_FROM"),
+		TLS:      getenv("CISID_SMTP_TLS"),
+	}
+	port := getenv("CISID_SMTP_PORT")
+	if s.Host == "" {
+		if s.Username != "" || s.Password != "" || s.From != "" || s.TLS != "" || port != "" {
+			*problems = append(*problems, fmt.Errorf("CISID_SMTP_HOST is required with the other CISID_SMTP_ settings"))
+		}
+		return s
+	}
+	switch s.TLS {
+	case "":
+		s.TLS = "starttls"
+	case "starttls", "tls", "none":
+	default:
+		*problems = append(*problems, fmt.Errorf("CISID_SMTP_TLS must be starttls, tls or none"))
+	}
+	s.Port = 587
+	if s.TLS == "tls" {
+		s.Port = 465
+	}
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			*problems = append(*problems, fmt.Errorf("CISID_SMTP_PORT must be a port number"))
+		}
+		s.Port = n
+	}
+	if s.From == "" {
+		*problems = append(*problems, fmt.Errorf("CISID_SMTP_FROM is required with CISID_SMTP_HOST"))
+	} else if _, err := mail.ParseAddress(s.From); err != nil {
+		*problems = append(*problems, fmt.Errorf("CISID_SMTP_FROM must be an email address"))
+	}
+	if (s.Username == "") != (s.Password == "") {
+		*problems = append(*problems, fmt.Errorf("CISID_SMTP_USERNAME and CISID_SMTP_PASSWORD must be set together"))
+	}
+	return s
+}
 
 func (f Forge) logValue() slog.Value {
 	return slog.GroupValue(
@@ -320,6 +391,15 @@ func Load(getenv func(string) string) (Config, error) {
 		problems = append(problems, fmt.Errorf("CISID_PUBLIC_URL is required for signing in through a forge: the forge sends the browser back there"))
 	}
 
+	if v := getenv("CISID_PUBLIC_BADGES"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			problems = append(problems, fmt.Errorf("CISID_PUBLIC_BADGES: %w", err))
+		}
+		cfg.PublicBadges = b
+	}
+	cfg.SMTP = loadSMTP(getenv, &problems)
+
 	cfg.LogRetention = defaultLogRetention
 	if v := getenv("CISID_LOG_RETENTION"); v != "" {
 		d, err := parseRetention(v)
@@ -398,5 +478,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Bool("admin_password_set", c.AdminPassword != ""),
 		slog.Bool("github_sign_in", c.GitHubOAuth.Enabled()),
 		slog.String("oauth_signup_role", c.OAuthSignupRole),
+		slog.Bool("public_badges", c.PublicBadges),
+		slog.Any("smtp", c.SMTP.logValue()),
 	)
 }

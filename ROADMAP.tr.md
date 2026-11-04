@@ -71,3 +71,8 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 - [x] Kullanıcı hesapları ve roller (viewer, maintainer, admin), şifreyle giriş, kişisel API token'ları, CSRF koruması ([docs/accounts.md](docs/tr/accounts.md)).
 - [x] Sağlayıcılarla (OAuth) giriş: GitHub, Gitea, Forgejo, GitLab, Bitbucket; hesaplar sağlayıcının değişmeyen kullanıcı numarasıyla eşleşir, isteğe bağlı otomatik hesap açma ([docs/accounts.md](docs/tr/accounts.md#sağlayıcıyla-giriş)).
 - [x] Dokümanlar İngilizce ve Türkçe: İngilizceler her zamanki yerlerinde, Türkçeler `docs/tr/` altında ve `.tr.md` dosyalarında.
+
+## Faz 7: Build'lerden haberdar olmak
+
+- [x] Bildirimler: Slack uyumlu sohbetler, imzalı webhook'lar ve e-posta; her kırılmada, kırılma ve düzelmede ya da her sonuçta, branch'e göre ve isteğe bağlı olarak pull request'ler için; birden fazla server kopyasında da her sonuç bir kez gönderilir ([docs/notifications.md](docs/tr/notifications.md)).
+- [x] README'ler için build rozetleri; okumanın giriş istediği server'lar için `CISID_PUBLIC_BADGES` ([docs/notifications.md](docs/tr/notifications.md#rozetler)).
