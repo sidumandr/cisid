@@ -93,6 +93,10 @@ spec:
             {{- end }}
             - name: CISID_STEP_PIDS
               value: {{ .Values.agent.stepPids | quote }}
+            {{- with .Values.agent.labels }}
+            - name: CISID_AGENT_LABELS
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- if and $tls (not .Values.agent.serverURL) }}
             - name: CISID_SERVER_CA_FILE
               value: /etc/cisid/server-ca/ca.crt

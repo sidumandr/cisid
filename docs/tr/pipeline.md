@@ -33,6 +33,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../../.cisi
 | `matrix` | hayır | Pipeline'ı her değer kombinasyonu için ayrı bir job olarak çalıştırır ([Matrix](#matrix)) |
 | `cache` | hayır | Repo'nun job'ları arasında saklanacak en fazla 10 dizin, mutlak yol olarak ([Önbellek](#önbellek)) |
 | `artifacts` | hayır | Adımlar geçince saklanacak en fazla 20 dosya ya da dizin; workspace'e göre yol, joker karakterler kullanılabilir ([Artifact'lar](#artifactlar)) |
+| `labels` | hayır | Job'u çalıştıracak agent'ta olması gereken en fazla 10 etiket, ör. `[arm64]` ([Etiketler](#etiketler)) |
 | `steps[].name` | evet | Harf, rakam, `.`, `_`, `-`. En fazla 63 karakter, benzersiz olmalı. `clone` adı ayrılmıştır. |
 | `steps[].image` | evet | Adımın çalışacağı Docker image'ı. `/bin/sh` içermeli. |
 | `steps[].commands` | evet | Shell komutları |
@@ -166,6 +167,23 @@ steps:
 - En fazla 8 eksen ve 16 kombinasyon olabilir. Eksen adları ortam değişkeni adı olmalıdır, ayrılmış adlar kullanılamaz ve bir adımın `environment` alanıyla çakışamaz.
 - Her kombinasyon GitHub'da kendi commit status'unu alır, örneğin `cisid (GO_VERSION=1.27, POSTGRES=18)` ([commit-status.md](commit-status.md)).
 - Bir matrix job'u yeniden çalıştırılırsa sadece kendi kombinasyonu tekrar koşar.
+
+## Etiketler
+
+```yaml
+labels: [arm64, gpu]
+steps:
+  - name: train
+    image: pytorch/pytorch
+    commands: [python train.py]
+```
+
+Job'u yalnızca listelenen etiketlerin **hepsine** sahip agent'lar çalıştırır. Agent'lar etiketlerini `CISID_AGENT_LABELS`'tan alır ([agent.md](agent.md#çalıştırma)); etiketi olmayan agent yalnızca etiketsiz job'ları çalıştırır.
+
+- Etiket en fazla 63 harf, rakam, `.`, `_`, `=` ve `-`'den oluşur, ör. `arm64`, `gpu`, `region=eu`.
+- Server bir job'un etiketlerini `.cisid.yml`'i okuyunca öğrenir; bunu job'u ilk önerdiği agent için yapar. O agent'ta bir etiket eksikse job kuyruğa geri döner ve bundan sonra onu yalnızca etiketlere sahip agent'lar alır. Job sayfası hangi etiketleri beklediğini söyler.
+- Bağlı hiçbir agent'ta etiketler yoksa job, biri bağlanana kadar bekler.
+- `matrix` ile her kombinasyon aynı etiketleri ister.
 
 ## Artifact'lar
 

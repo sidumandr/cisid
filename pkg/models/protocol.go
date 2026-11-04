@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"slices"
 	"time"
 )
 
@@ -80,6 +82,25 @@ type AgentHello struct {
 	Name         string `json:"name"`
 	Capacity     int    `json:"capacity"`
 	RunningJobID int64  `json:"running_job_id,omitempty"`
+	// Labels say what the agent offers, e.g. arm64 or gpu; it runs only
+	// jobs whose labels it all has.
+	Labels []string `json:"labels,omitempty"`
+}
+
+// labelRe is what a label looks like: arm64, gpu, region=eu.
+var labelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._=-]{0,62}$`)
+
+// ValidLabel reports whether s can be a label.
+func ValidLabel(s string) bool { return labelRe.MatchString(s) }
+
+// HasLabels reports whether have holds every label of need.
+func HasLabels(have, need []string) bool {
+	for _, n := range need {
+		if !slices.Contains(have, n) {
+			return false
+		}
+	}
+	return true
 }
 
 // JobAssignment tells an agent which steps to run for a job, and which

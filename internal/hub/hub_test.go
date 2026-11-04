@@ -39,11 +39,22 @@ const (
 
 type mockStore struct {
 	mock.Mock
+	mu          sync.Mutex
+	claimLabels [][]string
 }
 
-func (m *mockStore) ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error) {
+// ClaimJob records the labels it is called with; expectations match the
+// other arguments.
+func (m *mockStore) ClaimJob(ctx context.Context, agent string, labels []string, lease time.Duration) (models.Job, error) {
+	m.mu.Lock()
+	m.claimLabels = append(m.claimLabels, labels)
+	m.mu.Unlock()
 	args := m.Called(ctx, agent, lease)
 	return args.Get(0).(models.Job), args.Error(1)
+}
+
+func (m *mockStore) RequeueForLabels(ctx context.Context, id int64, agent string, labels []string) error {
+	return m.Called(ctx, id, agent, labels).Error(0)
 }
 
 func (m *mockStore) RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error) {

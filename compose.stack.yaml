@@ -85,6 +85,7 @@ services:
       # Defaults to the container hostname, so "--scale agent=N" gives
       # each replica its own name.
       CISID_AGENT_NAME: ${CISID_AGENT_NAME:-}
+      CISID_AGENT_LABELS: ${CISID_AGENT_LABELS:-}
       CISID_AGENT_TOKEN: ${CISID_AGENT_TOKEN:?set CISID_AGENT_TOKEN}
       CISID_STEP_MEMORY: ${CISID_STEP_MEMORY:-}
       CISID_STEP_CPUS: ${CISID_STEP_CPUS:-}

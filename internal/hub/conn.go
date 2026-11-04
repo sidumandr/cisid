@@ -24,6 +24,8 @@ const (
 	pingInterval    = 30 * time.Second
 	maxMessageBytes = 1 << 20
 	outBuffer       = 16
+	// maxLabels bounds the labels an agent offers.
+	maxLabels = 20
 )
 
 var (
@@ -144,6 +146,14 @@ func readHello(ctx context.Context, conn *websocket.Conn) (models.AgentHello, er
 	if hello.Name == "" {
 		return models.AgentHello{}, fmt.Errorf("%w: name is empty", errBadHello)
 	}
+	if len(hello.Labels) > maxLabels {
+		return models.AgentHello{}, fmt.Errorf("%w: more than %d labels", errBadHello, maxLabels)
+	}
+	for _, l := range hello.Labels {
+		if !models.ValidLabel(l) {
+			return models.AgentHello{}, fmt.Errorf("%w: invalid label %q", errBadHello, l)
+		}
+	}
 	return hello, nil
 }
 
@@ -174,6 +184,7 @@ func (h *Hub) register(ctx context.Context, hello models.AgentHello) (*agentConn
 
 	a := &agentConn{
 		name:     hello.Name,
+		labels:   hello.Labels,
 		out:      make(chan models.Message, outBuffer),
 		kick:     make(chan struct{}),
 		drain:    make(chan struct{}),

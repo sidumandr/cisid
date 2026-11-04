@@ -87,6 +87,8 @@ type Plan struct {
 	// Siblings are the other combinations of the matrix. They are set only
 	// when the job had no combination yet, and each needs a job of its own.
 	Siblings []map[string]string
+	// Labels are what the agent running the job must have.
+	Labels []string
 }
 
 // Plan returns what an agent runs for job: the clone step, then the steps
@@ -123,7 +125,7 @@ func (p Planner) Plan(ctx context.Context, job models.Job) (Plan, error) {
 		return Plan{}, err
 	}
 
-	plan := Plan{Matrix: job.Matrix}
+	plan := Plan{Matrix: job.Matrix, Labels: cfg.Labels}
 	if combos := cfg.Matrix.Combinations(); len(combos) > 0 && job.Matrix == nil {
 		plan.Matrix, plan.Siblings = combos[0], combos[1:]
 	}

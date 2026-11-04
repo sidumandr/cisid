@@ -44,3 +44,8 @@ func TestLimitsFromEnv(t *testing.T) {
 		assert.ErrorContains(t, err, k)
 	}
 }
+
+func TestSplitLabels(t *testing.T) {
+	assert.Equal(t, []string{"arm64", "gpu"}, splitLabels(" arm64, gpu,,arm64 "))
+	assert.Nil(t, splitLabels(""))
+}

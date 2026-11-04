@@ -21,7 +21,7 @@ func TestStoreArtifacts(t *testing.T) {
 	s, pool := newStore(t)
 	ctx := t.Context()
 	createJobs(t, s, 1)
-	job, err := s.ClaimJob(ctx, "worker-1", time.Minute)
+	job, err := s.ClaimJob(ctx, "worker-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	// Over a chunk, so it is stored in pieces.
@@ -72,7 +72,7 @@ func TestStoreArtifactTooLarge(t *testing.T) {
 	s, pool := newStore(t)
 	ctx := t.Context()
 	createJobs(t, s, 1)
-	job, err := s.ClaimJob(ctx, "worker-1", time.Minute)
+	job, err := s.ClaimJob(ctx, "worker-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	_, err = s.PutArtifact(ctx, job.ID, "worker-1", "huge.bin", bytes.NewReader(make([]byte, 5<<20)), testLimits)
@@ -100,7 +100,7 @@ func TestStoreArtifactBrokenUpload(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	createJobs(t, s, 1)
-	job, err := s.ClaimJob(ctx, "worker-1", time.Minute)
+	job, err := s.ClaimJob(ctx, "worker-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	_, err = s.PutArtifact(ctx, job.ID, "worker-1", "app.bin", &failingReader{left: artifactChunk + 10}, testLimits)
@@ -114,7 +114,7 @@ func TestStorePruneAndExpireArtifacts(t *testing.T) {
 	s, pool := newStore(t)
 	ctx := t.Context()
 	createJobs(t, s, 1)
-	job, err := s.ClaimJob(ctx, "worker-1", time.Minute)
+	job, err := s.ClaimJob(ctx, "worker-1", nil, time.Minute)
 	require.NoError(t, err)
 	_, err = s.PutArtifact(ctx, job.ID, "worker-1", "kept.txt", strings.NewReader("x"), testLimits)
 	require.NoError(t, err)

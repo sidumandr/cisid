@@ -428,6 +428,18 @@ func TestNotificationSettingsReachTheServer(t *testing.T) {
 	assert.ErrorContains(t, err, "values don't meet the specifications of the schema")
 }
 
+func TestAgentLabels(t *testing.T) {
+	m := render(t, with(required(), "agent.labels", []any{"arm64", "gpu"}))
+	c := container(t, m.agent(t).Spec.Template.Spec, "agent")
+	assert.Equal(t, "arm64,gpu", env(c, "CISID_AGENT_LABELS").Value)
+
+	plain := container(t, render(t, required()).agent(t).Spec.Template.Spec, "agent")
+	assert.Nil(t, env(plain, "CISID_AGENT_LABELS"), "no labels by default")
+
+	_, err := renderFiles(with(required(), "agent.labels", []any{"has space"}))
+	assert.ErrorContains(t, err, "values don't meet the specifications of the schema")
+}
+
 func TestNoWebhookSecretIsFine(t *testing.T) {
 	m := render(t, with(required(), "secrets.webhookSecret", ""))
 	assert.NotContains(t, m.secrets["ci-cisid"].Data, "webhook-secret", "a server that polls needs no webhook")

@@ -32,7 +32,7 @@ func TestStorePullRequestJobs(t *testing.T) {
 
 	first, err := s.QueueJob(ctx, prJob(7, shaA), "hash-1", "")
 	require.NoError(t, err)
-	running, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	running, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 	require.Equal(t, first, running.ID)
 	assert.Equal(t, models.EventPullRequest, running.Event)

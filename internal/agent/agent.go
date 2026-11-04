@@ -83,6 +83,9 @@ type Config struct {
 	// TracerProvider traces jobs, services and steps, continuing the trace
 	// the server sends with each job. Nothing is traced when nil.
 	TracerProvider trace.TracerProvider
+	// Labels say what the agent offers, e.g. arm64 or gpu; the server
+	// sends it only jobs whose labels it all has.
+	Labels []string
 }
 
 // Agent is a worker that runs one job at a time.
@@ -119,6 +122,11 @@ func New(cfg Config, r StepRunner, log *slog.Logger) (*Agent, error) {
 	}
 	if cfg.Name == "" {
 		return nil, fmt.Errorf("%w: name is empty", ErrInvalidConfig)
+	}
+	for _, l := range cfg.Labels {
+		if !models.ValidLabel(l) {
+			return nil, fmt.Errorf("%w: label %q may only contain letters, digits, '.', '_', '=' and '-'", ErrInvalidConfig, l)
+		}
 	}
 
 	if cfg.MinBackoff <= 0 {
@@ -256,6 +264,7 @@ func (a *Agent) session(ctx context.Context, stopping <-chan struct{}, jobs chan
 		Name:         a.cfg.Name,
 		Capacity:     1,
 		RunningJobID: a.runningJob.Load(),
+		Labels:       a.cfg.Labels,
 	})
 	if err != nil {
 		return true, err

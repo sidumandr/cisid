@@ -32,6 +32,7 @@ const (
 	workspacePath = "/workspace"
 	maxServices   = 10
 	maxArtifacts  = 20
+	maxLabels     = 10
 )
 
 var (
@@ -83,6 +84,8 @@ type Config struct {
 	// Artifacts lists the files kept once the steps pass: paths relative to
 	// the workspace, with shell wildcards; a directory keeps every file in it.
 	Artifacts []string
+	// Labels are what an agent needs to run the pipeline, e.g. arm64.
+	Labels []string
 }
 
 // Service is a container started before the steps and stopped after them.
@@ -133,6 +136,7 @@ type rawConfig struct {
 	Matrix    map[string]stringList `yaml:"matrix"`
 	Cache     []string              `yaml:"cache"`
 	Artifacts []string              `yaml:"artifacts"`
+	Labels    stringList            `yaml:"labels"`
 }
 
 type rawService struct {
@@ -236,6 +240,15 @@ func ParseConfig(data []byte) (Config, error) {
 	cfg.Cache = raw.Cache
 	problems = append(problems, validateArtifacts(raw.Artifacts)...)
 	cfg.Artifacts = raw.Artifacts
+	if len(raw.Labels) > maxLabels {
+		problems = append(problems, fmt.Errorf("labels: at most %d are allowed, got %d", maxLabels, len(raw.Labels)))
+	}
+	for i, l := range raw.Labels {
+		if !models.ValidLabel(l) {
+			problems = append(problems, fmt.Errorf("labels[%d]: %q may only contain letters, digits, '.', '_', '=' and '-'", i, l))
+		}
+	}
+	cfg.Labels = slices.Compact(slices.Sorted(slices.Values(raw.Labels)))
 	for i, rs := range raw.Steps {
 		bad := func(format string, args ...any) {
 			problems = append(problems, fmt.Errorf("steps[%d]: "+format, append([]any{i}, args...)...))

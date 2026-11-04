@@ -47,7 +47,7 @@ func TestStreamIntegrationLiveLogs(t *testing.T) {
 		Branch: "main", CommitSHA: "6666666666666666666666666666666666666666", Status: models.JobStatusPending,
 	})
 	require.NoError(t, err)
-	_, err = store.ClaimJob(t.Context(), "agent-1", time.Minute)
+	_, err = store.ClaimJob(t.Context(), "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	jobs := NewJobsAPI(store, broker, discard)

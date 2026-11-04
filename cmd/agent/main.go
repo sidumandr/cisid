@@ -5,6 +5,7 @@
 //	CISID_SERVER_URL      server agent endpoint (default ws://localhost:8080/agent/ws)
 //	CISID_AGENT_NAME      name reported to the server (default: hostname)
 //	CISID_AGENT_TOKEN     token the server requires from agents (CISID_AGENT_TOKEN there)
+//	CISID_AGENT_LABELS    comma-separated labels the agent offers, e.g. arm64,gpu
 //	CISID_SERVER_CA_FILE  PEM CA bundle to trust for wss://, e.g. a private CA
 //	CISID_STEP_MEMORY     memory limit per step and service container, e.g. 2g
 //	CISID_STEP_CPUS       CPU limit per container, e.g. 2 or 0.5
@@ -23,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -65,7 +67,8 @@ func run(ctx context.Context, log *slog.Logger) error {
 		serverURL = defaultServerURL
 	}
 
-	cfg := agent.Config{ServerURL: serverURL, Name: name, Token: firstToken(os.Getenv("CISID_AGENT_TOKEN"))}
+	cfg := agent.Config{ServerURL: serverURL, Name: name, Token: firstToken(os.Getenv("CISID_AGENT_TOKEN")),
+		Labels: splitLabels(os.Getenv("CISID_AGENT_LABELS"))}
 	if caFile := os.Getenv("CISID_SERVER_CA_FILE"); caFile != "" {
 		pem, err := os.ReadFile(caFile)
 		if err != nil {
@@ -113,7 +116,7 @@ func run(ctx context.Context, log *slog.Logger) error {
 		return fmt.Errorf("create agent: %w", err)
 	}
 
-	log.InfoContext(ctx, "agent starting", "name", name, "server", serverURL,
+	log.InfoContext(ctx, "agent starting", "name", name, "server", serverURL, "labels", cfg.Labels,
 		"memory_limit", limits.MemoryBytes, "cpu_limit", float64(limits.NanoCPUs)/1e9, "pids_limit", limits.Pids)
 	if err := a.Run(ctx); err != nil {
 		return fmt.Errorf("run agent: %w", err)
@@ -125,6 +128,17 @@ func run(ctx context.Context, log *slog.Logger) error {
 // firstToken picks the token to send from CISID_AGENT_TOKEN. It may list
 // several, as the server's does while tokens are rotated, so one Secret
 // can serve both.
+// splitLabels reads CISID_AGENT_LABELS: labels separated by commas.
+func splitLabels(v string) []string {
+	var labels []string
+	for _, l := range strings.Split(v, ",") {
+		if l = strings.TrimSpace(l); l != "" && !slices.Contains(labels, l) {
+			labels = append(labels, l)
+		}
+	}
+	return labels
+}
+
 func firstToken(v string) string {
 	t, _, _ := strings.Cut(v, ",")
 	return strings.TrimSpace(t)

@@ -14,6 +14,7 @@ CISID_SERVER_URL=ws://localhost:8080/agent/ws CISID_AGENT_NAME=worker-1 go run .
 |---|---|---|
 | `CISID_SERVER_URL` | `ws://localhost:8080/agent/ws` | The server's agent endpoint (`ws://` or `wss://`) |
 | `CISID_AGENT_NAME` | hostname | Name reported to the server (`X-Cisid-Agent` header and `agent_hello`) |
+| `CISID_AGENT_LABELS` | none | Labels the agent offers, separated by commas, e.g. `arm64,gpu`. It runs only jobs whose `labels` it all has ([pipeline.md](pipeline.md#labels)). |
 | `CISID_AGENT_TOKEN` | — | Agent token the server requires. Sent in the `Authorization: Bearer` header. If you give a comma-separated list, the first one is sent. |
 | `CISID_SERVER_CA_FILE` | — | PEM CA file to trust for `wss://` (e.g. a self-signed or internal company CA) |
 | `CISID_STEP_MEMORY` | — | Memory limit for each step and service container (`512m`, `2g`). Swap is not available, and a container that exceeds the limit is killed. |
@@ -38,7 +39,7 @@ Each message is a JSON envelope. The types are in `pkg/models/protocol.go`.
 
 | Type | Direction | Payload |
 |---|---|---|
-| `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, the first message on every connection. `running_job_id`: the job the agent holds or whose result it has not sent yet (the field is omitted if there is none) |
+| `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42,"labels":["arm64"]}`, the first message on every connection. `running_job_id`: the job the agent holds or whose result it has not sent yet (the field is omitted if there is none) |
 | `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600,"depends_on":[0]}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}],"trace_parent":"00-..."}`. `trace_parent` is present only if the server produces traces ([tracing.md](tracing.md)) |
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |

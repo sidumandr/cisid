@@ -247,6 +247,7 @@ function finding(j) {
       return `Running ${what}${j.agent ? ` on ${j.agent}` : ""} for ${took}.`;
     }
     default:
+      if (j.labels && j.labels.length) return `Waiting for an agent labelled ${listWords(j.labels)} since ${ago(j.created_at)}.`;
       return `Waiting for an agent since ${ago(j.created_at)}.`;
   }
 }

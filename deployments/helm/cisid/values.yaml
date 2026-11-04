@@ -163,6 +163,10 @@ agent:
     pullPolicy: IfNotPresent
   # The server's agent endpoint. Defaults to the server's Service.
   serverURL: ""
+  # What these agents offer, e.g. [arm64, gpu]; they run only jobs whose
+  # .cisid.yml labels they all have. Install the chart once per kind of
+  # agent to offer different labels.
+  labels: []
   # Limits of each step and service container, e.g. 2g and 2.
   stepMemory: ""
   stepCPUs: ""

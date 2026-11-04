@@ -1098,3 +1098,13 @@ func TestAgentLeavesNoConnectionBehind(t *testing.T) {
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, os.ErrDeadlineExceeded, "the agent kept a connection it no longer uses")
 }
+
+func TestAgentOffersItsLabels(t *testing.T) {
+	fs := newFakeServer(t)
+	startAgent(t, fs, &mockRunner{}, func(c *Config) { c.Labels = []string{"arm64", "gpu"} })
+	sc := fs.accept(t)
+	assert.Equal(t, []string{"arm64", "gpu"}, sc.hello.Labels)
+
+	_, err := New(Config{ServerURL: fs.url(), Name: "x", Labels: []string{"has space"}}, &mockRunner{}, nil)
+	assert.ErrorIs(t, err, ErrInvalidConfig)
+}

@@ -81,6 +81,9 @@ type Job struct {
 	// StepResults says how each step in StepNames went, by index; absent
 	// for jobs run by agents that do not report steps.
 	StepResults []StepResult `json:"step_results,omitempty"`
+	// Labels are what an agent needs to run the job, once a planning found
+	// that the agent it was planned on lacks them.
+	Labels []string `json:"labels,omitempty"`
 }
 
 // Schedule builds the head of a branch at the times its cron spec matches.

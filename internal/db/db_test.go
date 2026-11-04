@@ -82,18 +82,18 @@ func TestStoreClaimJobOldestFirst(t *testing.T) {
 	ctx := t.Context()
 	ids := createJobs(t, s, 2)
 
-	first, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	first, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, ids[0], first.ID)
 	assert.Equal(t, models.JobStatusRunning, first.Status)
 	assert.Equal(t, "agent-1", first.Agent)
 	assert.NotNil(t, first.StartedAt)
 
-	second, err := s.ClaimJob(ctx, "agent-2", time.Minute)
+	second, err := s.ClaimJob(ctx, "agent-2", nil, time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, ids[1], second.ID)
 
-	_, err = s.ClaimJob(ctx, "agent-3", time.Minute)
+	_, err = s.ClaimJob(ctx, "agent-3", nil, time.Minute)
 	assert.ErrorIs(t, err, ErrNoPendingJob)
 }
 
@@ -112,7 +112,7 @@ func TestStoreClaimJobConcurrently(t *testing.T) {
 		name := "agent-" + string(rune('a'+a))
 		wg.Go(func() {
 			for {
-				job, err := s.ClaimJob(t.Context(), name, time.Minute)
+				job, err := s.ClaimJob(t.Context(), name, nil, time.Minute)
 				if err != nil {
 					assert.ErrorIs(t, err, ErrNoPendingJob)
 					return
@@ -136,7 +136,7 @@ func TestStoreRequeueJob(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	ids := createJobs(t, s, 1)
-	_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	assert.ErrorIs(t, s.RequeueJob(ctx, ids[0], "agent-2"), ErrJobConflict, "only the owner may requeue")
@@ -148,7 +148,7 @@ func TestStoreRequeueJob(t *testing.T) {
 	assert.Empty(t, got.Agent)
 	assert.Nil(t, got.StartedAt)
 
-	again, err := s.ClaimJob(ctx, "agent-2", time.Minute)
+	again, err := s.ClaimJob(ctx, "agent-2", nil, time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, ids[0], again.ID)
 }
@@ -158,10 +158,10 @@ func TestStoreRequeueAgentJobs(t *testing.T) {
 	ctx := t.Context()
 	ids := createJobs(t, s, 3)
 	for range 2 {
-		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+		_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 		require.NoError(t, err)
 	}
-	_, err := s.ClaimJob(ctx, "agent-2", time.Minute)
+	_, err := s.ClaimJob(ctx, "agent-2", nil, time.Minute)
 	require.NoError(t, err)
 
 	n, err := s.RequeueAgentJobs(ctx, "agent-1", ids[1])
@@ -194,7 +194,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+		_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 		require.NoError(t, err)
 
 		res := failed
@@ -216,7 +216,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+		_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 		require.NoError(t, err)
 
 		require.NoError(t, s.FinishJob(ctx, "agent-1",
@@ -234,7 +234,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+		_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 		require.NoError(t, err)
 
 		res := failed
@@ -246,7 +246,7 @@ func TestStoreFinishJob(t *testing.T) {
 		s, _ := newStore(t)
 		ctx := t.Context()
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+		_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 		require.NoError(t, err)
 		require.NoError(t, s.RequeueJob(ctx, ids[0], "agent-1"))
 
@@ -298,7 +298,7 @@ func TestStoreCurrentStep(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	ids := createJobs(t, s, 2)
-	running, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	running, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 	require.Equal(t, ids[0], running.ID)
 	for _, l := range []models.JobLog{
@@ -371,7 +371,7 @@ func TestStoreClaimJobSetsLease(t *testing.T) {
 	ctx := t.Context()
 	createJobs(t, s, 1)
 
-	job, err := s.ClaimJob(ctx, "agent-1", 5*time.Minute)
+	job, err := s.ClaimJob(ctx, "agent-1", nil, 5*time.Minute)
 
 	require.NoError(t, err)
 	require.NotNil(t, job.LeaseExpiresAt)
@@ -383,11 +383,11 @@ func TestStoreLeases(t *testing.T) {
 	ctx := t.Context()
 	ids := createJobs(t, s, 3)
 	// agent-1 holds an expired lease, agent-2 and agent-3 valid ones.
-	_, err := s.ClaimJob(ctx, "agent-1", -time.Second)
+	_, err := s.ClaimJob(ctx, "agent-1", nil, -time.Second)
 	require.NoError(t, err)
-	_, err = s.ClaimJob(ctx, "agent-2", time.Minute)
+	_, err = s.ClaimJob(ctx, "agent-2", nil, time.Minute)
 	require.NoError(t, err)
-	_, err = s.ClaimJob(ctx, "agent-3", -time.Second)
+	_, err = s.ClaimJob(ctx, "agent-3", nil, -time.Second)
 	require.NoError(t, err)
 
 	// agent-3 is still connected somewhere, so its lease is renewed in time.
@@ -420,7 +420,7 @@ func TestStoreAdoptJob(t *testing.T) {
 	t.Run("job still running on the agent", func(t *testing.T) {
 		s, _ := newStore(t)
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(t.Context(), "agent-1", -time.Second)
+		_, err := s.ClaimJob(t.Context(), "agent-1", nil, -time.Second)
 		require.NoError(t, err)
 
 		require.NoError(t, s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute))
@@ -433,7 +433,7 @@ func TestStoreAdoptJob(t *testing.T) {
 	t.Run("requeued job not yet claimed by anyone", func(t *testing.T) {
 		s, _ := newStore(t)
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(t.Context(), "agent-1", -time.Second)
+		_, err := s.ClaimJob(t.Context(), "agent-1", nil, -time.Second)
 		require.NoError(t, err)
 		_, err = s.RequeueExpired(t.Context())
 		require.NoError(t, err)
@@ -449,7 +449,7 @@ func TestStoreAdoptJob(t *testing.T) {
 	t.Run("job taken over by another agent", func(t *testing.T) {
 		s, _ := newStore(t)
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(t.Context(), "agent-2", time.Minute)
+		_, err := s.ClaimJob(t.Context(), "agent-2", nil, time.Minute)
 		require.NoError(t, err)
 
 		err = s.AdoptJob(t.Context(), "agent-1", ids[0], time.Minute)
@@ -459,7 +459,7 @@ func TestStoreAdoptJob(t *testing.T) {
 	t.Run("finished job", func(t *testing.T) {
 		s, _ := newStore(t)
 		ids := createJobs(t, s, 1)
-		_, err := s.ClaimJob(t.Context(), "agent-1", time.Minute)
+		_, err := s.ClaimJob(t.Context(), "agent-1", nil, time.Minute)
 		require.NoError(t, err)
 		require.NoError(t, s.FinishJob(t.Context(), "agent-1",
 			models.JobResult{JobID: ids[0], Status: models.JobStatusSuccess}))
@@ -498,7 +498,7 @@ func TestStoreNotifiesJobEvents(t *testing.T) {
 	s, pool := newStore(t)
 	ctx := t.Context()
 	id := createJobs(t, s, 1)[0]
-	_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	conn, err := pool.Acquire(ctx)
@@ -550,7 +550,7 @@ func TestStoreUnreportedJobs(t *testing.T) {
 	assert.Equal(t, ids[1], jobs[0].ID)
 
 	// A status change makes the job unreported again.
-	_, err = s.ClaimJob(ctx, "agent-1", time.Minute)
+	_, err = s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 	jobs, err = s.UnreportedJobs(ctx, 1)
 	require.NoError(t, err)
@@ -563,7 +563,7 @@ func TestStoreCancelJob(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	ids := createJobs(t, s, 3)
-	running, err := s.ClaimJob(ctx, "agent-1", time.Minute) // ids[0]
+	running, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute) // ids[0]
 	require.NoError(t, err)
 
 	// A pending job is canceled at once.
@@ -572,9 +572,9 @@ func TestStoreCancelJob(t *testing.T) {
 	assert.Equal(t, models.JobStatusCanceled, job.Status)
 	assert.Equal(t, CancelReason, job.Error)
 	assert.NotNil(t, job.FinishedAt)
-	_, err = s.ClaimJob(ctx, "agent-2", time.Minute)
+	_, err = s.ClaimJob(ctx, "agent-2", nil, time.Minute)
 	require.NoError(t, err) // ids[2]: the canceled job is skipped
-	_, err = s.ClaimJob(ctx, "agent-3", time.Minute)
+	_, err = s.ClaimJob(ctx, "agent-3", nil, time.Minute)
 	assert.ErrorIs(t, err, ErrNoPendingJob)
 
 	// A running job keeps running until its agent stops it.
@@ -596,7 +596,7 @@ func TestStoreCanceledJobIsNotRequeued(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	createJobs(t, s, 1)
-	job, err := s.ClaimJob(ctx, "agent-1", -time.Second)
+	job, err := s.ClaimJob(ctx, "agent-1", nil, -time.Second)
 	require.NoError(t, err)
 	_, err = s.CancelJob(ctx, job.ID)
 	require.NoError(t, err)
@@ -609,7 +609,7 @@ func TestStoreCanceledJobIsNotRequeued(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, models.JobStatusCanceled, got.Status)
 	assert.Equal(t, CancelReason, got.Error)
-	_, err = s.ClaimJob(ctx, "agent-2", time.Minute)
+	_, err = s.ClaimJob(ctx, "agent-2", nil, time.Minute)
 	assert.ErrorIs(t, err, ErrNoPendingJob)
 }
 
@@ -681,7 +681,7 @@ func TestStoreExpandMatrix(t *testing.T) {
 	s, _ := newStore(t)
 	ctx := t.Context()
 	id := createJobs(t, s, 1)[0]
-	_, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	_, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	ids, err := s.ExpandMatrix(ctx, id, map[string]string{"GO": "1.26"},
@@ -728,7 +728,7 @@ func TestStoreKeepsTraceParent(t *testing.T) {
 	id, err := s.QueueJob(ctx, job, "hash-trace", "delivery-trace")
 	require.NoError(t, err)
 
-	claimed, err := s.ClaimJob(ctx, "agent-1", time.Minute)
+	claimed, err := s.ClaimJob(ctx, "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 	assert.Equal(t, pushTrace, claimed.TraceParent)
 
@@ -776,7 +776,7 @@ func TestStoreQueueJobOncePerPayload(t *testing.T) {
 func TestStoreCountJobsByStatus(t *testing.T) {
 	s, _ := newStore(t)
 	createJobs(t, s, 3)
-	_, err := s.ClaimJob(t.Context(), "agent-1", time.Minute)
+	_, err := s.ClaimJob(t.Context(), "agent-1", nil, time.Minute)
 	require.NoError(t, err)
 
 	counts, err := s.CountJobsByStatus(t.Context())

@@ -69,7 +69,7 @@ type querier interface {
 const jobColumns = `id, repo, clone_url, branch, commit_sha, status, created_at,
 	COALESCE(agent, ''), started_at, lease_expires_at, step_names,
 	exit_code, failed_step, COALESCE(error, ''), finished_at, matrix, parent_id, trace_parent, logs_expired_at,
-	event, COALESCE(pull_request, 0), COALESCE(target_branch, ''), fork`
+	event, COALESCE(pull_request, 0), COALESCE(target_branch, ''), fork, labels`
 
 // leaseUntil is the SQL expression for a lease of $N seconds from now,
 // measured on the database clock so servers need not agree on the time.
@@ -252,11 +252,11 @@ func (s *Store) fillCurrentSteps(ctx context.Context, jobs []models.Job) error {
 	return nil
 }
 
-// ClaimJob marks the oldest pending job as running on agent, with a lease
-// that expires after lease unless renewed, and returns it. Concurrent
-// callers never receive the same job (FOR UPDATE SKIP LOCKED). Steps an
-// earlier attempt reported are forgotten.
-func (s *Store) ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error) {
+// ClaimJob marks the oldest pending job an agent with labels can run as
+// running on agent, with a lease that expires after lease unless renewed,
+// and returns it. Concurrent callers never receive the same job (FOR UPDATE
+// SKIP LOCKED). Steps an earlier attempt reported are forgotten.
+func (s *Store) ClaimJob(ctx context.Context, agent string, labels []string, lease time.Duration) (models.Job, error) {
 	q := `
 		WITH claimed AS (
 			UPDATE jobs
@@ -264,7 +264,7 @@ func (s *Store) ClaimJob(ctx context.Context, agent string, lease time.Duration)
 			    lease_expires_at = ` + leaseUntil(2) + `
 			WHERE id = (
 				SELECT id FROM jobs
-				WHERE status = 'pending'
+				WHERE status = 'pending' AND (labels IS NULL OR labels <@ $3::text[])
 				ORDER BY created_at, id
 				FOR UPDATE SKIP LOCKED
 				LIMIT 1
@@ -275,7 +275,10 @@ func (s *Store) ClaimJob(ctx context.Context, agent string, lease time.Duration)
 		)
 		SELECT * FROM claimed`
 
-	job, err := scanJob(s.pool.QueryRow(ctx, q, agent, lease.Seconds()))
+	if labels == nil {
+		labels = []string{}
+	}
+	job, err := scanJob(s.pool.QueryRow(ctx, q, agent, lease.Seconds(), labels))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.Job{}, ErrNoPendingJob
 	}
@@ -295,6 +298,24 @@ func (s *Store) RequeueJob(ctx context.Context, id int64, agent string) error {
 	tag, err := s.pool.Exec(ctx, q, id, agent)
 	if err != nil {
 		return fmt.Errorf("requeue job %d: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: job %d is not running on %s", ErrJobConflict, id, agent)
+	}
+	return nil
+}
+
+// RequeueForLabels puts a job that agent was running back into the queue
+// for agents with labels, which agent lacks.
+func (s *Store) RequeueForLabels(ctx context.Context, id int64, agent string, labels []string) error {
+	const q = `
+		UPDATE jobs
+		SET ` + requeueSet + `, labels = $3
+		WHERE id = $1 AND status = 'running' AND agent = $2`
+
+	tag, err := s.pool.Exec(ctx, q, id, agent, labels)
+	if err != nil {
+		return fmt.Errorf("requeue job %d for labels: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: job %d is not running on %s", ErrJobConflict, id, agent)
@@ -753,6 +774,6 @@ func scanJob(row pgx.Row) (models.Job, error) {
 	err := row.Scan(&j.ID, &j.Repo, &j.CloneURL, &j.Branch, &j.CommitSHA, &j.Status, &j.CreatedAt,
 		&j.Agent, &j.StartedAt, &j.LeaseExpiresAt, &j.StepNames, &j.ExitCode, &j.FailedStep, &j.Error, &j.FinishedAt,
 		&j.Matrix, &j.ParentID, &j.TraceParent, &j.LogsExpiredAt,
-		&j.Event, &j.PullRequest, &j.TargetBranch, &j.Fork)
+		&j.Event, &j.PullRequest, &j.TargetBranch, &j.Fork, &j.Labels)
 	return j, err
 }

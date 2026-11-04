@@ -36,7 +36,8 @@ const (
 
 // Store is the persistence the hub needs. *db.Store satisfies it.
 type Store interface {
-	ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error)
+	ClaimJob(ctx context.Context, agent string, labels []string, lease time.Duration) (models.Job, error)
+	RequeueForLabels(ctx context.Context, id int64, agent string, labels []string) error
 	RenewLeases(ctx context.Context, agents []string, lease time.Duration) (int, error)
 	RequeueExpired(ctx context.Context) ([]int64, error)
 	AdoptJob(ctx context.Context, agent string, id int64, lease time.Duration) error
@@ -127,7 +128,8 @@ type Hub struct {
 
 // agentConn is one connected agent.
 type agentConn struct {
-	name string
+	name   string
+	labels []string // what the agent offers, from its hello
 	// out feeds the connection's writer goroutine.
 	out chan models.Message
 	// kick is closed when a newer connection with the same name replaces this one.
@@ -306,7 +308,7 @@ func (h *Hub) dispatch(ctx context.Context) {
 // are no more pending jobs (or the store failed), so dispatch can stop.
 func (h *Hub) dispatchTo(ctx context.Context, a *agentConn) bool {
 	for {
-		job, err := h.store.ClaimJob(ctx, a.name, h.lease)
+		job, err := h.store.ClaimJob(ctx, a.name, a.labels, h.lease)
 		if errors.Is(err, db.ErrNoPendingJob) {
 			return false
 		}
@@ -343,6 +345,15 @@ func (h *Hub) dispatchJob(ctx context.Context, a *agentConn, job models.Job) (re
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		h.failJob(ctx, a.name, job.ID, "plan job: "+err.Error())
+		return true, false
+	}
+	if !models.HasLabels(a.labels, plan.Labels) {
+		// Only agents with the labels claim it from now on.
+		span.AddEvent("agent lacks the labels, job requeued")
+		h.log.InfoContext(ctx, "job needs labels the agent lacks, requeued", "job_id", job.ID, "agent", a.name,
+			"labels", plan.Labels)
+		h.requeueForLabels(ctx, job.ID, a.name, plan.Labels)
+		h.Wake() // an agent with the labels may be idle
 		return true, false
 	}
 	if len(plan.Matrix) > 0 {
@@ -394,6 +405,15 @@ func (h *Hub) requeue(ctx context.Context, jobID int64, agent string) {
 	defer cancel()
 	if err := h.store.RequeueJob(ctx, jobID, agent); err != nil {
 		h.log.ErrorContext(ctx, "requeue job", "job_id", jobID, "error", err)
+	}
+}
+
+// requeueForLabels gives back a claimed job its agent lacks the labels for.
+func (h *Hub) requeueForLabels(ctx context.Context, jobID int64, agent string, labels []string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if err := h.store.RequeueForLabels(ctx, jobID, agent, labels); err != nil {
+		h.log.ErrorContext(ctx, "requeue job for labels", "job_id", jobID, "error", err)
 	}
 }
 

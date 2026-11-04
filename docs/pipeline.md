@@ -33,6 +33,7 @@ cisid runs its own tests this way too: [/.cisid.yml](../.cisid.yml).
 | `matrix` | no | Runs the pipeline as a separate job for each combination of values ([Matrix](#matrix)) |
 | `cache` | no | Up to 10 directories to keep between the repository's jobs, as absolute paths ([Cache](#cache)) |
 | `artifacts` | no | Up to 20 files or directories to keep once the steps pass, relative to the workspace, wildcards allowed ([Artifacts](#artifacts)) |
+| `labels` | no | Up to 10 labels an agent must have to run the job, e.g. `[arm64]` ([Labels](#labels)) |
 | `steps[].name` | yes | Letters, digits, `.`, `_`, `-`. At most 63 characters, must be unique. The name `clone` is reserved. |
 | `steps[].image` | yes | The Docker image the step runs in. Must contain `/bin/sh`. |
 | `steps[].commands` | yes | Shell commands |
@@ -166,6 +167,23 @@ steps:
 - There can be at most 8 axes and 16 combinations. Axis names must be environment variable names, cannot be reserved names, and cannot clash with a step's `environment` field.
 - Each combination gets its own commit status on GitHub, for example `cisid (GO_VERSION=1.27, POSTGRES=18)` ([commit-status.md](commit-status.md)).
 - When a matrix job is rerun, only its own combination runs again.
+
+## Labels
+
+```yaml
+labels: [arm64, gpu]
+steps:
+  - name: train
+    image: pytorch/pytorch
+    commands: [python train.py]
+```
+
+Only agents that have **every** label listed run the job. Agents get their labels from `CISID_AGENT_LABELS` ([agent.md](agent.md#running)); an agent without labels runs only jobs without labels.
+
+- A label is up to 63 letters, digits, `.`, `_`, `=` and `-`, e.g. `arm64`, `gpu`, `region=eu`.
+- The server learns a job's labels when it reads `.cisid.yml`, which it does on the agent it first offers the job to. If that agent lacks a label, the job goes back to the queue, and from then on only agents with the labels take it. The job page says which labels it waits for.
+- If no connected agent has the labels, the job waits until one connects.
+- With a `matrix`, every combination needs the same labels.
 
 ## Artifacts
 
