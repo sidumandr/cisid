@@ -88,3 +88,4 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
 - [x] Kaydolmak: yeni bir server'da açılan ilk hesap admin olur; `CISID_SIGNUP_ROLE` başkalarının viewer ya da maintainer olarak kaydolmasına izin verir ([docs/accounts.md](docs/tr/accounts.md#kaydolmak)).
 - [x] Web arayüzü React ve TypeScript ile yeniden yazıldı; ziyaretçiler için bir tanıtım sayfası, giriş ve kayıt için ayrı sayfalar ([docs/ui.md](docs/tr/ui.md)).
+- [x] Arayüzden repo bağlamak: server'ın sağlayıcı token'larının eriştiği bir repoyu seçmek, yoklatmak ya da webhook eklemek, bağlantıyı kesmek; İngilizce ve Türkçe arayüz ([docs/api.md](docs/tr/api.md#bağlı-repolar)).

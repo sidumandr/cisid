@@ -113,3 +113,18 @@ func TestCloneCredentials(t *testing.T) {
 	assert.Equal(t, "oauth2", user)
 	assert.Equal(t, "glpat-test", token)
 }
+
+func TestRepositoriesListsTheTokensProjects(t *testing.T) {
+	c := newClient(t, "glpat", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v4/projects", r.URL.Path)
+		assert.Equal(t, "true", r.URL.Query().Get("membership"))
+		assert.Equal(t, "glpat", r.Header.Get("PRIVATE-TOKEN"))
+		_, _ = w.Write([]byte(`[{"path_with_namespace":"group/sub/app","visibility":"private"},{"path_with_namespace":"group/site","visibility":"public"}]`))
+	})
+	got, err := c.Repositories(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []forge.ListedPath{{Path: "group/sub/app", Private: true}, {Path: "group/site"}}, got)
+
+	_, err = (&Client{}).Repositories(t.Context())
+	assert.ErrorIs(t, err, forge.ErrNoListing)
+}

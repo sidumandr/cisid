@@ -221,3 +221,19 @@ func TestCloneCredentials(t *testing.T) {
 	assert.Equal(t, "x-access-token", user)
 	assert.Equal(t, "ghp_test", token)
 }
+
+func TestRepositoriesListsWhatTheTokenReaches(t *testing.T) {
+	c := newClient(t, "ghp_test", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/user/repos", r.URL.Path)
+		assert.Equal(t, "100", r.URL.Query().Get("per_page"))
+		assert.Equal(t, "pushed", r.URL.Query().Get("sort"))
+		assert.Equal(t, "Bearer ghp_test", r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`[{"full_name":"sidumandr/biopotan","private":true},{"full_name":"sidumandr/cisid","private":false}]`))
+	})
+	got, err := c.Repositories(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []forge.ListedPath{{Path: "sidumandr/biopotan", Private: true}, {Path: "sidumandr/cisid"}}, got)
+
+	_, err = (&Client{}).Repositories(t.Context())
+	assert.ErrorIs(t, err, forge.ErrNoListing, "without a token there is nobody to list for")
+}

@@ -209,6 +209,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		jobChanged(id)
 	}
 	triggersAPI := api.NewTriggersAPI(store, forges, access, queued, log, api.WithPolling(cfg.PollInterval))
+	reposAPI := api.NewReposAPI(store, forges, access, log, cfg.PollInterval > 0)
 	scheduler := trigger.NewScheduler(store, forges, trigger.WithLogger(log), trigger.WithQueued(queued))
 	var poller *trigger.Poller
 	if cfg.PollInterval > 0 {
@@ -228,6 +229,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Metrics:   metrics.Handler(),
 			Access:    access,
 			Triggers:  triggersAPI,
+			Repos:     reposAPI,
 			Badges:    api.NewBadgeAPI(store, forges, access, cfg.PublicBadges, log),
 			Artifacts: api.NewArtifactsAPI(store, access, log),
 			ArtifactUploads: agents.ArtifactUploads(store,

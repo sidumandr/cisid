@@ -149,3 +149,25 @@ func (c *Client) api() forge.API {
 	}
 	return a
 }
+
+var _ forge.Lister = (*Client)(nil)
+
+// Repositories lists the hundred projects the token is a member of that
+// were active last.
+func (c *Client) Repositories(ctx context.Context) ([]forge.ListedPath, error) {
+	if c.Token == "" {
+		return nil, forge.ErrNoListing
+	}
+	var projects []struct {
+		Path       string `json:"path_with_namespace"`
+		Visibility string `json:"visibility"`
+	}
+	if err := c.api().GetJSON(ctx, "/projects?membership=true&simple=true&per_page=100&order_by=last_activity_at", &projects); err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	out := make([]forge.ListedPath, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, forge.ListedPath{Path: p.Path, Private: p.Visibility != "public"})
+	}
+	return out, nil
+}

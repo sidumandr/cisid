@@ -10,7 +10,7 @@ import { openDialog } from "../lib/dialog";
 import { ago, finding, inWords, repoPath, repoURL, splitList, stampUTC } from "../lib/format";
 import { N_, t } from "../lib/i18n";
 import { useMe } from "../lib/session";
-import type { Job, Notification, Schedule, SecretInfo, Watch } from "../lib/types";
+import type { Job, Notification, RepositoryInfo, Schedule, SecretInfo, Watch } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { Dash, ErrorNote, Header, Note, Skeleton, TabBar, type Tab } from "../ui/parts";
 import { JobRow, JobsHeaderRow, LIST_LIMIT } from "./Jobs";
@@ -53,10 +53,28 @@ function RepoPage({ repo }: { repo: string }) {
   const [lede, setLede] = useState(() => t("Loading builds"));
   const count = useCallback((id: RepoTab, n: number) => setCounts((c) => ({ ...c, [id]: n })), []);
   const base = `/api/repos/${repoURL(repo)}`;
+  // Whether it is connected, and how cisid hears of its commits.
+  const [connected, setConnected] = useState<RepositoryInfo | null>(null);
+  useEffect(() => {
+    getJSON<RepositoryInfo[]>("/api/repos").then((l) => setConnected(l.find((r) => r.repo === repo) ?? null)).catch(() => {});
+  }, [repo]);
+
+  async function disconnect() {
+    const ok = await openDialog({
+      title: t("Disconnect {repo}?", { repo }),
+      text: t("cisid stops polling it and running its schedules. Its builds, secrets and notifications stay, and a webhook on its forge still starts builds until you remove it."),
+      submit: t("Disconnect"),
+      danger: true,
+      onSubmit: async () => {
+        if (!(await request("DELETE", base, { token: true }))) throw new Error(t("Disconnecting needs a maintainer."));
+      },
+    });
+    if (ok) navigate("/repos");
+  }
 
   let body: ReactNode;
   switch (tab) {
-    case "builds": body = <Builds repo={repo} count={count} setLede={setLede} />; break;
+    case "builds": body = <Builds repo={repo} connected={connected} count={count} setLede={setLede} />; break;
     case "schedules": body = <Schedules repo={repo} base={base} count={count} />; break;
     case "polling": body = <Polling repo={repo} base={base} count={count} />; break;
     case "notifications": body = <Notifications repo={repo} base={base} count={count} />; break;
@@ -70,6 +88,7 @@ function RepoPage({ repo }: { repo: string }) {
         title={repo}
         lede={lede}
         actions={<>
+          {connected ? <button className="btn" type="button" onClick={disconnect}>{t("Disconnect")}</button> : null}
           <button className="btn" type="button" onClick={() => showBadge(repo)}>{t("Badge")}</button>
           <button className="btn primary" type="button" onClick={async () => {
             const job = await runBuild(repo);
@@ -95,7 +114,12 @@ function useLoad(load: () => Promise<void>, every = 0) {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-function Builds({ repo, count, setLede }: { repo: string; count: (id: RepoTab, n: number) => void; setLede: (s: string) => void }) {
+function Builds({ repo, connected, count, setLede }: {
+  repo: string;
+  connected: RepositoryInfo | null;
+  count: (id: RepoTab, n: number) => void;
+  setLede: (s: string) => void;
+}) {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -104,11 +128,14 @@ function Builds({ repo, count, setLede }: { repo: string; count: (id: RepoTab, n
       setJobs(list);
       setFailure(null);
       count("builds", list.length);
-      setLede(list[0] ? t("Last build #{id}: {finding}", { id: list[0].id, finding: finding(list[0]) }) : t("No builds in the latest jobs."));
+      if (list[0]) setLede(t("Last build #{id}: {finding}", { id: list[0].id, finding: finding(list[0]) }));
+      else if (connected?.polled) setLede(t("Connected, polling {branch}. Its first build starts at the next poll, or now with Run build.", { branch: connected.default_branch }));
+      else if (connected) setLede(t("Connected. Its first build starts with the forge's next webhook, or now with Run build."));
+      else setLede(t("No builds in the latest jobs."));
     } catch (err) {
       setFailure(message(err));
     }
-  }, [repo, count, setLede]);
+  }, [repo, connected, count, setLede]);
   useLoad(load, 5000);
 
   let rows;

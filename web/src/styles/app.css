@@ -555,7 +555,7 @@ dialog {
 dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(4px); }
 dialog h2 { margin-bottom: 8px; }
 dialog p { margin: 0 0 20px; color: var(--muted); }
-.field { display: grid; gap: 8px; margin-bottom: 16px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 16px; }
 .field label { font-weight: 600; }
 .field .hint { color: var(--muted); font-size: var(--fs-small); line-height: 16px; }
 .form-error { min-height: 20px; margin: 4px 0 0; color: var(--negative); }
@@ -580,7 +580,7 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
 }
 
 /* ---------- dropdowns: a button or an input, and a list on glass ---------- */
-.dropdown { position: relative; }
+.dropdown { position: relative; min-width: 0; }
 .select {
   display: flex;
   align-items: center;
@@ -597,7 +597,7 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   text-align: left;
   cursor: var(--cursor-pointer);
 }
-.select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select > span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select svg { color: var(--muted); transition: transform 150ms ease; }
 .select[aria-expanded="true"] svg { transform: rotate(180deg); }
 .dropdown-list {
@@ -611,7 +611,7 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   animation: drop-in 140ms ease-out;
 }
 .dropdown-list:focus { outline: none; }
-.dropdown-list li { padding: 8px 10px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-pointer); }
+.dropdown-list li { padding: 8px 10px; border-radius: 6px; overflow-wrap: anywhere; cursor: var(--cursor-pointer); }
 .dropdown-list li[data-active] { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .dropdown-list [role="option"][aria-selected="true"] { color: var(--accent-text); font-weight: 600; }
 @keyframes drop-in { from { opacity: 0; transform: translateY(-4px); } }

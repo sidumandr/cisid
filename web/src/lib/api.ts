@@ -136,7 +136,7 @@ export async function signIn({ change = false, retry = false } = {}): Promise<bo
 
 // sentence makes the server's reason a sentence, in the language chosen
 // when the dictionary knows it.
-function sentence(reason: string): string {
+export function sentence(reason: string): string {
   return t(reason.charAt(0).toUpperCase() + reason.slice(1) + (reason.endsWith(".") ? "" : "."));
 }
 

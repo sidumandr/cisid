@@ -12,14 +12,14 @@ Polling works with all forges ([forges.md](forges.md)). You can also use it toge
 |---|---|---|
 | `CISID_POLL_INTERVAL` | `1m` | How often each branch is polled. At least `10s`. `0` disables polling. |
 
-To watch a branch, use the **Poll a branch** button on the **Polling** tab of the repository page in the UI, or call the API (requires a maintainer: a sign-in or a token):
+The simplest way in is **Connect a repository** on the **Repositories** page: it polls the repository's default branch ([api.md](api.md#connected-repositories)). To watch another branch, use the **Poll a branch** button on the **Polling** tab of the repository page, or call the API (requires a maintainer: a sign-in or a token):
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' \
   http://localhost:8080/api/repos/gitea:office/app/watches
 ```
 
-If cisid has never built the repository, the repository does not appear in the UI. Add the first branch through the API, or open the repository's URL directly: `/repos/gitea:office/app`.
+A repository that is neither connected nor built yet does not appear in the UI's list; connect it, or open its address directly: `/repos/gitea:office/app`.
 
 | Endpoint | Description |
 |---|---|

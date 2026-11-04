@@ -12,14 +12,14 @@ Polling bütün sağlayıcılarda çalışır ([forges.md](forges.md)). Webhook'
 |---|---|---|
 | `CISID_POLL_INTERVAL` | `1m` | Her branch'in yoklanma aralığı. En az `10s`. `0` polling'i kapatır. |
 
-Bir branch'i izlemek için arayüzde repo sayfasındaki **Polling** sekmesinden **Poll a branch** düğmesini kullanın ya da API'yi çağırın (`maintainer` gerekir: giriş ya da token):
+En kolay yol **Repositories** (Repolar) sayfasındaki **Connect a repository** (Repo bağla) düğmesidir: reponun varsayılan branch'ini yoklar ([api.md](api.md#bağlı-repolar)). Başka bir branch'i izlemek için repo sayfasındaki **Polling** sekmesinden **Poll a branch** düğmesini kullanın ya da API'yi çağırın (`maintainer` gerekir: giriş ya da token):
 
 ```bash
 curl -X POST -H "Authorization: Bearer $CISID_API_TOKEN" -d '{"branch":"main"}' \
   http://localhost:8080/api/repos/gitea:office/app/watches
 ```
 
-Repo henüz cisid'de hiç derlenmediyse arayüzde görünmez; ilk branch'i API ile ekleyin ya da adresini doğrudan açın: `/repos/gitea:office/app`.
+Ne bağlanmış ne de build'lenmiş bir repo arayüzdeki listede görünmez; onu bağlayın ya da adresini doğrudan açın: `/repos/gitea:office/app`.
 
 | Yol | Açıklama |
 |---|---|

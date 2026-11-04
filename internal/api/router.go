@@ -53,6 +53,8 @@ type Handlers struct {
 	Access *Access
 	// Triggers serves manual builds and schedules; omitted when nil.
 	Triggers *TriggersAPI
+	// Repos connects repositories; omitted when nil.
+	Repos *ReposAPI
 	// Badges draws build badges; omitted when nil.
 	Badges *BadgeAPI
 	// Notifications manages where build results are announced; omitted
@@ -106,6 +108,9 @@ func NewRouter(h Handlers, log *slog.Logger) http.Handler {
 	access.register(limited)
 	if h.Triggers != nil {
 		h.Triggers.register(limited)
+	}
+	if h.Repos != nil {
+		h.Repos.register(limited)
 	}
 	if h.Badges != nil {
 		h.Badges.register(limited)

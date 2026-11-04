@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } fro
 
 import { closeDialog, dialogStore, type Field, type OpenDialog, type Values } from "../lib/dialog";
 import { Combo, Select } from "./Dropdown";
+import { sentence } from "../lib/api";
 import { t } from "../lib/i18n";
 
 export function DialogHost() {
@@ -56,7 +57,7 @@ function DialogForm({ spec }: { spec: OpenDialog }) {
       const result = spec.onSubmit ? await spec.onSubmit(values) : undefined;
       closeDialog(spec.id, { values, result });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(sentence(err instanceof Error ? err.message : String(err)));
       setBusy(false);
     }
   }

@@ -119,6 +119,18 @@ type Watch struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Repository is a repository connected to cisid, so it is listed and can
+// be polled and built before any webhook arrives for it.
+type Repository struct {
+	Repo          string    `json:"repo"`
+	CloneURL      string    `json:"clone_url"`
+	DefaultBranch string    `json:"default_branch"`
+	AddedBy       string    `json:"added_by,omitempty"`
+	AddedAt       time.Time `json:"added_at"`
+	// Polled says a branch of it is polled for new commits.
+	Polled bool `json:"polled"`
+}
+
 // User is an account. Its password hash never leaves the store.
 type User struct {
 	ID       int64  `json:"-"`

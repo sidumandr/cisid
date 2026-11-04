@@ -74,6 +74,17 @@ Kimlik yoksa ya da yanlışsa `401` döner. Health check'ler (`/healthz`, `/read
 curl -H "Authorization: Bearer $CISID_READ_TOKEN" http://localhost:8080/api/jobs
 ```
 
+## Bağlı repolar
+
+Bir repo, kendisi için bir webhook gelmeden önce listelensin ve yoklanıp build'lensin diye bağlanır. Arayüzdeki **Connect a repository** (Repo bağla) düğmesi bunları kullanır:
+
+| Endpoint | Açıklama |
+|---|---|
+| `GET /api/repos` | Bağlı repolar: `repo`, `clone_url`, `default_branch`, `added_by`, `added_at` ve bir branch'inin yoklanıp yoklanmadığını söyleyen `polled` (okuma erişimi gerekir) |
+| `POST /api/repos` | `{"repo":"owner/name","poll":true}` ile bağlar (maintainer). Repo sağlayıcısında aranır; `poll` ile varsayılan branch'i yoklanır ve ilk yoklama onun son commit'ini build'ler. Yanıt, `has_pipeline` ile birlikte repodur: varsayılan branch'te `.cisid.yml` yoksa `false` olur ve henüz hiçbir şey build'lenmez. Yeniyse `201`, zaten bağlıysa `200`; sağlayıcıda yoksa ya da server'ın o sağlayıcı için token'ı onu göremiyorsa `404`; `poll` verilip yoklama kapalıysa `409`. |
+| `DELETE /api/repos/{owner}/{repo}` | Bağlantıyı keser (maintainer): yoklanan branch'leri ve zamanlamaları gider, job'ları, secret'ları ve bildirimleri kalır. Sağlayıcıdaki bir webhook, orada kaldırılana kadar build başlatmaya devam eder. `204`, ya da bağlı bir şey yoksa `404`. |
+| `GET /api/forges/repositories` | Server'ın sağlayıcı token'larının eriştiği, seçilebilecek repolar (maintainer): `{"repositories":[{"repo","forge","private"}],"unlisted":["gitlab"]}`. GitHub en son push alan yüz repoyu, GitLab en son hareket gören yüz projeyi, Gitea ve Forgejo elli repoyu listeler; `unlisted` token'ı olmayan ya da listeleyemeyen (Bitbucket) sağlayıcıları sayar. |
+
 ## Polling
 
 Webhook'u server'a ulaşamayan sağlayıcılar için branch'ler yoklanabilir: `GET`, `POST /api/repos/{owner}/{repo}/watches` ve `DELETE /api/repos/{owner}/{repo}/watches/{branch}`. Ayrıntılar: [polling.md](polling.md).

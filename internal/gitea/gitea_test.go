@@ -113,3 +113,17 @@ func TestCloneCredentials(t *testing.T) {
 	assert.Equal(t, "oauth2", user)
 	assert.Equal(t, "gt_test", token)
 }
+
+func TestRepositoriesListsTheTokensRepositories(t *testing.T) {
+	c := newClient(t, "gitea-token", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/user/repos", r.URL.Path)
+		assert.Equal(t, "token gitea-token", r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`[{"full_name":"office/billing","private":true}]`))
+	})
+	got, err := c.Repositories(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, []forge.ListedPath{{Path: "office/billing", Private: true}}, got)
+
+	_, err = (&Client{}).Repositories(t.Context())
+	assert.ErrorIs(t, err, forge.ErrNoListing)
+}

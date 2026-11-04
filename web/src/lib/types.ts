@@ -65,6 +65,27 @@ export interface Schedule {
   last_job_id?: number;
 }
 
+// RepositoryInfo is a repository connected to cisid.
+export interface RepositoryInfo {
+  repo: string;
+  clone_url: string;
+  default_branch: string;
+  added_by?: string;
+  added_at: string;
+  polled: boolean;
+}
+
+// Connected is the answer to connecting a repository.
+export interface Connected extends RepositoryInfo {
+  has_pipeline: boolean;
+}
+
+// Reachable lists the repositories the server's forge tokens reach.
+export interface Reachable {
+  repositories: { repo: string; forge: string; private: boolean }[];
+  unlisted: string[];
+}
+
 export interface Watch {
   repo: string;
   branch: string;

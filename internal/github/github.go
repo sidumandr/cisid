@@ -177,3 +177,26 @@ func (c *Client) api() forge.API {
 	}
 	return a
 }
+
+var _ forge.Lister = (*Client)(nil)
+
+// Repositories lists the hundred repositories the token reaches that were
+// pushed to last: the token owner's, and those of their collaborations and
+// organizations.
+func (c *Client) Repositories(ctx context.Context) ([]forge.ListedPath, error) {
+	if c.Token == "" {
+		return nil, forge.ErrNoListing
+	}
+	var repos []struct {
+		FullName string `json:"full_name"`
+		Private  bool   `json:"private"`
+	}
+	if err := c.api().GetJSON(ctx, "/user/repos?per_page=100&sort=pushed", &repos); err != nil {
+		return nil, fmt.Errorf("list repositories: %w", err)
+	}
+	out := make([]forge.ListedPath, 0, len(repos))
+	for _, r := range repos {
+		out = append(out, forge.ListedPath{Path: r.FullName, Private: r.Private})
+	}
+	return out, nil
+}
