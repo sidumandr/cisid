@@ -46,6 +46,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 
 - Secrets are encrypted with AES-256-GCM. The ciphertext is bound to `repo/name` (AAD), so a value copied to another row cannot be decrypted. The key is `CISID_SECRET_KEY`, and it is not stored in the database.
 - The API never returns secret values; it only lists their names.
+- Users' forge tokens are sealed the same way, bound to the user and the forge, and never returned either. A repository is reached with the token of the user who connected it, so a private repository is built only through the access of someone who can see it, unless the server has forge tokens of its own ([accounts.md](accounts.md#connecting-forge-accounts)).
 - Values are given as environment variables only to steps that request them with `secrets:`. On the server side, `branches` can limit a secret to protected branches; then pull requests do not get it either ([secrets.md](secrets.md#limiting-a-secret-to-branches)). `when.branch` is not a security boundary, because `.cisid.yml` is read from the commit being built.
 - The agent masks secret values in step output with `***`, including values split across chunks. Values shorter than 3 characters are not masked. Masking is not a security boundary: it does not stop a step that transforms the value (e.g. base64) and prints it ([secrets.md](secrets.md)).
 
@@ -87,6 +88,7 @@ Someone who can push to a repository can read the secrets defined for that repos
 - [ ] `CISID_READ_ACCESS` is left at `signed-in`, or the server is behind a reverse proxy with access control.
 - [ ] If the first admin was created, `CISID_ADMIN_PASSWORD` is removed from the environment and the password is changed in the UI.
 - [ ] `CISID_SECRET_KEY` is stored separately from database backups.
+- [ ] `CISID_SIGNUP_ROLE` and `CISID_OAUTH_SIGNUP_ROLE` are empty, unless only a company network reaches the server ([team-server.md](team-server.md)).
 - [ ] Agents run on separate machines, with `CISID_STEP_MEMORY` and `CISID_STEP_CPUS` set.
 - [ ] Sensitive secrets are limited to protected branches with `branches`.
 

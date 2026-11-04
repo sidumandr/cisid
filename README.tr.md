@@ -27,6 +27,7 @@ Go ile yazılmış, Docker tabanlı, self-hosted bir CI/CD sistemi.
 - [docs/agent.md](docs/tr/agent.md): Agent yapılandırması, WebSocket protokolü ve yeniden bağlanma
 - [docs/hub.md](docs/tr/hub.md): Server tarafında job dağıtımı, sahiplik kuralları ve graceful shutdown
 - [docs/deployment.md](docs/tr/deployment.md): Docker image'ları, docker compose ve Kubernetes ile kurulum
+- [docs/team-server.md](docs/tr/team-server.md): Şirket ağında bir ekip için tek server: HTTPS, kayıt, herkesin kendi sağlayıcı erişimi
 - [docs/release.md](docs/tr/release.md): Sürüm yayımlama: image'lar ve chart GitHub Actions ile ghcr.io'ya
 - [deployments/helm/cisid](deployments/helm/cisid/README.tr.md): Helm chart
 - [docs/security.md](docs/tr/security.md): Güven sınırları, güvenlik önlemleri ve production kontrol listesi

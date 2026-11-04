@@ -27,6 +27,7 @@ A self-hosted, Docker-based CI/CD system written in Go.
 - [docs/agent.md](docs/agent.md): Agent configuration, WebSocket protocol and reconnection
 - [docs/hub.md](docs/hub.md): Job dispatch on the server side, ownership rules and graceful shutdown
 - [docs/deployment.md](docs/deployment.md): Installing with Docker images, docker compose and Kubernetes
+- [docs/team-server.md](docs/team-server.md): One server for a team inside the company network: HTTPS, sign-up, everyone's own forge access
 - [docs/release.md](docs/release.md): Publishing a release: images and the chart go to ghcr.io through GitHub Actions
 - [deployments/helm/cisid](deployments/helm/cisid/README.md): Helm chart
 - [docs/security.md](docs/security.md): Trust boundaries, security measures and a production checklist

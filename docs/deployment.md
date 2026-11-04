@@ -4,6 +4,8 @@
 
 cisid consists of two binaries: `cisid-server` (API, hub, web UI) and `cisid-agent` (the worker that runs jobs in Docker). Both are built from a single `Dockerfile`. On a single machine, use docker compose; on Kubernetes, use the Helm chart ([Kubernetes](#kubernetes)).
 
+For a team on one server inside the company network, with HTTPS, sign-up and polling set up, follow [team-server.md](team-server.md).
+
 ## Images
 
 ```bash
@@ -78,7 +80,7 @@ In the compose stack, the agent connects to the server over compose's private ne
 
 - The server is stateless: all state is in PostgreSQL. When the server restarts, agents reconnect and running jobs continue where they left off ([hub.md](hub.md)).
 - Multiple server replicas can share the same database: jobs are dispatched with `FOR UPDATE SKIP LOCKED`, ownership is kept in the database with leases, the log stream reaches all replicas through PostgreSQL `LISTEN/NOTIFY`, and schedules run on a single replica. `TestRunTwoServers` tests this end to end: a push that arrives at one replica runs on an agent connected to the other, and the first replica streams the logs live and can cancel the job. If only agents connected to another replica can take a job that arrives at one replica, the job waits for up to one job polling interval, at most 5 seconds.
-- Back up the database regularly. Secrets cannot be decrypted without `CISID_SECRET_KEY`, so store the key separately.
+- Back up the database regularly. Secrets and users' forge tokens cannot be decrypted without `CISID_SECRET_KEY`, so store the key separately.
 - If the server is exposed to the internet, set `CISID_READ_TOKEN`; jobs, logs and `/metrics` then require the token ([api.md](api.md#read-access)). `/healthz` and `/readyz` stay open.
 
 ## Kubernetes

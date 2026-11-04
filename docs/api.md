@@ -80,10 +80,10 @@ A repository is connected so it is listed, and polled or built, before any webho
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/repos` | The connected repositories: `repo`, `clone_url`, `default_branch`, `added_by`, `added_at`, and `polled`, whether a branch of it is polled (requires read access) |
-| `POST /api/repos` | Connects `{"repo":"owner/name","poll":true}` (maintainer). The repository is looked up on its forge; with `poll`, its default branch is polled, and the first poll builds its head. The answer is the repository with `has_pipeline`: `false` when the default branch has no `.cisid.yml`, so nothing builds yet. `201` if new, `200` if it was connected; `404` if the forge does not have it, or the server's token for the forge cannot see it; `409` with `poll` when polling is off. |
+| `GET /api/repos` | The connected repositories: `repo`, `clone_url`, `default_branch`, `added_by`, `added_at`, `polled`, whether a branch of it is polled, and `via`, the user whose own forge access builds it (requires read access) |
+| `POST /api/repos` | Connects `{"repo":"owner/name","poll":true}` (maintainer). The repository is looked up on its forge, with the caller's own access when they connected that forge ([accounts.md](accounts.md#connecting-forge-accounts)): it is then built with their access. With `poll`, its default branch is polled, and the first poll builds its head. The answer is the repository with `has_pipeline`: `false` when the default branch has no `.cisid.yml`, so nothing builds yet. `201` if new, `200` if it was connected; `404` if the forge does not have it, or the access used cannot see it; `409` with `poll` when polling is off. |
 | `DELETE /api/repos/{owner}/{repo}` | Disconnects it (maintainer): its polled branches and schedules go, its jobs, secrets and notifications stay. A webhook on the forge still starts builds until it is removed there. `204`, or `404` if nothing was connected. |
-| `GET /api/forges/repositories` | The repositories the server's forge tokens reach, to pick from (maintainer): `{"repositories":[{"repo","forge","private"}],"unlisted":["gitlab"]}`. GitHub lists the hundred pushed to last, GitLab the hundred projects active last, Gitea and Forgejo fifty; `unlisted` names the forges without a token, or that cannot list (Bitbucket). |
+| `GET /api/forges/repositories` | The repositories the caller's own forge accounts reach, and the server's forge tokens on the forges they did not connect, to pick from (maintainer): `{"repositories":[{"repo","forge","private"}],"unlisted":["gitlab"]}`. GitHub lists the hundred pushed to last, GitLab the hundred projects active last, Gitea and Forgejo fifty; `unlisted` names the forges without a token, or that cannot list (Bitbucket). |
 
 ## Polling
 

@@ -1,0 +1,97 @@
+# cisid for a team, on one Linux server inside the company network:
+# PostgreSQL, the server, an agent that runs the builds, and Caddy in front
+# of them for HTTPS. Only Caddy's ports are published.
+#
+#   cp deployments/team/env.example deployments/team/.env   # then fill it in
+#   docker compose -f deployments/team/compose.yaml up -d --build --wait
+#
+# See docs/team-server.md.
+name: cisid
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cisid
+      POSTGRES_PASSWORD: ${CISID_DB_PASSWORD:?set CISID_DB_PASSWORD}
+      POSTGRES_DB: cisid
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cisid -d cisid"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build:
+      context: ../..
+      target: server
+    image: cisid-server:team
+    restart: unless-stopped
+    # Every CISID_* setting of the server comes from .env (docs/server.md).
+    env_file: .env
+    environment:
+      CISID_DATABASE_URL: postgres://cisid:${CISID_DB_PASSWORD}@postgres:5432/cisid?sslmode=disable
+      CISID_AGENT_TOKEN: ${CISID_AGENT_TOKEN:?set CISID_AGENT_TOKEN}
+      CISID_PUBLIC_URL: ${CISID_PUBLIC_URL:?set CISID_PUBLIC_URL}
+      CISID_SECRET_KEY: ${CISID_SECRET_KEY:?set CISID_SECRET_KEY}
+      # Caddy sets X-Forwarded-For itself, so the client's address in it
+      # can be trusted for the rate limit and the logs.
+      CISID_TRUST_PROXY: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  agent:
+    build:
+      context: ../..
+      target: agent
+    image: cisid-agent:team
+    restart: unless-stopped
+    environment:
+      CISID_SERVER_URL: ws://server:8080/agent/ws
+      # Defaults to the container hostname, so "--scale agent=N" gives
+      # each replica its own name. An agent runs one job at a time.
+      CISID_AGENT_NAME: ${CISID_AGENT_NAME:-}
+      CISID_AGENT_LABELS: ${CISID_AGENT_LABELS:-}
+      CISID_AGENT_TOKEN: ${CISID_AGENT_TOKEN:?set CISID_AGENT_TOKEN}
+      CISID_STEP_MEMORY: ${CISID_STEP_MEMORY:-4g}
+      CISID_STEP_CPUS: ${CISID_STEP_CPUS:-2}
+    volumes:
+      # The agent starts the build containers on this host's Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      server:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CISID_HOST: ${CISID_HOST:?set CISID_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # A certificate from the company's CA, if there is one (see Caddyfile).
+      - ./certs:/certs:ro
+      # Caddy's own CA and certificates: keep it, or teammates must trust
+      # a new root.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy-data:
+  caddy-config:

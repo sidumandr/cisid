@@ -100,6 +100,29 @@ Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, autho
 
 **Güvenlik.** Giriş `state` parametresiyle bağlanır (kısa ömürlü, HttpOnly bir cookie'de, `SameSite=Lax`). Dönüş adresi yalnızca bu sitedeki bir yol olabilir (açık yönlendirme yok). Sağlayıcının verdiği erişim token'ı yalnızca "kim giriş yaptı" sorusu için kullanılır, saklanmaz. Başarısız bir giriş **Sign in** sayfasına nedeniyle döner (`/login?signin=unknown` gibi).
 
+## Sağlayıcı hesabı bağlamak
+
+Her kullanıcı cisid'e bir sağlayıcıdaki kendi erişimini verebilir: **Hesap** sayfasında, *Sağlayıcı hesapları* altında, OAuth ile (**Bağla**) ya da kendi token'ıyla (**Token kullan**). Bundan sonra bağladığı repolar server'ın `CISID_<FORGE>_TOKEN` token'ı yerine onun erişimiyle aranır, yoklanır, klonlanır ve sonuçları (commit status) yazılır; **Repo bağla** penceresi de onun repolarını, özel olanlar dahil, listeler. Bir ekibin, herkesin repolarına ulaşan tek bir token olmadan aynı server'ı paylaşabilmesi bununla olur ([team-server.md](team-server.md)).
+
+`CISID_SECRET_KEY` gerekir: token'lar repo secret'ları gibi onunla şifrelenir (AES-256-GCM, kullanıcıya ve sağlayıcıya bağlı) ve hiçbir API onları döndürmez.
+
+| Sağlayıcı | OAuth ile | Token ile |
+|---|---|---|
+| GitHub | Giriş için kullanılan OAuth uygulaması; bağlarken `repo` scope'u istenir | Fine-grained bir kişisel erişim token'ı: bağlanacak repolarda Contents ve Metadata okuma, Commit statuses okuma ve yazma |
+| GitLab | Giriş için kullanılan uygulama; `api` scope'una (giriş için de `read_user`) izin vermeli | `api` yetkili bir kişisel erişim token'ı |
+| Gitea, Forgejo | Yok | Repoları ve kullanıcıyı okuyan, commit status yazan bir erişim token'ı |
+
+- OAuth ile bağlamak, girişle aynı uygulamayı ve aynı callback URL'ini (`/auth/<forge>/callback`) kullanır; yalnızca daha fazlasını ister. GitLab'ın token'ları iki saatte dolar; cisid onları dolmadan biraz önce refresh token'larıyla yeniler.
+- Token verildiğinde sağlayıcıya sorulur ve ait olduğu kullanıcı adı yanında gösterilir. Sağlayıcının kabul etmediği token reddedilir (`400`).
+- Bir repo, onu bağlayan kullanıcının erişimiyle build'lenir; `GET /api/repos` bu kullanıcıyı `via` alanında verir. Kullanıcı sağlayıcının bağlantısını keserse ya da hesabı silinirse repo, server'ın o sağlayıcı için token'ına döner; token yoksa özel repolar build'lenmez. Sağlayıcı bir token'ı artık kabul etmezse (iptal edildi, süresi doldu), hesap yeniden bağlanana kadar yoklama sağlayıcının hatasını reponun *Yoklanan branch'ler* sekmesinde gösterir.
+
+| Endpoint | Açıklama |
+|---|---|
+| `GET /api/me/forges` | `{"enabled":true,"forges":[{"forge":"github","oauth":true}],"accounts":[{"forge","login","kind","created_at"}]}`: bağlanabilecek sağlayıcılar (ve OAuth ile olup olmadığı) ile bağlananlar; `kind` `oauth` ya da `token` olur. `CISID_SECRET_KEY` yoksa `enabled` `false` olur. |
+| `PUT /api/me/forges/{forge}` | Sağlayıcıyı `{"token":"..."}` ile bağlar ve hesabı döndürür. Sağlayıcı token'ı kabul etmezse `400`, burada bağlanamayan bir sağlayıcı için `404`, `CISID_SECRET_KEY` yoksa `409`, sağlayıcıya ulaşılamazsa `503`. |
+| `DELETE /api/me/forges/{forge}` | Erişimi unutur: `204`, ya da bağlı değilse `404` |
+| `GET /auth/{forge}/connect?next=/account` | OAuth ile bağlar ve `next` adresine `?connected=<forge>` ile, ya da `?connect=failed`, `denied`, `unavailable` veya `expired` ile döner |
+
 ## Kişisel token'lar
 
 Kullanıcılar betikler ve CLI için token oluşturur. Token sahibinin rolüyle çalışır; rol değişirse token'ın yetkisi de değişir. Kullanıcı devre dışı bırakılır ya da silinirse token'ları çalışmaz.

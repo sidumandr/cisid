@@ -1,0 +1,14 @@
+# HTTPS in front of cisid. CISID_HOST is the name teammates open, such as
+# ci.company.internal; plain HTTP on port 80 is sent on to HTTPS.
+{$CISID_HOST} {
+	# Let's Encrypt cannot reach a server inside the company network, so
+	# Caddy signs the certificate with a CA of its own, whose root each
+	# teammate trusts once (docs/team-server.md). With a certificate from
+	# the company's CA, put it in certs/ and use this line instead:
+	#   tls /certs/cert.pem /certs/key.pem
+	tls internal
+
+	# Live logs (server-sent events) and the agents' WebSockets pass
+	# through as they are.
+	reverse_proxy server:8080
+}

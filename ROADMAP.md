@@ -89,3 +89,5 @@ Goal: logs stream live, and dropped connections lose no work.
 - [x] Signing up: the first account on a new server becomes its admin; `CISID_SIGNUP_ROLE` lets others sign up as viewers or maintainers ([docs/accounts.md](docs/accounts.md#signing-up)).
 - [x] The web UI rewritten in React and TypeScript, with an introduction for visitors and pages of their own for signing in and signing up ([docs/ui.md](docs/ui.md)).
 - [x] Connecting repositories from the UI: pick one the server's forge tokens reach, poll it or add a webhook, disconnect it; the UI in English and Turkish ([docs/api.md](docs/api.md#connected-repositories)).
+- [x] Everyone's own forge access: users connect GitHub or GitLab by OAuth, or any forge with a token of their own, sealed with the server's key; the repositories they connect are polled, cloned and reported on with it ([docs/accounts.md](docs/accounts.md#connecting-forge-accounts)).
+- [x] A team server: one compose file with HTTPS through Caddy, open sign-up inside the company network and polling ([docs/team-server.md](docs/team-server.md)).

@@ -4,6 +4,8 @@
 
 cisid iki binary'den oluşur: `cisid-server` (API, hub, web arayüzü) ve `cisid-agent` (job'ları Docker'da çalıştıran worker). İkisi de tek bir `Dockerfile` ile derlenir. Tek makinede docker compose, Kubernetes'te Helm chart'ı kullanılır ([Kubernetes](#kubernetes)).
 
+Şirket ağındaki tek bir server'da bir ekip için, HTTPS, kayıt ve yoklama hazır bir kurulum: [team-server.md](team-server.md).
+
 ## Image'lar
 
 ```bash
@@ -78,7 +80,7 @@ Compose stack'te agent server'a compose'un özel ağı üzerinden `ws://server:8
 
 - Server durumsuzdur: tüm durum PostgreSQL'dedir. Server yeniden başlatıldığında agent'lar yeniden bağlanır ve çalışan job'lar kaldıkları yerden devam eder ([hub.md](hub.md)).
 - Birden fazla server kopyası aynı veritabanını kullanabilir: job'lar `FOR UPDATE SKIP LOCKED` ile dağıtılır, sahiplik lease'lerle veritabanında tutulur, log akışı PostgreSQL `LISTEN/NOTIFY` ile tüm kopyalara ulaşır ve zamanlamalar tek bir kopyada çalışır. `TestRunTwoServers` bunu uçtan uca dener: bir kopyaya gelen push diğerine bağlı agent'ta çalışır, ilk kopya logları canlı akıtır ve job'u iptal edebilir. Bir kopyaya gelen job'u yalnızca başka kopyaya bağlı agent'lar alabiliyorsa, job yoklama aralığı kadar, en fazla 5 saniye bekler.
-- Veritabanı yedeğini düzenli alın. Secret'lar `CISID_SECRET_KEY` olmadan çözülemez, anahtarı ayrı saklayın.
+- Veritabanı yedeğini düzenli alın. Secret'lar ve kullanıcıların sağlayıcı token'ları `CISID_SECRET_KEY` olmadan çözülemez, anahtarı ayrı saklayın.
 - Server internete açıksa `CISID_READ_TOKEN` tanımlayın; job'lar, loglar ve `/metrics` o zaman token ister ([api.md](api.md#okuma-erişimi)). `/healthz` ve `/readyz` açık kalır.
 
 ## Kubernetes

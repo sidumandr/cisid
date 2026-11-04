@@ -1,0 +1,3 @@
+# Certificates from the company CA go here; never commit them.
+*
+!.gitignore

@@ -100,6 +100,29 @@ Users can sign in with their forge accounts (OAuth 2.0, authorization code flow)
 
 **Security.** The sign-in is bound by the `state` parameter (in a short-lived HttpOnly cookie, `SameSite=Lax`). The return address can only be a path on this site (no open redirect). The access token the forge issues is used only to answer "who signed in" and is not stored. A failed sign-in returns to the **Sign in** page with the reason (such as `/login?signin=unknown`).
 
+## Connecting forge accounts
+
+Each user can give cisid their own access to a forge: on the **Account** page, under *Forge accounts*, by OAuth (**Connect**) or with a token of their own (**Use a token**). The repositories they connect from then on are looked up, polled, cloned and reported on (commit statuses) with their access instead of the server's `CISID_<FORGE>_TOKEN`, and the **Connect a repository** dialog lists their own repositories, private ones too. This is what lets a team share one server without one token that reaches everyone's repositories ([team-server.md](team-server.md)).
+
+It needs `CISID_SECRET_KEY`: the tokens are sealed with it (AES-256-GCM, bound to the user and the forge), like the repository secrets, and no API returns them.
+
+| Forge | By OAuth | With a token |
+|---|---|---|
+| GitHub | The sign-in OAuth app; connecting asks for the `repo` scope | A fine-grained personal access token: Contents and Metadata read, Commit statuses read and write, on the repositories to connect |
+| GitLab | The sign-in application, which must allow the `api` scope (and `read_user` for signing in) | A personal access token with `api` |
+| Gitea, Forgejo | No | An access token that reads repositories and the user, and writes commit statuses |
+
+- Connecting by OAuth uses the same app and the same callback URL as signing in (`/auth/<forge>/callback`); it only asks for more. GitLab's tokens expire after two hours, and cisid renews them with their refresh token shortly before.
+- A token is checked with the forge when it is given, and the login it belongs to is shown next to it. A token the forge does not take is refused (`400`).
+- A repository is built with the access of the user who connected it; `GET /api/repos` names them in `via`. If they disconnect the forge, or their account is deleted, the repository goes back to the server's token for the forge, and private repositories stop building when there is none. If the forge stops taking a token (revoked, expired), polling shows the forge's error on the repository's *Polled branches* tab until the account is connected again.
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/me/forges` | `{"enabled":true,"forges":[{"forge":"github","oauth":true}],"accounts":[{"forge","login","kind","created_at"}]}`: the forges one can connect (and whether by OAuth), and those one did; `kind` is `oauth` or `token`. `enabled` is `false` without `CISID_SECRET_KEY`. |
+| `PUT /api/me/forges/{forge}` | Connects the forge with `{"token":"..."}` and returns the account. `400` if the forge does not take the token, `404` for a forge that cannot be connected here, `409` without `CISID_SECRET_KEY`, `503` if the forge cannot be reached. |
+| `DELETE /api/me/forges/{forge}` | Forgets the access: `204`, or `404` if it was not connected |
+| `GET /auth/{forge}/connect?next=/account` | Connects by OAuth and comes back to `next` with `?connected=<forge>`, or with `?connect=failed`, `denied`, `unavailable` or `expired` |
+
 ## Personal tokens
 
 Users create tokens for scripts and the CLI. A token works with its owner's role; if the role changes, so does what the token can do. If the user is disabled or deleted, their tokens stop working.
