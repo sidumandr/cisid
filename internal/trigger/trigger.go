@@ -26,7 +26,9 @@ func Next(spec string, after time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("%w: %w", ErrInvalidCron, err)
 	}
-	next := s.Next(after)
+	// A spec without a zone matches in the zone of the time it is given, so
+	// the time goes in as UTC whatever the server's own zone is.
+	next := s.Next(after.UTC())
 	if next.IsZero() {
 		return time.Time{}, fmt.Errorf("%w: %q never matches", ErrInvalidCron, spec)
 	}

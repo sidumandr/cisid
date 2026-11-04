@@ -36,6 +36,22 @@ func TestNext(t *testing.T) {
 	}
 }
 
+// TestNextIgnoresTheServerZone checks a spec without a zone is read in UTC
+// even when the time it starts from, like time.Now, is in another zone.
+func TestNextIgnoresTheServerZone(t *testing.T) {
+	istanbul := time.FixedZone("+03", 3*60*60)
+	from := time.Date(2026, 11, 3, 13, 30, 0, 0, istanbul) // 10:30 UTC
+	got, err := Next("0 3 * * *", from)
+	require.NoError(t, err)
+	want := time.Date(2026, 11, 4, 3, 0, 0, 0, time.UTC)
+	assert.True(t, want.Equal(got), "got %s, want %s", got, want)
+
+	got, err = Next("CRON_TZ=Europe/Istanbul 0 14 * * *", from)
+	require.NoError(t, err)
+	want = time.Date(2026, 11, 3, 11, 0, 0, 0, time.UTC)
+	assert.True(t, want.Equal(got), "a zone in the spec still wins: got %s, want %s", got, want)
+}
+
 type fakeResolver struct {
 	repoErr, headErr error
 }
