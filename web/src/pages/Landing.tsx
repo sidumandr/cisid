@@ -9,7 +9,8 @@ import { ago, fmtDuration, seconds, shortSHA, trigger } from "../lib/format";
 import { useMe } from "../lib/session";
 import type { Job } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
-import { Icon, Mark } from "../ui/Icon";
+import { Icon } from "../ui/Icon";
+import { Wordmark } from "../ui/Logo";
 import { useTheme } from "../ui/Shell";
 import { Pill, Strip } from "../ui/parts";
 
@@ -149,7 +150,7 @@ function SiteNav({ signupOpen }: { signupOpen: boolean }) {
   }, []);
   return (
     <header className="site-nav" data-stuck={stuck || undefined}>
-      <Link className="site-mark" to="/"><Mark size={22} /><span>cisid</span></Link>
+      <Link className="site-mark" to="/"><Wordmark height={26} /></Link>
       <nav aria-label="Site">
         {SECTIONS.map((s) => <a key={s.href} href={s.href} rel={s.href.startsWith("http") ? "noreferrer" : undefined}>{s.label}</a>)}
         <button className="text-action" type="button" onClick={toggle}>{theme === "dark" ? "Light" : "Dark"}</button>
@@ -314,7 +315,7 @@ export function Landing() {
         </section>
       </main>
       <footer className="site-foot">
-        <span className="site-mark"><Mark size={18} /><span>cisid</span></span>
+        <span className="site-mark"><Wordmark height={22} /></span>
         <span className="muted">Self-hosted CI/CD, written in Go. MIT licensed.</span>
         <a href="https://github.com/sidumandr/cisid" rel="noreferrer">github.com/sidumandr/cisid</a>
       </footer>

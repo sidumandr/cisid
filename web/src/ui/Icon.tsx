@@ -1,5 +1,4 @@
-// Line icons drawn with the text colour, and the cisid mark: three steps,
-// the last one running.
+// Line icons drawn with the text colour.
 
 const ICONS = {
   search: ["M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM20 20l-4.6-4.6"],
@@ -33,15 +32,6 @@ export function ThemeIcon() {
   );
 }
 
-export function Mark({ size = 24 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-      <rect className="mark-step" x="2" y="9" width="6" height="6" />
-      <rect className="mark-step" x="9" y="9" width="6" height="6" />
-      <rect className="mark-run" x="16" y="9" width="6" height="6" />
-    </svg>
-  );
-}
 
 // ProviderMark is the mark of a forge one signs in with: GitHub's and
 // GitLab's in the text colour; the other forges get a plain person.

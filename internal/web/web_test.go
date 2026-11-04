@@ -56,6 +56,12 @@ func TestAssets(t *testing.T) {
 	assert.Equal(t, http.StatusOK, font.Code, "fonts are served from this origin, as the CSP requires")
 	assert.Equal(t, "font/woff2", font.Header().Get("Content-Type"))
 
+	for path, typ := range map[string]string{"/ui/favicon.svg": "image/svg+xml", "/ui/favicon.ico": "image/", "/ui/apple-touch-icon.png": "image/png"} {
+		icon := get(h, path)
+		assert.Equal(t, http.StatusOK, icon.Code, path)
+		assert.Contains(t, icon.Header().Get("Content-Type"), typ, path)
+	}
+
 	assert.Equal(t, http.StatusNotFound, get(h, "/ui/missing.js").Code)
 }
 
@@ -72,7 +78,7 @@ func TestNoInlineCode(t *testing.T) {
 // the design's rule.
 func TestNoLongDashes(t *testing.T) {
 	err := fs.WalkDir(static, "static", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || strings.HasSuffix(path, ".woff2") {
+		if err != nil || d.IsDir() || strings.HasSuffix(path, ".woff2") || strings.HasSuffix(path, ".ico") || strings.HasSuffix(path, ".png") {
 			return err
 		}
 		data, err := static.ReadFile(path)

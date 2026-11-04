@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router";
 
 import { useMe } from "../lib/session";
-import { Icon, Mark, ThemeIcon } from "./Icon";
+import { Icon, ThemeIcon } from "./Icon";
+import { LogoMark, Wordmark } from "./Logo";
 
 const THEME_KEY = "cisid.theme";
 
@@ -47,10 +48,10 @@ export function Shell() {
   return (
     <div className="shell">
       <header className="topbar">
-        <Link className="wordmark" to="/"><Mark size={20} />cisid</Link>
+        <Link className="wordmark" to="/"><Wordmark height={22} /></Link>
       </header>
       <nav className="rail" aria-label="Main">
-        <Link className="mark" to="/" aria-label="cisid home"><Mark /></Link>
+        <Link className="mark" to="/" aria-label="cisid home"><LogoMark size={34} /></Link>
         <NavLink className="rail-item" to="/jobs" title="Jobs">
           <Icon name="jobs" size={18} /><span className="rail-label">Jobs</span>
         </NavLink>

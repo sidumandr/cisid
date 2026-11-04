@@ -7,7 +7,7 @@ import { login, register } from "../lib/api";
 import { forgeName } from "../lib/format";
 import { loadMe, useMe } from "../lib/session";
 import { useTitle } from "../lib/useTitle";
-import { Mark } from "../ui/Icon";
+import { Wordmark } from "../ui/Logo";
 import { ProviderLink, Strip } from "../ui/parts";
 import type { Job } from "../lib/types";
 
@@ -43,7 +43,7 @@ function AuthFrame({ title, lede, children, aside }: { title: string; lede: Reac
   return (
     <div className="auth">
       <aside className="auth-side">
-        <Link className="site-mark" to="/"><Mark size={22} /><span>cisid</span></Link>
+        <Link className="site-mark" to="/"><Wordmark height={28} /></Link>
         <div className="auth-side-copy">
           <p className="auth-statement">{aside.statement}</p>
           <p className="auth-text">{aside.text}</p>
