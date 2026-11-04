@@ -71,7 +71,7 @@ Değişiklikler her zaman maintainer ister. Hiç kullanıcı ve `CISID_API_TOKEN
 
 ## Sağlayıcıyla giriş
 
-Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, authorization code akışı). Her sağlayıcıda bir OAuth uygulaması kaydedilir ve client id ile secret'ı server'a verilir. **Sign in** sayfasında her sağlayıcı için bir **Continue with ...**, giriş diyaloğunda bir **Sign in with ...** düğmesi çıkar.
+Kullanıcılar sağlayıcıdaki ya da Google hesaplarıyla giriş yapabilir (OAuth 2.0, authorization code akışı; Google için OpenID Connect). Her sağlayıcıda ya da Google'da bir OAuth uygulaması kaydedilir ve client id ile secret'ı server'a verilir. Yalnızca kurulanlar görünür: **Sign in** sayfasında her biri için logosuyla (GitHub, GitLab, Google) bir **Continue with ...**, giriş diyaloğunda bir **Sign in with ...** düğmesi çıkar.
 
 | Değişken | Açıklama |
 |---|---|
@@ -80,10 +80,12 @@ Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, autho
 | `CISID_FORGEJO_OAUTH_CLIENT_ID`, `..._SECRET` | Forgejo (`CISID_FORGEJO_URL` gerekir) |
 | `CISID_GITLAB_OAUTH_CLIENT_ID`, `..._SECRET` | GitLab (`CISID_GITLAB_URL`, varsayılan GitLab.com) |
 | `CISID_BITBUCKET_OAUTH_CLIENT_ID`, `..._SECRET` | Bitbucket Cloud (OAuth consumer'ın key ve secret'ı) |
-| `CISID_OAUTH_SIGNUP_ROLE` | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı kullanıcılarına ilk girişte bu rolle hesap açılır. Boşsa yalnızca admin'in bağladığı kullanıcılar girer. |
-| `CISID_PUBLIC_URL` | Zorunlu: sağlayıcı tarayıcıyı `<CISID_PUBLIC_URL>/auth/<sağlayıcı>/callback` adresine geri gönderir |
+| `CISID_GOOGLE_OAUTH_CLIENT_ID`, `..._SECRET` | Google (bir Google Cloud projesinin OAuth istemcisi) |
+| `CISID_GOOGLE_DOMAIN` | İsteğe bağlı: Google ile yalnızca bu Google Workspace alan adının (ör. `example.com`) hesapları girer, bağlı olsun olmasın |
+| `CISID_OAUTH_SIGNUP_ROLE` | `viewer` ya da `maintainer`: hesabı olmayan sağlayıcı ya da Google kullanıcılarına ilk girişte bu rolle hesap açılır. Boşsa yalnızca admin'in bağladığı kullanıcılar girer. |
+| `CISID_PUBLIC_URL` | Zorunlu: sağlayıcı ya da Google tarayıcıyı `<CISID_PUBLIC_URL>/auth/<sağlayıcı>/callback` adresine geri gönderir (Google için `/auth/google/callback`) |
 
-**Uygulamayı kaydetmek.** Her sağlayıcıda *callback* (redirect) adresi `https://<cisid>/auth/<sağlayıcı>/callback` olur.
+**Uygulamayı kaydetmek.** Her yerde *callback* (redirect) adresi `https://<cisid>/auth/<sağlayıcı>/callback` olur; `<sağlayıcı>` yerine `github`, `gitea`, `forgejo`, `gitlab`, `bitbucket` ya da `google` gelir.
 
 | Sağlayıcı | Nerede | İzin |
 |---|---|---|
@@ -91,14 +93,15 @@ Kullanıcılar sağlayıcıdaki hesaplarıyla giriş yapabilir (OAuth 2.0, autho
 | Gitea, Forgejo | Settings → **Applications** → OAuth2 Applications (ya da site yönetiminden) | `read:user` |
 | GitLab | User settings → **Applications** (ya da grup/admin uygulaması) | `read_user` |
 | Bitbucket | Workspace settings → **OAuth consumers** → Add consumer; *This is a private consumer* işaretli | *Account: Read* |
+| Google | [Google Cloud console](https://console.cloud.google.com/) → APIs & Services: önce **OAuth consent screen** kurulur, sonra **Credentials** → Create credentials → OAuth client ID, tür *Web application*, callback *Authorized redirect URIs* altına | `openid`, `email` |
 
 **Hesaplar nasıl eşleşir.**
 
-- Bir admin kullanıcıya sağlayıcıdaki kullanıcı adını yazar (`identities`, ör. `{"gitea":"ahmet"}`; arayüzde *Forge logins*). O kullanıcı sağlayıcıyla ilk kez girdiğinde sağlayıcının **değişmeyen kullanıcı numarası** hesaba bağlanır. Sonraki girişler bu numarayla eşleşir: kullanıcı sağlayıcıda adını değiştirse de girer, eski adını alan başka biri giremez.
-- `CISID_OAUTH_SIGNUP_ROLE` tanımlıysa eşleşmeyen sağlayıcı kullanıcısı için hesap açılır. Kullanıcı adı sağlayıcıdaki adından türetilir; alınmışsa sonuna sağlayıcının adı eklenir (`ahmet-gitea`). Kendi kurduğunuz bir Gitea ya da GitLab'da herkes çalışansa kullanışlıdır. **GitHub.com, GitLab.com ya da Bitbucket'ta açmayın:** o sağlayıcıda hesabı olan herkes girebilir.
+- Bir admin kullanıcıya sağlayıcıdaki kullanıcı adını yazar (`identities`, ör. `{"gitea":"ahmet"}`; arayüzde *Linked logins*). Google için bu e-posta adresidir (`{"google":"ahmet@example.com"}`) ve yalnızca doğrulanmış adresler girer. O kullanıcı sağlayıcıyla ilk kez girdiğinde sağlayıcının **değişmeyen kullanıcı numarası** hesaba bağlanır. Sonraki girişler bu numarayla eşleşir: kullanıcı sağlayıcıda adını değiştirse de girer, eski adını alan başka biri giremez.
+- `CISID_OAUTH_SIGNUP_ROLE` tanımlıysa eşleşmeyen sağlayıcı ya da Google kullanıcısı için hesap açılır. Kullanıcı adı sağlayıcıdaki adından ya da e-posta adresinin `@` öncesinden türetilir; alınmışsa sonuna sağlayıcının adı eklenir (`ahmet-gitea`, `ahmet-google`). Kendi kurduğunuz bir Gitea ya da GitLab'da herkes çalışansa kullanışlıdır. **GitHub.com, GitLab.com ya da Bitbucket'ta, ya da `CISID_GOOGLE_DOMAIN` olmadan Google için açmayın:** oradaki her hesap sahibi girebilir. `CISID_GOOGLE_DOMAIN` ile yalnızca şirketinizin Google Workspace hesaplarına hesap açılır.
 - Devre dışı bırakılan kullanıcı sağlayıcıyla da giremez.
 
-**Güvenlik.** Giriş `state` parametresiyle bağlanır (kısa ömürlü, HttpOnly bir cookie'de, `SameSite=Lax`). Dönüş adresi yalnızca bu sitedeki bir yol olabilir (açık yönlendirme yok). Sağlayıcının verdiği erişim token'ı yalnızca "kim giriş yaptı" sorusu için kullanılır, saklanmaz. Başarısız bir giriş **Sign in** sayfasına nedeniyle döner (`/login?signin=unknown` gibi).
+**Güvenlik.** Giriş `state` parametresiyle bağlanır (kısa ömürlü, HttpOnly bir cookie'de, `SameSite=Lax`). Dönüş adresi yalnızca bu sitedeki bir yol olabilir (açık yönlendirme yok). Sağlayıcının ya da Google'ın verdiği erişim token'ı yalnızca "kim giriş yaptı" sorusu için kullanılır, saklanmaz. Google bir hesabın hangi Workspace alan adında olduğunu da söyler (`hd`); `CISID_GOOGLE_DOMAIN` tanımlıysa alan adı dışındaki bir hesap, neye bağlı olursa olsun geri çevrilir. Başarısız bir giriş **Sign in** sayfasına nedeniyle döner (`/login?signin=unknown` gibi).
 
 ## Kişisel token'lar
 

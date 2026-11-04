@@ -44,7 +44,8 @@ To run PostgreSQL, the server and the agent together as containers, see [deploym
 | `CISID_READ_ACCESS` | `signed-in` if a read token is set, otherwise `public` | `public`: anyone can read; `signed-in`: reading requires sign-in or a token ([accounts.md](accounts.md#read-access)) |
 | `CISID_ADMIN_USER`, `CISID_ADMIN_PASSWORD` | `admin`, — | If a password is set, the server creates this admin at startup (and leaves it alone if it exists); the password must be at least 10 characters |
 | `CISID_SESSION_TTL` | `7d` | How long a sign-in lasts (such as `12h`, `30d`) |
-| `CISID_<FORGE>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sign-in through a forge: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`; requires `CISID_PUBLIC_URL` ([accounts.md](accounts.md#signing-in-through-a-forge)) |
+| `CISID_<FORGE>_OAUTH_CLIENT_ID`, `..._SECRET` | — | Sign-in through a forge or Google: `GITHUB`, `GITEA`, `FORGEJO`, `GITLAB`, `BITBUCKET`, `GOOGLE`; requires `CISID_PUBLIC_URL` ([accounts.md](accounts.md#signing-in-through-a-forge)) |
+| `CISID_GOOGLE_DOMAIN` | none | Only accounts of this Google Workspace domain sign in with Google |
 | `CISID_OAUTH_SIGNUP_ROLE` | — | `viewer` or `maintainer`: forge users without an account get one |
 | `CISID_SIGNUP_ROLE` | none | `viewer` or `maintainer`: anyone may open an account with a password. Unset, only the first account of a server with no users (an admin) is opened by sign-up ([accounts.md](accounts.md#signing-up)) |
 | `CISID_SECRET_KEY` | — | 32-byte key that encrypts secrets, base64 ([secrets.md](secrets.md)) |

@@ -48,6 +48,8 @@ type Config struct {
 	AdminUser       string        // CISID_ADMIN_USER, default "admin": the account CISID_ADMIN_PASSWORD creates
 	AdminPassword   string        // CISID_ADMIN_PASSWORD, optional: creates AdminUser as an admin if it does not exist
 	GitHubOAuth     OAuthApp      // CISID_GITHUB_OAUTH_CLIENT_ID, CISID_GITHUB_OAUTH_CLIENT_SECRET: sign in through GitHub
+	GoogleOAuth     OAuthApp      // CISID_GOOGLE_OAUTH_CLIENT_ID, CISID_GOOGLE_OAUTH_CLIENT_SECRET: sign in with a Google account
+	GoogleDomain    string        // CISID_GOOGLE_DOMAIN, optional: only accounts of this Google Workspace domain sign in
 	OAuthSignupRole string        // CISID_OAUTH_SIGNUP_ROLE, viewer or maintainer: forge users without an account get one; empty: only linked users sign in
 	SignupRole      string        // CISID_SIGNUP_ROLE, viewer or maintainer: anyone may open an account with a password; empty: only the first account (an admin) and admins create accounts
 	PublicBadges    bool          // CISID_PUBLIC_BADGES, lets anyone see build badges even when reading needs a sign-in
@@ -387,6 +389,16 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg.GitHubOAuth = loadOAuth(getenv, "GITHUB", &problems)
+	cfg.GoogleOAuth = loadOAuth(getenv, "GOOGLE", &problems)
+	cfg.GoogleDomain = strings.ToLower(strings.TrimSpace(getenv("CISID_GOOGLE_DOMAIN")))
+	if d := cfg.GoogleDomain; d != "" {
+		if !cfg.GoogleOAuth.Enabled() {
+			problems = append(problems, fmt.Errorf("CISID_GOOGLE_DOMAIN needs CISID_GOOGLE_OAUTH_CLIENT_ID and _SECRET"))
+		}
+		if !strings.Contains(d, ".") || strings.ContainsAny(d, "@/: ") {
+			problems = append(problems, fmt.Errorf("CISID_GOOGLE_DOMAIN must be a domain such as example.com"))
+		}
+	}
 	cfg.SignupRole = getenv("CISID_SIGNUP_ROLE")
 	if r := cfg.SignupRole; r != "" && r != "viewer" && r != "maintainer" {
 		problems = append(problems, fmt.Errorf("CISID_SIGNUP_ROLE must be viewer or maintainer"))
@@ -395,9 +407,9 @@ func Load(getenv func(string) string) (Config, error) {
 	if r := cfg.OAuthSignupRole; r != "" && r != "viewer" && r != "maintainer" {
 		problems = append(problems, fmt.Errorf("CISID_OAUTH_SIGNUP_ROLE must be viewer or maintainer"))
 	}
-	if cfg.PublicURL == "" && (cfg.GitHubOAuth.Enabled() || cfg.Gitea.OAuth.Enabled() || cfg.Forgejo.OAuth.Enabled() ||
-		cfg.GitLab.OAuth.Enabled() || cfg.Bitbucket.OAuth.Enabled()) {
-		problems = append(problems, fmt.Errorf("CISID_PUBLIC_URL is required for signing in through a forge: the forge sends the browser back there"))
+	if cfg.PublicURL == "" && (cfg.GitHubOAuth.Enabled() || cfg.GoogleOAuth.Enabled() || cfg.Gitea.OAuth.Enabled() ||
+		cfg.Forgejo.OAuth.Enabled() || cfg.GitLab.OAuth.Enabled() || cfg.Bitbucket.OAuth.Enabled()) {
+		problems = append(problems, fmt.Errorf("CISID_PUBLIC_URL is required for signing in through a forge or Google: they send the browser back there"))
 	}
 
 	if v := getenv("CISID_PUBLIC_BADGES"); v != "" {
@@ -527,6 +539,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("admin_user", c.AdminUser),
 		slog.Bool("admin_password_set", c.AdminPassword != ""),
 		slog.Bool("github_sign_in", c.GitHubOAuth.Enabled()),
+		slog.Bool("google_sign_in", c.GoogleOAuth.Enabled()),
+		slog.String("google_domain", c.GoogleDomain),
 		slog.String("oauth_signup_role", c.OAuthSignupRole),
 		slog.String("signup_role", c.SignupRole),
 		slog.Bool("public_badges", c.PublicBadges),

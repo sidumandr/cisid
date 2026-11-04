@@ -71,7 +71,7 @@ Changes always require a maintainer. If there are no users and no `CISID_API_TOK
 
 ## Signing in through a forge
 
-Users can sign in with their forge accounts (OAuth 2.0, authorization code flow). You register an OAuth app on each forge and give its client ID and secret to the server. The **Sign in** page shows a **Continue with ...** button for each forge, and the sign-in dialog a **Sign in with ...** button.
+Users can sign in with their forge accounts or their Google account (OAuth 2.0, authorization code flow; OpenID Connect for Google). You register an OAuth app on each forge, or with Google, and give its client ID and secret to the server. Only the ones set up show: the **Sign in** page has a **Continue with ...** button for each, with its mark (GitHub, GitLab, Google), and the sign-in dialog a **Sign in with ...** button.
 
 | Variable | Description |
 |---|---|
@@ -80,10 +80,12 @@ Users can sign in with their forge accounts (OAuth 2.0, authorization code flow)
 | `CISID_FORGEJO_OAUTH_CLIENT_ID`, `..._SECRET` | Forgejo (requires `CISID_FORGEJO_URL`) |
 | `CISID_GITLAB_OAUTH_CLIENT_ID`, `..._SECRET` | GitLab (`CISID_GITLAB_URL`, default GitLab.com) |
 | `CISID_BITBUCKET_OAUTH_CLIENT_ID`, `..._SECRET` | Bitbucket Cloud (the OAuth consumer's key and secret) |
-| `CISID_OAUTH_SIGNUP_ROLE` | `viewer` or `maintainer`: a forge user without an account gets an account with this role on their first sign-in. If empty, only users an admin has linked can sign in. |
-| `CISID_PUBLIC_URL` | Required: the forge sends the browser back to `<CISID_PUBLIC_URL>/auth/<forge>/callback` |
+| `CISID_GOOGLE_OAUTH_CLIENT_ID`, `..._SECRET` | Google (an OAuth client of a Google Cloud project) |
+| `CISID_GOOGLE_DOMAIN` | Optional: only accounts of this Google Workspace domain (such as `example.com`) sign in with Google, linked or not |
+| `CISID_OAUTH_SIGNUP_ROLE` | `viewer` or `maintainer`: a forge or Google user without an account gets an account with this role on their first sign-in. If empty, only users an admin has linked can sign in. |
+| `CISID_PUBLIC_URL` | Required: the forge or Google sends the browser back to `<CISID_PUBLIC_URL>/auth/<forge>/callback` (`/auth/google/callback` for Google) |
 
-**Registering the app.** On every forge the *callback* (redirect) URL is `https://<cisid>/auth/<forge>/callback`.
+**Registering the app.** Everywhere the *callback* (redirect) URL is `https://<cisid>/auth/<forge>/callback`, with `github`, `gitea`, `forgejo`, `gitlab`, `bitbucket` or `google` as `<forge>`.
 
 | Forge | Where | Permission |
 |---|---|---|
@@ -91,14 +93,15 @@ Users can sign in with their forge accounts (OAuth 2.0, authorization code flow)
 | Gitea, Forgejo | Settings → **Applications** → OAuth2 Applications (or from site administration) | `read:user` |
 | GitLab | User settings → **Applications** (or a group or admin application) | `read_user` |
 | Bitbucket | Workspace settings → **OAuth consumers** → Add consumer; with *This is a private consumer* checked | *Account: Read* |
+| Google | [Google Cloud console](https://console.cloud.google.com/) → APIs & Services: set up the **OAuth consent screen**, then **Credentials** → Create credentials → OAuth client ID, type *Web application*, the callback under *Authorized redirect URIs* | `openid`, `email` |
 
 **How accounts are matched.**
 
-- An admin enters the user's username on the forge (`identities`, e.g. `{"gitea":"ahmet"}`; *Forge logins* in the UI). The first time that user signs in through the forge, the forge's **immutable user ID** is linked to the account. Later sign-ins match on this ID: the user can still sign in after changing their name on the forge, and someone else who takes the old name cannot.
-- If `CISID_OAUTH_SIGNUP_ROLE` is set, cisid creates an account for a forge user who does not match. The username is derived from their name on the forge; if that is taken, the forge's name is appended (`ahmet-gitea`). This is useful on a Gitea or GitLab you host yourself where everyone is an employee. **Do not enable it on GitHub.com, GitLab.com or Bitbucket:** anyone with an account on that forge can sign in.
+- An admin enters the user's username on the forge (`identities`, e.g. `{"gitea":"ahmet"}`; *Linked logins* in the UI). For Google it is the email address (`{"google":"ahmet@example.com"}`), and only a verified address signs in. The first time that user signs in through the forge, the forge's **immutable user ID** is linked to the account. Later sign-ins match on this ID: the user can still sign in after changing their name on the forge, and someone else who takes the old name cannot.
+- If `CISID_OAUTH_SIGNUP_ROLE` is set, cisid creates an account for a forge or Google user who does not match. The username is derived from their name on the forge, or the part of the email address before `@`; if that is taken, the forge's name is appended (`ahmet-gitea`, `ahmet-google`). This is useful on a Gitea or GitLab you host yourself where everyone is an employee. **Do not enable it on GitHub.com, GitLab.com or Bitbucket, or for Google without `CISID_GOOGLE_DOMAIN`:** anyone with an account there can sign in. With `CISID_GOOGLE_DOMAIN`, it opens accounts for your company's Google Workspace only.
 - A disabled user cannot sign in through a forge either.
 
-**Security.** The sign-in is bound by the `state` parameter (in a short-lived HttpOnly cookie, `SameSite=Lax`). The return address can only be a path on this site (no open redirect). The access token the forge issues is used only to answer "who signed in" and is not stored. A failed sign-in returns to the **Sign in** page with the reason (such as `/login?signin=unknown`).
+**Security.** The sign-in is bound by the `state` parameter (in a short-lived HttpOnly cookie, `SameSite=Lax`). The return address can only be a path on this site (no open redirect). The access token the forge or Google issues is used only to answer "who signed in" and is not stored. Google also says which Workspace domain an account is in (`hd`); with `CISID_GOOGLE_DOMAIN` an account outside the domain is turned away whatever it is linked to. A failed sign-in returns to the **Sign in** page with the reason (such as `/login?signin=unknown`).
 
 ## Personal tokens
 

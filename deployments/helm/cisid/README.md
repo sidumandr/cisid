@@ -75,7 +75,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `secrets.forgejoToken`, `secrets.forgejoWebhookSecret` | — | Forgejo's token and webhook secret (with `server.forgejoURL`) |
 | `secrets.gitlabToken`, `secrets.gitlabWebhookSecret` | — | GitLab's token and webhook secret |
 | `secrets.bitbucketToken`, `secrets.bitbucketWebhookSecret` | — | Bitbucket Cloud's token and webhook secret |
-| `secrets.oauthClientSecrets.<forge>` | — | Client secret of the OAuth app for signing in through a forge (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) |
+| `secrets.oauthClientSecrets.<forge>` | — | Client secret of the OAuth app for signing in through a forge (`github`, `gitea`, `forgejo`, `gitlab`, `bitbucket`) or Google (`google`) |
 | `secrets.adminPassword` | — | Creates `server.adminUser` as an admin on first start, at least 10 characters ([accounts](../../../docs/accounts.md)) |
 | `secrets.smtpPassword` | none | The password of `server.smtp.username` |
 | `secrets.existingSecret` | — | Reads the values above from a Secret you manage (see below) |
@@ -86,6 +86,7 @@ The full list with descriptions is in [values.yaml](values.yaml). `values.schema
 | `server.sessionTTL` | `7d` | How long a sign-in lasts |
 | `server.adminUser` | `admin` | The account that `secrets.adminPassword` creates |
 | `server.oauthClientIDs.<forge>` | — | Client ID of the OAuth app; needs its secret and `server.publicURL` (or an ingress) |
+| `server.googleDomain` | none | Only accounts of this Google Workspace domain sign in with Google |
 | `server.oauthSignupRole` | — | `viewer` or `maintainer`: forge users without an account get one on their first sign-in |
 | `agent.labels` | `[]` | Labels these agents offer (`CISID_AGENT_LABELS`); install the chart once per kind of agent for different labels ([pipeline](../../../docs/pipeline.md#labels)) |
 | `server.artifactMaxSize` | `100MB` | The largest artifact the server accepts; artifacts are kept in PostgreSQL ([pipeline](../../../docs/pipeline.md#artifacts)) |

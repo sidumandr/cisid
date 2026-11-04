@@ -81,7 +81,8 @@
             "gitea": {"type": "string"},
             "forgejo": {"type": "string"},
             "gitlab": {"type": "string"},
-            "bitbucket": {"type": "string"}
+            "bitbucket": {"type": "string"},
+            "google": {"type": "string"}
           }
         }
       }
@@ -187,8 +188,13 @@
             "gitea": {"type": "string"},
             "forgejo": {"type": "string"},
             "gitlab": {"type": "string"},
-            "bitbucket": {"type": "string"}
+            "bitbucket": {"type": "string"},
+            "google": {"type": "string"}
           }
+        },
+        "googleDomain": {
+          "type": "string",
+          "pattern": "^$|^[a-zA-Z0-9-]+([.][a-zA-Z0-9-]+)+$"
         },
         "oauthSignupRole": {
           "type": "string",

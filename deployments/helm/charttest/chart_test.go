@@ -391,6 +391,14 @@ func TestOAuthSettingsReachTheServer(t *testing.T) {
 	data := m.secrets["ci-cisid"].Data
 	assert.Equal(t, "gitea-client-secret", string(data["gitea-oauth-client-secret"]))
 	assert.NotContains(t, data, "github-oauth-client-secret")
+
+	vals = with(required(), "server.oauthClientIDs.google", "google-client")
+	vals = with(vals, "secrets.oauthClientSecrets.google", "google-client-secret")
+	vals = with(vals, "server.googleDomain", "example.com")
+	c = container(t, render(t, vals).server(t).Spec.Template.Spec, "server")
+	assert.Equal(t, "google-client", env(c, "CISID_GOOGLE_OAUTH_CLIENT_ID").Value)
+	assert.Equal(t, "google-oauth-client-secret", env(c, "CISID_GOOGLE_OAUTH_CLIENT_SECRET").ValueFrom.SecretKeyRef.Key)
+	assert.Equal(t, "example.com", env(c, "CISID_GOOGLE_DOMAIN").Value)
 }
 
 func TestNotificationSettingsReachTheServer(t *testing.T) {

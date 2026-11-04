@@ -399,6 +399,13 @@ func (b userBody) check() (hash *string, err error) {
 		if !knownForge(forge) || login == "" || len(login) > 100 {
 			return nil, fmt.Errorf("identities: %q: %q is not a forge login", forge, login)
 		}
+		if forge == "google" {
+			// A Google login is an email address, compared as Google sends it: lowercase.
+			if !strings.Contains(login, "@") {
+				return nil, fmt.Errorf("identities: google: %q is not an email address", login)
+			}
+			b.Identities[forge] = strings.ToLower(login)
+		}
 	}
 	if b.Password != nil {
 		h := ""
@@ -412,9 +419,11 @@ func (b userBody) check() (hash *string, err error) {
 	return hash, nil
 }
 
+// knownForge reports whether users can be linked to logins of name: the
+// forges, and Google.
 func knownForge(name string) bool {
 	switch name {
-	case "github", "gitea", "forgejo", "gitlab", "bitbucket":
+	case "github", "gitea", "forgejo", "gitlab", "bitbucket", "google":
 		return true
 	}
 	return false

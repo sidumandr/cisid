@@ -82,6 +82,10 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
+            {{- with .Values.server.googleDomain }}
+            - name: CISID_GOOGLE_DOMAIN
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.server.oauthSignupRole }}
             - name: CISID_OAUTH_SIGNUP_ROLE
               value: {{ . | quote }}

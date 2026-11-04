@@ -324,7 +324,7 @@ func forgeClients(cfg config.Config, httpClient *http.Client) (*forge.Set, *bitb
 	return s, bb
 }
 
-// oauthProviders returns the forges users can sign in through.
+// oauthProviders returns the forges, and Google, users can sign in through.
 func oauthProviders(cfg config.Config, httpClient *http.Client) []*auth.Provider {
 	var ps []*auth.Provider
 	if o := cfg.GitHubOAuth; o.Enabled() {
@@ -345,6 +345,9 @@ func oauthProviders(cfg config.Config, httpClient *http.Client) []*auth.Provider
 	}
 	if o := cfg.Bitbucket.OAuth; o.Enabled() {
 		ps = append(ps, auth.BitbucketProvider(cfg.Bitbucket.URL, o.ClientID, o.ClientSecret))
+	}
+	if o := cfg.GoogleOAuth; o.Enabled() {
+		ps = append(ps, auth.GoogleProvider(o.ClientID, o.ClientSecret, cfg.GoogleDomain))
 	}
 	for _, p := range ps {
 		p.HTTP = httpClient
