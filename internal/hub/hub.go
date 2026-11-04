@@ -47,6 +47,7 @@ type Store interface {
 	RequeueAgentJobs(ctx context.Context, agent string, keep int64) (int, error)
 	FinishJob(ctx context.Context, agent string, res models.JobResult) error
 	AppendJobLog(ctx context.Context, l models.JobLog) error
+	RecordStep(ctx context.Context, st models.JobStep) error
 }
 
 var _ Store = (*db.Store)(nil)

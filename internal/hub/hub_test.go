@@ -94,6 +94,10 @@ func (m *mockStore) AppendJobLog(ctx context.Context, l models.JobLog) error {
 	return m.Called(ctx, l).Error(0)
 }
 
+func (m *mockStore) RecordStep(ctx context.Context, st models.JobStep) error {
+	return m.Called(ctx, st).Error(0)
+}
+
 type mockPlanner struct {
 	mock.Mock
 }
@@ -382,6 +386,13 @@ func TestHubReconnectKeepsRunningJob(t *testing.T) {
 	a.send(t, models.MsgJobLog, models.JobLog{JobID: 7, Seq: 9, Stream: models.StreamStdout, Data: "still going\n"})
 	waitFor(t, logged, "log of the running job")
 
+	// So are its steps.
+	stepped := make(chan struct{}, 1)
+	step := models.JobStep{JobID: 7, Step: 1, StepResult: models.StepResult{State: models.StepRunning}}
+	f.store.On("RecordStep", mock.Anything, step).Return(nil).Run(signal(stepped)).Once()
+	a.send(t, models.MsgJobStep, step)
+	waitFor(t, stepped, "step of the running job")
+
 	a.send(t, models.MsgJobResult, result)
 	waitFor(t, finished, "result")
 	waitFor(t, claimed, "claim once the agent is idle")
@@ -416,10 +427,12 @@ func TestHubDropsLogsForJobsTheAgentDoesNotHold(t *testing.T) {
 	a := f.connect(t, "agent-1", 0)
 	a.expectAssignment(t)
 	a.send(t, models.MsgJobLog, models.JobLog{JobID: 99, Seq: 1, Stream: models.StreamStdout, Data: "forged\n"})
+	a.send(t, models.MsgJobStep, models.JobStep{JobID: 99, Step: 0, StepResult: models.StepResult{State: models.StepFailed}})
 	a.send(t, models.MsgJobResult, models.JobResult{JobID: 99, Status: models.JobStatusSuccess})
 
 	time.Sleep(quiet)
 	f.store.AssertNotCalled(t, "AppendJobLog", mock.Anything, mock.Anything)
+	f.store.AssertNotCalled(t, "RecordStep", mock.Anything, mock.Anything)
 	f.store.AssertNotCalled(t, "FinishJob", mock.Anything, mock.Anything, mock.Anything)
 }
 

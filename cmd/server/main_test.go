@@ -355,6 +355,11 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, models.JobStatusSuccess, job.Status)
 	assert.Equal(t, "e2e-agent", job.Agent)
 	assert.Equal(t, "main", job.Branch)
+	require.Len(t, job.StepResults, 2, "the agent reports how each step went")
+	for i, st := range job.StepResults {
+		assert.Equal(t, models.StepSuccess, st.State, "step %d", i)
+		require.NotNil(t, st.FinishedAt)
+	}
 
 	jobLogs, err := store.JobLogs(t.Context(), queued.JobID)
 	require.NoError(t, err)

@@ -219,7 +219,8 @@ func (j *JobsAPI) logs(w http.ResponseWriter, r *http.Request) {
 // stream sends the job's state and log chunks as server-sent events until
 // the job finishes, the client goes away or the server shuts down:
 //
-//	event: status   the job (sent first and, once finished, last)
+//	event: status   the job: sent first, whenever a step starts or ends,
+//	                and, once finished, last
 //	event: log      a log chunk; its event ID is the chunk's seq
 //
 // A client resumes after a disconnect with Last-Event-ID (or ?after=).
@@ -251,6 +252,7 @@ func (j *JobsAPI) stream(w http.ResponseWriter, r *http.Request) {
 	if writeEvent(w, "", "status", job) != nil || rc.Flush() != nil {
 		return
 	}
+	sentSteps := stepsKey(job)
 
 	poll := time.NewTicker(j.pollInterval)
 	defer poll.Stop()
@@ -299,7 +301,19 @@ func (j *JobsAPI) stream(w http.ResponseWriter, r *http.Request) {
 			j.log.WarnContext(ctx, "stream job status", "job_id", job.ID, "error", err)
 			return
 		}
+		if key := stepsKey(job); !job.Status.Finished() && key != sentSteps {
+			if writeEvent(w, "", "status", job) != nil {
+				return
+			}
+			sentSteps = key
+		}
 	}
+}
+
+// stepsKey sums up how far the job's steps got, to tell when it changed.
+func stepsKey(job models.Job) string {
+	b, _ := json.Marshal(job.StepResults)
+	return string(job.Status) + string(b)
 }
 
 // lookup parses {id} and loads the job, writing an error response if that fails.

@@ -105,8 +105,8 @@ func failureText(res models.JobResult) string {
 	return "failed"
 }
 
-// execute runs the steps of job in order on a shared workspace volume and
-// stops at the first failing step.
+// execute runs the steps of job on a shared workspace volume, each once the
+// steps it needs have passed, and stops at the first failing step.
 func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.JobResult {
 	res := models.JobResult{JobID: job.JobID, Status: models.JobStatusSuccess}
 	if err := validateJob(job); err != nil {
@@ -146,36 +146,134 @@ func (a *Agent) execute(ctx context.Context, job models.JobAssignment) models.Jo
 		}
 	}
 
-	caches := cacheMounts(job.Cache)
-	var seq atomic.Int64
-	for i, spec := range job.Steps {
-		// Secrets are masked before output leaves the agent.
-		stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &seq}, spec.Secrets)
-		stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &seq}, spec.Secrets)
+	return a.runSteps(ctx, job, res, &stepEnv{workspace: workspace, network: network, caches: cacheMounts(job.Cache)})
+}
 
-		code, err := a.runStep(ctx, i, spec, toRunnerStep(job.JobID, spec, workspace, network, caches), stdout, stderr)
-		_ = stdout.Flush()
-		_ = stderr.Flush()
-		if err == nil && code == 0 {
-			continue
-		}
+// stepEnv is what every step of a job is run with.
+type stepEnv struct {
+	workspace, network string
+	caches             []runner.Mount
+	seq                atomic.Int64 // numbers the job's log chunks
+}
 
-		res.FailedStep, res.ExitCode = &i, code
-		switch {
-		case ctx.Err() != nil:
-			// The cause tells a cancel request from an agent shutdown.
-			res.Status = models.JobStatusCanceled
-			res.Error = context.Cause(ctx).Error()
-		case err != nil:
-			res.Status, res.Error = models.JobStatusFailed, err.Error()
-		default:
-			res.Status = models.JobStatusFailed
-		}
-		a.log.InfoContext(ctx, "job step failed", "job_id", job.JobID, "step", spec.Name,
-			"exit_code", code, "error", err)
-		return res
+// errStepFailed stops the other steps of a job once one has failed.
+var errStepFailed = errors.New("another step failed")
+
+// stepDone is how running one step ended.
+type stepDone struct {
+	i    int
+	code int
+	err  error
+}
+
+// runSteps starts every step whose needed steps have passed, several at a
+// time when they do not need each other, and reports each start and end.
+// The first failure stops the steps still running (canceled) and leaves
+// the rest unstarted (skipped); a canceled job stops them all.
+func (a *Agent) runSteps(ctx context.Context, job models.JobAssignment, res models.JobResult, env *stepEnv) models.JobResult {
+	results := make([]models.StepResult, len(job.Steps))
+	for i := range results {
+		results[i].State = models.StepPending
 	}
+	stepsCtx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
+
+	done := make(chan stepDone)
+	running, failed := 0, false
+	for {
+		for i := range job.Steps {
+			if failed || ctx.Err() != nil {
+				break
+			}
+			if results[i].State != models.StepPending || !needsPassed(job.Steps, results, i) {
+				continue
+			}
+			now := time.Now().UTC()
+			results[i] = models.StepResult{State: models.StepRunning, StartedAt: &now}
+			a.reportStep(job.JobID, i, results[i])
+			running++
+			go func() {
+				code, err := a.runOne(stepsCtx, job, i, env)
+				done <- stepDone{i: i, code: code, err: err}
+			}()
+		}
+		if running == 0 {
+			break
+		}
+		d := <-done
+		running--
+
+		now := time.Now().UTC()
+		r := &results[d.i]
+		r.FinishedAt, r.ExitCode = &now, &d.code
+		switch {
+		case d.err == nil && d.code == 0:
+			r.State = models.StepSuccess
+		case ctx.Err() != nil, stepsCtx.Err() != nil:
+			// Stopped by a cancel, a shutdown or another step failing.
+			r.State = models.StepCanceled
+		default:
+			r.State = models.StepFailed
+			failed = true
+			res.Status, res.FailedStep, res.ExitCode = models.JobStatusFailed, &d.i, d.code
+			if d.err != nil {
+				res.Error = d.err.Error()
+			}
+			stop(errStepFailed)
+			a.log.InfoContext(ctx, "job step failed", "job_id", job.JobID, "step", job.Steps[d.i].Name,
+				"exit_code", d.code, "error", d.err)
+		}
+		a.reportStep(job.JobID, d.i, *r)
+	}
+
+	for i := range results {
+		if results[i].State == models.StepPending {
+			results[i].State = models.StepSkipped
+		}
+	}
+	if !failed && ctx.Err() != nil {
+		// The cause tells a cancel request from an agent shutdown.
+		res.Status, res.Error = models.JobStatusCanceled, context.Cause(ctx).Error()
+		for i, r := range results {
+			if r.State == models.StepCanceled {
+				res.FailedStep, res.ExitCode = &i, *r.ExitCode
+				break
+			}
+		}
+	}
+	res.Steps = results
 	return res
+}
+
+// needsPassed reports whether every step that step i needs has passed.
+func needsPassed(steps []models.StepSpec, results []models.StepResult, i int) bool {
+	for _, n := range models.Needs(steps, i) {
+		if results[n].State != models.StepSuccess {
+			return false
+		}
+	}
+	return true
+}
+
+// runOne runs step i of job, sending its output as it comes.
+func (a *Agent) runOne(ctx context.Context, job models.JobAssignment, i int, env *stepEnv) (int, error) {
+	spec := job.Steps[i]
+	// Secrets are masked before output leaves the agent.
+	stdout := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStdout, seq: &env.seq}, spec.Secrets)
+	stderr := newMaskWriter(&logWriter{a: a, jobID: job.JobID, step: i, stream: models.StreamStderr, seq: &env.seq}, spec.Secrets)
+	code, err := a.runStep(ctx, i, spec, toRunnerStep(job.JobID, spec, env.workspace, env.network, env.caches), stdout, stderr)
+	_ = stdout.Flush()
+	_ = stderr.Flush()
+	return code, err
+}
+
+// reportStep tells the server that a step started or ended. Like log
+// chunks it never blocks the job; the result repeats every step's end.
+func (a *Agent) reportStep(jobID int64, i int, r models.StepResult) {
+	msg, err := models.NewMessage(models.MsgJobStep, models.JobStep{JobID: jobID, Step: i, StepResult: r})
+	if err == nil {
+		a.out.tryPut(msg)
+	}
 }
 
 // runStep runs one step in its own span.
@@ -251,6 +349,14 @@ func validateJob(job models.JobAssignment) error {
 			return fmt.Errorf("%w %d: step %d (%s) has no image", ErrInvalidJob, job.JobID, i, s.Name)
 		case len(s.Commands) == 0:
 			return fmt.Errorf("%w %d: step %d (%s) has no commands", ErrInvalidJob, job.JobID, i, s.Name)
+		}
+		// Needing only earlier steps rules out cycles.
+		seen := map[int]bool{}
+		for _, n := range s.DependsOn {
+			if n < 0 || n >= i || seen[n] {
+				return fmt.Errorf("%w %d: step %d (%s) depends on step %d", ErrInvalidJob, job.JobID, i, s.Name, n)
+			}
+			seen[n] = true
 		}
 	}
 	for i, s := range job.Services {

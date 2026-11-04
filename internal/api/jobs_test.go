@@ -316,6 +316,38 @@ func TestStreamFollowsJobUntilItFinishes(t *testing.T) {
 	assert.Eventually(t, func() bool { return !ev.subscribed(42) }, time.Second, 10*time.Millisecond)
 }
 
+func TestStreamSendsStepChanges(t *testing.T) {
+	store := &mockJobReader{}
+	ev := &fakeEvents{}
+	cloning := runningJob(42)
+	cloning.StepResults = []models.StepResult{{State: models.StepRunning}, {State: models.StepPending}}
+	tests := runningJob(42)
+	tests.StepResults = []models.StepResult{{State: models.StepSuccess}, {State: models.StepRunning}}
+	store.On("GetJob", mock.Anything, int64(42)).Return(cloning, nil).Times(2)
+	store.On("GetJob", mock.Anything, int64(42)).Return(tests, nil).Twice()
+	store.On("GetJob", mock.Anything, int64(42)).Return(finishedJob(42), nil)
+	store.On("JobLogsAfter", mock.Anything, int64(42), int64(0), maxLogPage).Return(nil, nil)
+	_, h := newJobsAPI(t, store, ev)
+
+	events := openStream(t, h, "/api/jobs/42/logs/stream", nil)
+	first := next(t, events).job(t)
+	assert.Equal(t, models.StepRunning, first.StepResults[0].State)
+
+	ev.publish(42) // a log arrived: the steps did not change, so no status
+	time.Sleep(50 * time.Millisecond)
+	ev.publish(42) // the clone ended
+	changed := next(t, events).job(t)
+	assert.Equal(t, models.JobStatusRunning, changed.Status)
+	assert.Equal(t, []models.StepState{models.StepSuccess, models.StepRunning},
+		[]models.StepState{changed.StepResults[0].State, changed.StepResults[1].State})
+
+	ev.publish(42) // no change again
+	time.Sleep(50 * time.Millisecond)
+	ev.publish(42)
+	assert.Equal(t, models.JobStatusSuccess, next(t, events).job(t).Status)
+	expectEnd(t, events)
+}
+
 func TestStreamResumesFromLastEventID(t *testing.T) {
 	store := &mockJobReader{}
 	store.On("GetJob", mock.Anything, int64(42)).Return(finishedJob(42), nil)

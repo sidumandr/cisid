@@ -75,6 +75,10 @@ type Config struct {
 	Matrix Matrix
 	// Cache lists absolute paths kept between the repository's jobs.
 	Cache []string
+	// Parallel is set when a step uses depends_on: steps then wait only
+	// for the steps they name (and clone), and the others run at the same
+	// time. Without it, steps run one after another.
+	Parallel bool
 }
 
 // Service is a container started before the steps and stopped after them.
@@ -103,6 +107,9 @@ type Step struct {
 	// Secrets names the repository secrets the step gets as environment
 	// variables.
 	Secrets []string
+	// DependsOn names the earlier steps that must pass before this one
+	// starts (see Config.Parallel).
+	DependsOn []string
 }
 
 // RunsFor reports whether the step runs for job, by its event and branch.
@@ -138,6 +145,8 @@ type rawStep struct {
 	Timeout     string            `yaml:"timeout"`
 	When        rawWhen           `yaml:"when"`
 	Secrets     []string          `yaml:"secrets"`
+	// DependsOn is nil when the step does not have the key.
+	DependsOn *stringList `yaml:"depends_on"`
 }
 
 // validateCache checks the cached paths: clean absolute paths, neither the
@@ -292,6 +301,29 @@ func ParseConfig(data []byte) (Config, error) {
 			}
 		}
 
+		var deps []string
+		if rs.DependsOn != nil {
+			cfg.Parallel = true
+			deps = []string{}
+			named := map[string]bool{}
+			for _, d := range *rs.DependsOn {
+				switch {
+				case d == rs.Name:
+					bad("depends_on: a step cannot depend on itself")
+				case named[d]:
+					bad("depends_on: %q is listed twice", d)
+				case d != cloneStepName && !slices.ContainsFunc(cfg.Steps, func(s Step) bool { return s.Name == d }):
+					if slices.ContainsFunc(raw.Steps, func(s rawStep) bool { return s.Name == d }) {
+						bad("depends_on: %q must be written before this step", d)
+					} else {
+						bad("depends_on: there is no step %q", d)
+					}
+				}
+				named[d] = true
+				deps = append(deps, d)
+			}
+		}
+
 		cfg.Steps = append(cfg.Steps, Step{
 			Name:        rs.Name,
 			Image:       rs.Image,
@@ -301,6 +333,7 @@ func ParseConfig(data []byte) (Config, error) {
 			Branches:    branches,
 			Events:      rs.When.Event,
 			Secrets:     rs.Secrets,
+			DependsOn:   deps,
 		})
 	}
 

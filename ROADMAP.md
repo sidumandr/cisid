@@ -76,3 +76,10 @@ Goal: logs stream live, and dropped connections lose no work.
 
 - [x] Notifications: Slack-compatible chats, signed webhooks and email, for every failure, breaks, fixes or every result, per branch and optionally for pull requests; each result is sent once even with several server replicas ([docs/notifications.md](docs/notifications.md)).
 - [x] Build badges for READMEs, with `CISID_PUBLIC_BADGES` for servers where reading needs a sign-in ([docs/notifications.md](docs/notifications.md#badges)).
+
+## Phase 8: Faster and fuller pipelines
+
+- [x] Parallel steps: `depends_on` in `.cisid.yml`, the first failure stops the other steps; agents report each step's state and duration, shown live in the UI ([docs/pipeline.md](docs/pipeline.md#parallel-steps)).
+- [ ] Artifacts: keep files a build produces and download them from the job page.
+- [ ] Agent labels: send jobs only to agents that have what they need (e.g. `arm64`, `gpu`).
+- [ ] Approval for pull requests from forks: a maintainer starts their builds.

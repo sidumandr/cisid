@@ -425,6 +425,7 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
 .strip.big .seg-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: var(--fs-body); line-height: 20px; color: var(--muted); }
 .strip.big .seg-name span:first-child { position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .strip.big .seg-state { color: var(--faint); font-size: var(--fs-small); white-space: nowrap; }
+.strip.big .seg-time { color: var(--faint); font-size: var(--fs-small); white-space: nowrap; }
 .strip.big .seg[aria-pressed="true"] .seg-name { color: var(--text); }
 /* the move: the selected step's name is underlined by the orange line */
 .strip.big .seg[aria-pressed="true"] .seg-name span:first-child { padding-bottom: 6px; margin-bottom: -6px; }

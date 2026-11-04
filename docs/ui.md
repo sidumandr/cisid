@@ -21,7 +21,7 @@ A job's steps (clone, test, chart…) are drawn as segments side by side. A segm
 
 - In the list, every row has a small strip, so you see at a glance which job failed where.
 - On the job page the strip is large and clickable. The UI shows the log of the step you click. When the page opens, it selects the running step; if there is none, the failed step; if there is none either, the last step. While the job runs, the selection follows the currently running step until you click a step.
-- The API knows which step a running job is on from the step whose log arrived last (`current_step`, [api.md](api.md)).
+- Agents report when each step starts and ends (`step_results`, [api.md](api.md)), so the strip shows steps that run at the same time ([parallel steps](pipeline.md#parallel-steps)) and, on the job page, how long each step took. For jobs run by older agents, the running step is the one whose log arrived last (`current_step`).
 
 ## Logs
 

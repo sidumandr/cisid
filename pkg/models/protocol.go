@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // MessageType identifies a message on the agent <-> server WebSocket.
@@ -27,11 +28,14 @@ const (
 	MsgAck MessageType = "ack"
 	// MsgJobCancel asks an agent to stop a job; it reports it as canceled.
 	MsgJobCancel MessageType = "job_cancel"
+	// MsgJobStep reports that a step of a job started or ended. Servers
+	// that do not know it acknowledge and drop it.
+	MsgJobStep MessageType = "job_step"
 )
 
 // Message is the envelope for every WebSocket message.
 //
-// ID numbers the job_log, job_result and job_rejected messages of an agent
+// ID numbers the job_log, job_step, job_result and job_rejected messages of an agent
 // process, increasing in the order they are sent. The agent keeps each one
 // until the server acknowledges it and sends unacknowledged ones again after
 // reconnecting, so the server must handle duplicates.
@@ -120,6 +124,55 @@ type StepSpec struct {
 	// Secrets are extra environment variables whose values the agent masks
 	// in the step's output.
 	Secrets map[string]string `json:"secrets,omitempty"`
+	// DependsOn lists the earlier steps (by index) that must pass before
+	// this one starts; steps whose dependencies passed run at the same
+	// time. Nil means the step before it, so steps run one after another.
+	DependsOn []int `json:"depends_on,omitempty"`
+}
+
+// Needs returns the steps step i of steps waits for: its DependsOn, or the
+// step before it.
+func Needs(steps []StepSpec, i int) []int {
+	if steps[i].DependsOn != nil {
+		return steps[i].DependsOn
+	}
+	if i == 0 {
+		return nil
+	}
+	return []int{i - 1}
+}
+
+// StepState is how far a step of a job got.
+type StepState string
+
+const (
+	StepPending  StepState = "pending" // not started yet
+	StepRunning  StepState = "running"
+	StepSuccess  StepState = "success"
+	StepFailed   StepState = "failed"
+	StepCanceled StepState = "canceled" // stopped by a cancel, a shutdown or another step failing
+	StepSkipped  StepState = "skipped"  // never started: a step it needed did not pass
+)
+
+// Finished reports whether s is a final state.
+func (s StepState) Finished() bool {
+	return s == StepSuccess || s == StepFailed || s == StepCanceled || s == StepSkipped
+}
+
+// StepResult is how one step of a job went. Times are the agent's.
+type StepResult struct {
+	State      StepState  `json:"state"`
+	ExitCode   *int       `json:"exit_code,omitempty"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// JobStep is the payload of MsgJobStep: step Step of job JobID started
+// (State running) or ended.
+type JobStep struct {
+	JobID int64 `json:"job_id"`
+	Step  int   `json:"step"`
+	StepResult
 }
 
 // JobRejected is the agent's answer to an assignment it cannot run.
@@ -154,6 +207,9 @@ type JobResult struct {
 	ExitCode   int       `json:"exit_code"`
 	FailedStep *int      `json:"failed_step,omitempty"`
 	Error      string    `json:"error,omitempty"`
+	// Steps says how each step went, by index; empty from agents that do
+	// not report steps.
+	Steps []StepResult `json:"steps,omitempty"`
 }
 
 // ReservedEnv reports whether name is an environment variable cisid sets

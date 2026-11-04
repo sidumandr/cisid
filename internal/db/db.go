@@ -195,10 +195,19 @@ func (s *Store) GetJob(ctx context.Context, id int64) (models.Job, error) {
 		return models.Job{}, fmt.Errorf("get job %d: %w", id, err)
 	}
 	jobs := []models.Job{job}
-	if err := s.fillCurrentSteps(ctx, jobs); err != nil {
+	if err := s.fillSteps(ctx, jobs); err != nil {
 		return models.Job{}, err
 	}
 	return jobs[0], nil
+}
+
+// fillSteps sets what is known of the jobs' steps: CurrentStep and
+// StepResults.
+func (s *Store) fillSteps(ctx context.Context, jobs []models.Job) error {
+	if err := s.fillCurrentSteps(ctx, jobs); err != nil {
+		return err
+	}
+	return s.fillStepResults(ctx, jobs)
 }
 
 // fillCurrentSteps sets CurrentStep on the running jobs: the last step that
@@ -243,20 +252,26 @@ func (s *Store) fillCurrentSteps(ctx context.Context, jobs []models.Job) error {
 
 // ClaimJob marks the oldest pending job as running on agent, with a lease
 // that expires after lease unless renewed, and returns it. Concurrent
-// callers never receive the same job (FOR UPDATE SKIP LOCKED).
+// callers never receive the same job (FOR UPDATE SKIP LOCKED). Steps an
+// earlier attempt reported are forgotten.
 func (s *Store) ClaimJob(ctx context.Context, agent string, lease time.Duration) (models.Job, error) {
 	q := `
-		UPDATE jobs
-		SET status = 'running', agent = $1, started_at = now(), updated_at = now(),
-		    lease_expires_at = ` + leaseUntil(2) + `
-		WHERE id = (
-			SELECT id FROM jobs
-			WHERE status = 'pending'
-			ORDER BY created_at, id
-			FOR UPDATE SKIP LOCKED
-			LIMIT 1
+		WITH claimed AS (
+			UPDATE jobs
+			SET status = 'running', agent = $1, started_at = now(), updated_at = now(),
+			    lease_expires_at = ` + leaseUntil(2) + `
+			WHERE id = (
+				SELECT id FROM jobs
+				WHERE status = 'pending'
+				ORDER BY created_at, id
+				FOR UPDATE SKIP LOCKED
+				LIMIT 1
+			)
+			RETURNING ` + jobColumns + `
+		), cleared AS (
+			DELETE FROM job_steps WHERE job_id IN (SELECT id FROM claimed)
 		)
-		RETURNING ` + jobColumns
+		SELECT * FROM claimed`
 
 	job, err := scanJob(s.pool.QueryRow(ctx, q, agent, lease.Seconds()))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -546,7 +561,7 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]models.Job, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
 	}
-	if err := s.fillCurrentSteps(ctx, jobs); err != nil {
+	if err := s.fillSteps(ctx, jobs); err != nil {
 		return nil, err
 	}
 	return jobs, nil
@@ -657,12 +672,27 @@ func (s *Store) FinishJob(ctx context.Context, agent string, res models.JobResul
 		)
 		SELECT pg_notify('` + JobEventsChannel + `', id::text) FROM finished`
 
-	tag, err := s.pool.Exec(ctx, q, res.JobID, agent, res.Status, res.ExitCode, res.FailedStep, res.Error)
+	// The steps are stored with the result, so a finished job never shows
+	// steps still running.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("finish job %d: %w", res.JobID, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, q, res.JobID, agent, res.Status, res.ExitCode, res.FailedStep, res.Error)
 	if err != nil {
 		return fmt.Errorf("finish job %d: %w", res.JobID, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%w: job %d is not running on %s", ErrJobConflict, res.JobID, agent)
+	}
+	if len(res.Steps) > 0 {
+		if err := replaceSteps(ctx, tx, res.JobID, res.Steps); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("finish job %d: %w", res.JobID, err)
 	}
 	return nil
 }

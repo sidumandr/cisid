@@ -78,6 +78,9 @@ type Job struct {
 	LogsExpiredAt *time.Time `json:"logs_expired_at,omitempty"`
 	// CurrentStep is, for a running job, the step that wrote output last.
 	CurrentStep *int `json:"current_step,omitempty"`
+	// StepResults says how each step in StepNames went, by index; absent
+	// for jobs run by agents that do not report steps.
+	StepResults []StepResult `json:"step_results,omitempty"`
 }
 
 // Schedule builds the head of a branch at the times its cron spec matches.

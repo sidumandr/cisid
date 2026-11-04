@@ -28,7 +28,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../../.cisi
 
 | Alan | Zorunlu | Açıklama |
 |---|---|---|
-| `steps` | evet | 1 ile 50 arası adım, yazıldıkları sırayla çalışır |
+| `steps` | evet | 1 ile 50 arası adım; yazıldıkları sırayla ya da `depends_on`'a göre çalışır ([Paralel adımlar](#paralel-adımlar)) |
 | `services` | hayır | Adımlardan önce başlatılan en fazla 10 servis ([Servisler](#servisler)) |
 | `matrix` | hayır | Pipeline'ı her değer kombinasyonu için ayrı bir job olarak çalıştırır ([Matrix](#matrix)) |
 | `cache` | hayır | Repo'nun job'ları arasında saklanacak en fazla 10 dizin, mutlak yol olarak ([Önbellek](#önbellek)) |
@@ -40,6 +40,7 @@ cisid kendi testlerini de bu şekilde çalıştırır: [/.cisid.yml](../../.cisi
 | `steps[].secrets` | hayır | Adıma ortam değişkeni olarak verilecek repo secret'ları, loglarda maskelenir ([secrets.md](secrets.md)) |
 | `steps[].when.branch` | hayır | Adımı sadece bu branch'lerde çalıştırır; pull request'lerde PR'ın kendi branch'ine bakılır. Tek değer ya da liste olabilir (bkz. [Koşullar](#koşullar)). |
 | `steps[].when.event` | hayır | Adımı sadece bu olaylarda çalıştırır: `push`, `pull_request`, `manual`, `schedule`. Verilmezse her olayda çalışır. |
+| `steps[].depends_on` | hayır | Bu adımdan önce yazılmış ve o başlamadan geçmesi gereken adımlar; tek bir ad ya da liste. Herhangi bir adımda kullanılırsa pipeline adımları paralel çalıştırır ([Paralel adımlar](#paralel-adımlar)). |
 
 Bilinmeyen alanlar hatadır. Örneğin `command:` yazılırsa job hemen `failed` olur ve hata mesajı yazım hatasını gösterir. Bütün sorunlar tek mesajda listelenir.
 
@@ -73,6 +74,41 @@ steps:
 Pull request'lerde `when.branch` PR'ın hedef branch'ine değil, **kendi branch'ine** bakar. Deploy gibi adımları yukarıdaki gibi `event: push` ile sınırlayın; yoksa adı `main` olan bir branch'ten açılan PR'da da çalışırlar.
 
 Eşleşmeyen adımlar job'a hiç eklenmez, sonraki adımlar normal sırayla çalışır. `when` altında `branch` ve `event` desteklenir. Başka bir anahtar yazılırsa dosya geçersiz sayılır.
+
+## Paralel adımlar
+
+`depends_on` yoksa adımlar yazıldıkları sırayla, birbiri ardına çalışır. Bir adımda `depends_on` kullanıldığı anda her adım yalnızca adını verdiği adımları bekler; birbirine ihtiyacı olmayan adımlar aynı anda çalışır:
+
+```yaml
+steps:
+  - name: lint
+    image: golang:1.27
+    commands: [go vet ./...]
+
+  - name: build
+    image: golang:1.27
+    commands: [go build ./...]
+    depends_on: []
+
+  - name: unit
+    image: golang:1.27
+    commands: [go test ./...]
+    depends_on: [build]
+
+  - name: report
+    image: alpine:3.22
+    commands: [./report.sh]
+    depends_on: [lint, unit]
+```
+
+Burada `lint` ve `build` clone'dan hemen sonra birlikte başlar, `unit` `build` geçince, `report` ise hem `lint` hem `unit` geçince başlar.
+
+- Bir adım yalnızca **kendinden önce yazılmış** adımlara bağlanabilir; bu döngüyü imkânsız kılar. `clone` her zaman önce yapılır, adı da verilebilir.
+- `depends_on`'u olmayan adım yalnızca clone'u bekler; `depends_on: []` aynı şeyi açıkça söyler.
+- Bağlı olduğu adım `when` ile atlanırsa, adım onun yerine o adımın bağlı olduklarını bekler.
+- **İlk kırılma job'u durdurur:** çalışmakta olan adımlar durdurulur (`canceled`), başlamamış adımlar çalışmaz (`skipped`). Job'un `failed_step`'i kırılan adımdır.
+- Aynı anda çalışan adımlar `/workspace`'i ve servisleri paylaşır: aynı dosyaya yazan iki adım birbirini bozar.
+- Job sayfasında her adım kendi durumunu ve ne kadar sürdüğünü gösterir ([ui.md](ui.md#adım-şeridi)).
 
 ## Servisler
 
@@ -150,9 +186,10 @@ Listedeki her dizin, repo'ya ait isimli bir Docker volume'u olarak bütün adım
 - **Clone:** İlk adım her zaman `clone`'dur. Derlenen commit `alpine/git:2.52.0` ile `/workspace` altına çekilir (`--depth=1`): push'larda pushlanan commit, pull request'lerde PR'ın son commit'i. Branch adı yerel branch olarak ayarlanır.
   - Commit'i SHA'sıyla vermeyen bir sunucuda branch'in (pull request'lerde PR ref'inin, ör. `refs/pull/7/head` ya da GitLab'da `refs/merge-requests/7/head`) son 50 commit'i çekilir; derlenen commit bunların içinde olmalıdır.
   - Sağlayıcının token'ı verilmişse özel repolar o token'la clone'lanır. Token yalnızca clone adımına secret olarak verilir, çıktıda maskelenir ve `.git/config`'e yazılmaz ([forges.md](forges.md#özel-repolar)).
-- **Workspace:** Bütün adımlar aynı job volume'unu `/workspace` altında paylaşır ve orada çalışır. Bir adımın ürettiği dosyalar sonraki adımlarda görünür.
+- **Workspace:** Bütün adımlar aynı job volume'unu `/workspace` altında paylaşır ve orada çalışır. Bir adımın ürettiği dosyalar ondan sonra çalışan adımlarda görünür.
 - **Komutlar:** Bir adımın komutları tek bir `/bin/sh` script'i olarak çalışır (`set -ex`). İlk hatalı komutta adım durur ve her komut çalışmadan önce stderr'a yazılır.
-- **Başarısızlık:** Bir adım başarısız olursa sonraki adımlar çalışmaz.
+- **Sıra:** Adımlar birbiri ardına ya da `depends_on`'a göre aynı anda birkaç tane çalışır ([Paralel adımlar](#paralel-adımlar)).
+- **Başarısızlık:** Bir adım başarısız olursa başlamamış adımlar çalışmaz, aynı anda çalışan adımlar durdurulur.
 - **Ortam değişkenleri:** Her adımda şunlar tanımlıdır:
 
 | Değişken | Değer |

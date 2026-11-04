@@ -148,8 +148,20 @@ const dash = () => el("span", { class: "dash" }, "-");
 
 const STATE_WORD = { passed: "passed", failed: "failed", running: "running", canceled: "canceled", queued: "not started", skipped: "not run" };
 
-// stepStates says how far each planned step of a job got.
+// STEP_STATE maps the states agents report to the strip's.
+const STEP_STATE = { success: "passed", failed: "failed", running: "running", canceled: "canceled", skipped: "skipped", pending: "queued" };
+
+// stepStates says how far each planned step of a job got: as the agent
+// reported it when it did, otherwise worked out from the job.
 function stepStates(j) {
+  const reported = j.step_results;
+  if (reported && reported.length) {
+    return (j.steps || []).map((name, i) => {
+      const r = reported[i];
+      const state = r ? STEP_STATE[r.state] || "queued" : FINISHED.has(j.status) ? "skipped" : "queued";
+      return { name, state, result: r };
+    });
+  }
   const stopped = j.failed_step ?? null;
   return (j.steps || []).map((name, i) => {
     let state;
@@ -180,6 +192,26 @@ function strip(j) {
       el("span", { class: "seg-label", "aria-hidden": "true" }, s.name))));
 }
 
+// stepTime is how long a finished step took, in seconds, or null.
+function stepTime(r) {
+  if (!r || !r.started_at || !r.finished_at) return null;
+  return Math.max(0, Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000));
+}
+
+// runningSteps names the steps of a running job that are running now.
+function runningSteps(j) {
+  const now = stepStates(j).filter((s) => s.state === "running").map((s) => s.name);
+  if (now.length || j.step_results) return now;
+  const steps = j.steps || [];
+  return [steps[j.current_step ?? 0] ?? `step ${j.current_step ?? 0}`];
+}
+
+// listWords joins names as a sentence does: "a", "a and b", "a, b and c".
+function listWords(names) {
+  if (names.length <= 1) return names.join("");
+  return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+}
+
 // finding is the one sentence that says where a job stands.
 function finding(j) {
   const steps = j.steps || [];
@@ -195,8 +227,11 @@ function finding(j) {
       return j.failed_step === undefined || j.failed_step === null
         ? "Canceled before it started."
         : `Canceled at ${at(j.failed_step)} after ${took}.`;
-    case "running":
-      return `Running ${at(j.current_step ?? 0)}${j.agent ? ` on ${j.agent}` : ""} for ${took}.`;
+    case "running": {
+      const now = runningSteps(j);
+      const what = now.length ? listWords(now) : "between steps";
+      return `Running ${what}${j.agent ? ` on ${j.agent}` : ""} for ${took}.`;
+    }
     default:
       return `Waiting for an agent since ${ago(j.created_at)}.`;
   }
@@ -669,7 +704,12 @@ function renderJob(id) {
   function pickDefault(j) {
     const n = (j.steps || []).length;
     if (n === 0) return null;
-    if (j.status === "running") return j.current_step ?? 0;
+    if (j.status === "running") {
+      // The step that started last among those running.
+      const states = stepStates(j);
+      for (let i = states.length - 1; i >= 0; i--) if (states[i].state === "running") return i;
+      return j.step_results ? Math.max(0, states.findLastIndex((s) => s.state === "passed")) : j.current_step ?? 0;
+    }
     if (j.failed_step !== undefined && j.failed_step !== null) return j.failed_step;
     return n - 1;
   }
@@ -682,7 +722,9 @@ function renderJob(id) {
     steps.replaceChildren(...states.map((s, i) => {
       const b = el("button", { class: "seg", type: "button", "data-state": s.state, "aria-pressed": String(i === selected) },
         el("span", { class: "seg-bar" }),
-        el("span", { class: "seg-name" }, el("span", {}, s.name), el("span", { class: "seg-state" }, STATE_WORD[s.state])));
+        el("span", { class: "seg-name" }, el("span", {}, s.name),
+          el("span", { class: "seg-state" }, STATE_WORD[s.state]),
+          stepTime(s.result) !== null ? el("span", { class: "seg-time num" }, fmtDuration(stepTime(s.result))) : null));
       b.addEventListener("click", () => {
         following = false;
         selected = i;
@@ -760,7 +802,12 @@ function renderJob(id) {
       const follow = p.scrollTop + p.clientHeight >= p.scrollHeight - 4;
       const text = stripANSI(l.data);
       p.append(l.stream === "stderr" ? el("span", { class: "err" }, text) : document.createTextNode(text));
-      if (job && job.status === "running" && (job.current_step ?? -1) < l.step) {
+      const reported = job && job.status === "running" && job.step_results ? job.step_results[l.step] : null;
+      if (reported && reported.state === "pending") {
+        // Output means the step started, even before the stream says so.
+        job = { ...job, step_results: job.step_results.map((r, i) => (i === l.step ? { ...r, state: "running" } : r)) };
+        showSteps(job);
+      } else if (job && job.status === "running" && !job.step_results && (job.current_step ?? -1) < l.step) {
         job = { ...job, current_step: l.step };
         showSteps(job);
       } else if (l.step === selected && !logBody.contains(p)) {

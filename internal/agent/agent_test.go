@@ -104,6 +104,10 @@ type serverConn struct {
 	// wait bounds waiting for a message; testTimeout when zero. Tests
 	// against a real Docker daemon wait longer, a busy host is slow.
 	wait time.Duration
+	// steps are the job_step messages expect and collectJob passed over,
+	// and stepResults the steps of the last job_result collectJob read.
+	steps       []models.JobStep
+	stepResults []models.StepResult
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -196,14 +200,39 @@ func (sc *serverConn) next(t *testing.T) models.Message {
 	}
 }
 
+// expect reads the next message, which must be of type typ, keeping the
+// job_step messages before it in sc.steps.
 func (sc *serverConn) expect(t *testing.T, typ models.MessageType, v any) {
 	t.Helper()
 	msg := sc.next(t)
+	for msg.Type == models.MsgJobStep && typ != models.MsgJobStep {
+		sc.keepStep(t, msg)
+		msg = sc.next(t)
+	}
 	require.Equal(t, typ, msg.Type)
 	require.NoError(t, msg.Decode(v))
 }
 
-// collectJob reads job_log messages until the job_result for jobID arrives.
+func (sc *serverConn) keepStep(t *testing.T, msg models.Message) {
+	t.Helper()
+	var s models.JobStep
+	require.NoError(t, msg.Decode(&s))
+	sc.steps = append(sc.steps, s)
+}
+
+// stepStates returns the states of the job's steps, as the last job_result
+// reported them.
+func (sc *serverConn) stepStates() []models.StepState {
+	states := make([]models.StepState, len(sc.stepResults))
+	for i, r := range sc.stepResults {
+		states[i] = r.State
+	}
+	return states
+}
+
+// collectJob reads job_log and job_step messages until the job_result for
+// jobID arrives. The result's steps go to sc.stepResults, so tests compare
+// the rest of it.
 func (sc *serverConn) collectJob(t *testing.T, jobID int64) ([]models.JobLog, models.JobResult) {
 	t.Helper()
 	var logs []models.JobLog
@@ -214,10 +243,13 @@ func (sc *serverConn) collectJob(t *testing.T, jobID int64) ([]models.JobLog, mo
 			var l models.JobLog
 			require.NoError(t, msg.Decode(&l))
 			logs = append(logs, l)
+		case models.MsgJobStep:
+			sc.keepStep(t, msg)
 		case models.MsgJobResult:
 			var res models.JobResult
 			require.NoError(t, msg.Decode(&res))
 			require.Equal(t, jobID, res.JobID)
+			sc.stepResults, res.Steps = res.Steps, nil
 			return logs, res
 		default:
 			t.Fatalf("unexpected message %q", msg.Type)
@@ -340,6 +372,19 @@ func TestAgentRunsAssignedJob(t *testing.T) {
 		{JobID: 42, Step: 1, Stream: models.StreamStderr, Seq: 3, Data: "go: downloading testify\n"},
 	}, logs)
 	assert.Equal(t, models.JobResult{JobID: 42, Status: models.JobStatusSuccess}, res)
+	assert.Equal(t, []models.StepState{models.StepSuccess, models.StepSuccess}, sc.stepStates())
+	for _, s := range sc.stepResults {
+		require.NotNil(t, s.StartedAt)
+		require.NotNil(t, s.FinishedAt)
+		assert.False(t, s.FinishedAt.Before(*s.StartedAt))
+		assert.Equal(t, 0, *s.ExitCode)
+	}
+	var reported []string
+	for _, s := range sc.steps {
+		reported = append(reported, fmt.Sprintf("%d %s", s.Step, s.State))
+	}
+	assert.Equal(t, []string{"0 running", "0 success", "1 running", "1 success"}, reported,
+		"each start and end is reported as it happens")
 	r.AssertExpectations(t)
 }
 
@@ -366,6 +411,9 @@ func TestAgentReportsFailedStep(t *testing.T) {
 	assert.Equal(t, models.JobResult{
 		JobID: 7, Status: models.JobStatusFailed, ExitCode: 3, FailedStep: intPtr(0),
 	}, res)
+	assert.Equal(t, []models.StepState{models.StepFailed, models.StepSkipped}, sc.stepStates(),
+		"a step after a failure does not start")
+	assert.Equal(t, 3, *sc.stepResults[0].ExitCode)
 	r.AssertExpectations(t)
 	r.AssertNotCalled(t, "Run", mock.Anything, image("alpine:3.22"), mock.Anything, mock.Anything)
 }
@@ -401,6 +449,14 @@ func TestAgentFailsInvalidAssignment(t *testing.T) {
 		{name: "no steps"},
 		{name: "step without image", steps: []models.StepSpec{{Name: "x", Commands: []string{"true"}}}},
 		{name: "step without commands", steps: []models.StepSpec{{Name: "x", Image: "alpine:3.22"}}},
+		{name: "step needing a later step", steps: []models.StepSpec{
+			{Name: "a", Image: "alpine:3.22", Commands: []string{"true"}, DependsOn: []int{1}},
+			{Name: "b", Image: "alpine:3.22", Commands: []string{"true"}},
+		}},
+		{name: "step needing itself", steps: []models.StepSpec{
+			{Name: "a", Image: "alpine:3.22", Commands: []string{"true"}},
+			{Name: "b", Image: "alpine:3.22", Commands: []string{"true"}, DependsOn: []int{1}},
+		}},
 	}
 
 	for _, tt := range tests {
@@ -632,16 +688,18 @@ func TestAgentResendsUnacknowledgedMessages(t *testing.T) {
 		Steps: []models.StepSpec{{Name: "s", Image: "alpine:3.22", Commands: []string{"make"}}},
 	})
 
-	// The server receives the log and the result but never acknowledges them.
-	sent := []models.Message{first.next(t), first.next(t)}
-	assert.Equal(t, []int64{1, 2}, []int64{sent[0].ID, sent[1].ID}, "IDs follow the send order")
-	assert.Equal(t, []models.MessageType{models.MsgJobLog, models.MsgJobResult}, []models.MessageType{sent[0].Type, sent[1].Type})
+	// The server receives the step's start, its log, its end and the result
+	// but never acknowledges them.
+	sent := []models.Message{first.next(t), first.next(t), first.next(t), first.next(t)}
+	assert.Equal(t, []int64{1, 2, 3, 4}, []int64{sent[0].ID, sent[1].ID, sent[2].ID, sent[3].ID}, "IDs follow the send order")
+	assert.Equal(t, []models.MessageType{models.MsgJobStep, models.MsgJobLog, models.MsgJobStep, models.MsgJobResult},
+		[]models.MessageType{sent[0].Type, sent[1].Type, sent[2].Type, sent[3].Type})
 	require.NoError(t, first.conn.Close(websocket.StatusGoingAway, "server crashed"))
 
 	fs.noAck.Store(false)
 	second := fs.accept(t)
 	assert.Equal(t, int64(31), second.hello.RunningJobID, "an unacknowledged result keeps the job reported")
-	resent := []models.Message{second.next(t), second.next(t)}
+	resent := []models.Message{second.next(t), second.next(t), second.next(t), second.next(t)}
 	assert.Equal(t, sent, resent, "unacknowledged messages are sent again, unchanged")
 
 	require.Eventually(t, func() bool { return a.out.pending.Load() == 0 && a.runningJob.Load() == 0 },

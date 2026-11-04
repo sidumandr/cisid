@@ -34,15 +34,16 @@ Each message is a JSON envelope. The types are in `pkg/models/protocol.go`.
 {"id": 17, "type": "<message type>", "payload": { ... }}
 ```
 
-`id` is present only in the `job_log`, `job_result` and `job_rejected` messages the agent sends (see [Acknowledged delivery](#acknowledged-delivery)).
+`id` is present only in the `job_log`, `job_step`, `job_result` and `job_rejected` messages the agent sends (see [Acknowledged delivery](#acknowledged-delivery)).
 
 | Type | Direction | Payload |
 |---|---|---|
 | `agent_hello` | agent → server | `{"name":"worker-1","capacity":1,"running_job_id":42}`, the first message on every connection. `running_job_id`: the job the agent holds or whose result it has not sent yet (the field is omitted if there is none) |
-| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}],"trace_parent":"00-..."}`. `trace_parent` is present only if the server produces traces ([tracing.md](tracing.md)) |
+| `job_assigned` | server → agent | `{"job_id":42,"steps":[{"name":"test","image":"golang:1.25","commands":["go test ./..."],"env":{},"secrets":{},"timeout_seconds":600,"depends_on":[0]}],"services":[{"name":"postgres","image":"postgres:18-alpine","env":{}}],"trace_parent":"00-..."}`. `trace_parent` is present only if the server produces traces ([tracing.md](tracing.md)) |
 | `job_rejected` | agent → server | `{"job_id":43,"reason":"agent busy"}` |
 | `job_log` | agent → server | `{"job_id":42,"step":0,"stream":"stdout","seq":17,"data":"ok ...\n"}` |
-| `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"..."}` |
+| `job_step` | agent → server | `{"job_id":42,"step":1,"state":"running","started_at":"..."}` when a step starts, and with `success`, `failed` or `canceled`, `exit_code` and `finished_at` when it ends. Servers that do not know the type acknowledge and ignore it. |
+| `job_result` | agent → server | `{"job_id":42,"status":"failed","exit_code":3,"failed_step":0,"error":"...","steps":[{"state":"success",...},{"state":"failed",...}]}`. `steps` repeats how every step went (`skipped` for steps that never started) and replaces what `job_step` reported |
 | `job_cancel` | server → agent | `{"job_id":42}`. Stop the job and report the result as `canceled` with `canceled by request` |
 | `ack` | server → agent | `{"id":17}`. All messages up to and including 17 are processed |
 | `server_closing` | server → agent | `{}`. The server is shutting down: the agent stops sending and closes the connection itself (see [hub.md](hub.md#graceful-shutdown)) |

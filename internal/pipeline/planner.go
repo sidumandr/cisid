@@ -148,6 +148,9 @@ func (p Planner) steps(ctx context.Context, job models.Job, cfg Config, combo ma
 	for _, s := range run {
 		steps = append(steps, userStep(job, s, values, combo))
 	}
+	if cfg.Parallel {
+		setDependencies(cfg, steps)
+	}
 
 	var services []models.ServiceSpec
 	for _, s := range cfg.Services {
@@ -160,6 +163,41 @@ func (p Planner) steps(ctx context.Context, job models.Job, cfg Config, combo ma
 		})
 	}
 	return steps, services, nil
+}
+
+// setDependencies turns the depends_on of the planned steps into step
+// indexes. A step skipped by when passes its own dependencies on, and a
+// step with none waits for the clone only.
+func setDependencies(cfg Config, steps []models.StepSpec) {
+	planned := map[string]int{}
+	for i, s := range steps {
+		planned[s.Name] = i
+	}
+	byName := map[string]Step{}
+	for _, s := range cfg.Steps {
+		byName[s.Name] = s
+	}
+	// Dependencies name earlier steps only, so this ends.
+	var resolve func(names []string) []int
+	resolve = func(names []string) []int {
+		var out []int
+		for _, n := range names {
+			if i, ok := planned[n]; ok {
+				out = append(out, i)
+			} else {
+				out = append(out, resolve(byName[n].DependsOn)...)
+			}
+		}
+		return out
+	}
+	for i := 1; i < len(steps); i++ {
+		deps := resolve(byName[steps[i].Name].DependsOn)
+		if len(deps) == 0 {
+			deps = []int{0}
+		}
+		slices.Sort(deps)
+		steps[i].DependsOn = slices.Compact(deps)
+	}
 }
 
 func withMatrix(env, combo map[string]string) map[string]string {

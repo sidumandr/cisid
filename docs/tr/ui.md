@@ -21,7 +21,7 @@ Her job'un adımları (clone, test, chart…) yan yana segmentler olarak çizili
 
 - Listede her satırda küçük bir şerit vardır; hangi job'un nerede kırıldığı tek bakışta görülür.
 - Job sayfasında şerit büyüktür ve tıklanır. Tıklanan adımın logu gösterilir. Sayfa açılınca çalışan adım, yoksa kırılan adım, o da yoksa son adım seçilir. Job çalışırken seçim, siz bir adıma tıklayana kadar o an çalışan adımı izler.
-- Çalışan bir job'un hangi adımda olduğunu API, logu en son akan adımdan bilir (`current_step`, [api.md](api.md)).
+- Agent'lar her adımın ne zaman başlayıp bittiğini bildirir (`step_results`, [api.md](api.md)); böylece şerit aynı anda çalışan adımları ([paralel adımlar](pipeline.md#paralel-adımlar)) ve job sayfasında her adımın ne kadar sürdüğünü gösterir. Eski agent'ların çalıştırdığı job'larda çalışan adım, logu en son akan adımdır (`current_step`).
 
 ## Loglar
 

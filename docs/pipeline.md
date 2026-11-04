@@ -28,7 +28,7 @@ cisid runs its own tests this way too: [/.cisid.yml](../.cisid.yml).
 
 | Field | Required | Description |
 |---|---|---|
-| `steps` | yes | 1 to 50 steps, run in the order they are written |
+| `steps` | yes | 1 to 50 steps, run in the order they are written, or by `depends_on` ([Parallel steps](#parallel-steps)) |
 | `services` | no | Up to 10 services started before the steps ([Services](#services)) |
 | `matrix` | no | Runs the pipeline as a separate job for each combination of values ([Matrix](#matrix)) |
 | `cache` | no | Up to 10 directories to keep between the repository's jobs, as absolute paths ([Cache](#cache)) |
@@ -40,6 +40,7 @@ cisid runs its own tests this way too: [/.cisid.yml](../.cisid.yml).
 | `steps[].secrets` | no | Repository secrets to give the step as environment variables, masked in logs ([secrets.md](secrets.md)) |
 | `steps[].when.branch` | no | Runs the step only on these branches; for pull requests, the PR's own branch is checked. Can be a single value or a list (see [Conditions](#conditions)). |
 | `steps[].when.event` | no | Runs the step only on these events: `push`, `pull_request`, `manual`, `schedule`. If omitted, the step runs on every event. |
+| `steps[].depends_on` | no | The steps written before this one that must pass before it starts; a single name or a list. Using it in any step makes the pipeline run steps in parallel ([Parallel steps](#parallel-steps)). |
 
 Unknown fields are an error. For example, if you write `command:`, the job becomes `failed` right away and the error message points out the typo. All problems are listed in a single message.
 
@@ -73,6 +74,41 @@ steps:
 For pull requests, `when.branch` checks the PR's **own branch**, not its target branch. Limit steps such as deploy with `event: push`, as above; otherwise they also run in a PR opened from a branch named `main`.
 
 Steps that do not match are not added to the job at all, and the following steps run in their normal order. `when` supports `branch` and `event`. Any other key makes the file invalid.
+
+## Parallel steps
+
+Without `depends_on`, steps run one after another in the order they are written. As soon as one step has `depends_on`, every step waits only for the steps it names, and steps that do not need each other run at the same time:
+
+```yaml
+steps:
+  - name: lint
+    image: golang:1.27
+    commands: [go vet ./...]
+
+  - name: build
+    image: golang:1.27
+    commands: [go build ./...]
+    depends_on: []
+
+  - name: unit
+    image: golang:1.27
+    commands: [go test ./...]
+    depends_on: [build]
+
+  - name: report
+    image: alpine:3.22
+    commands: [./report.sh]
+    depends_on: [lint, unit]
+```
+
+Here `lint` and `build` start together right after the clone, `unit` starts once `build` passes, and `report` once both `lint` and `unit` have passed.
+
+- A step can depend only on steps **written before it**, which rules out cycles. `clone` is always done first and may be named too.
+- A step without `depends_on` waits for the clone only; `depends_on: []` says the same thing explicitly.
+- If a step it depends on is left out by `when`, the step waits for that step's own dependencies instead.
+- **The first failure stops the job:** steps still running are stopped (`canceled`), and steps that have not started do not run (`skipped`). The job's `failed_step` is the step that failed.
+- Steps running at the same time share `/workspace` and the services: two steps writing the same file will get in each other's way.
+- On the job page every step shows its own state and how long it took ([ui.md](ui.md#step-strip)).
 
 ## Services
 
@@ -150,9 +186,10 @@ Each directory in the list is mounted into every step as a named Docker volume t
 - **Clone:** The first step is always `clone`. The commit being built is fetched into `/workspace` with `alpine/git:2.52.0` (`--depth=1`): on pushes, the pushed commit; on pull requests, the PR's latest commit. The branch name is set up as a local branch.
   - On a git server that does not serve a commit by its SHA, the last 50 commits of the branch are fetched (for pull requests, of the PR ref, e.g. `refs/pull/7/head`, or `refs/merge-requests/7/head` on GitLab); the commit being built must be among them.
   - If the forge's token is set, private repositories are cloned with that token. The token is given only to the clone step, as a secret, is masked in the output, and is not written to `.git/config` ([forges.md](forges.md#private-repositories)).
-- **Workspace:** All steps share the same job volume at `/workspace` and run there. Files that one step produces are visible to the following steps.
+- **Workspace:** All steps share the same job volume at `/workspace` and run there. Files that one step produces are visible to the steps that run after it.
 - **Commands:** A step's commands run as a single `/bin/sh` script (`set -ex`). The step stops at the first failing command, and each command is written to stderr before it runs.
-- **Failure:** If a step fails, the following steps do not run.
+- **Order:** Steps run one after another, or by `depends_on` several at a time ([Parallel steps](#parallel-steps)).
+- **Failure:** If a step fails, the steps that have not started do not run, and steps running at the same time are stopped.
 - **Environment variables:** Each step has these variables set:
 
 | Variable | Value |

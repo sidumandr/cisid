@@ -315,6 +315,13 @@ func (h *Hub) handle(ctx context.Context, a *agentConn, msg models.Message) {
 			return
 		}
 		h.handleRejected(ctx, a, rej)
+	case models.MsgJobStep:
+		var st models.JobStep
+		if err := msg.Decode(&st); err != nil {
+			h.log.WarnContext(ctx, "ignoring malformed message", "agent", a.name, "error", err)
+			return
+		}
+		h.handleStep(ctx, a, st)
 	default:
 		h.log.DebugContext(ctx, "ignoring unknown message", "agent", a.name, "type", msg.Type)
 	}
@@ -328,6 +335,16 @@ func (h *Hub) handleLog(ctx context.Context, a *agentConn, l models.JobLog) {
 	metrics.LogChunks.Inc()
 	if err := h.store.AppendJobLog(ctx, l); err != nil {
 		h.log.ErrorContext(ctx, "store job log", "job_id", l.JobID, "seq", l.Seq, "error", err)
+	}
+}
+
+func (h *Hub) handleStep(ctx context.Context, a *agentConn, st models.JobStep) {
+	if !h.holds(a.name, st.JobID) {
+		h.log.WarnContext(ctx, "dropping step for a job the agent does not hold", "agent", a.name, "job_id", st.JobID)
+		return
+	}
+	if err := h.store.RecordStep(ctx, st); err != nil {
+		h.log.ErrorContext(ctx, "store job step", "job_id", st.JobID, "step", st.Step, "error", err)
 	}
 }
 

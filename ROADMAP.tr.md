@@ -76,3 +76,10 @@ Hedef: loglar canlı akar, kopan bağlantılar iş kaybettirmez.
 
 - [x] Bildirimler: Slack uyumlu sohbetler, imzalı webhook'lar ve e-posta; her kırılmada, kırılma ve düzelmede ya da her sonuçta, branch'e göre ve isteğe bağlı olarak pull request'ler için; birden fazla server kopyasında da her sonuç bir kez gönderilir ([docs/notifications.md](docs/tr/notifications.md)).
 - [x] README'ler için build rozetleri; okumanın giriş istediği server'lar için `CISID_PUBLIC_BADGES` ([docs/notifications.md](docs/tr/notifications.md#rozetler)).
+
+## Faz 8: Daha hızlı ve daha dolu pipeline'lar
+
+- [x] Paralel adımlar: `.cisid.yml`'de `depends_on`, ilk kırılma diğer adımları durdurur; agent'lar her adımın durumunu ve süresini bildirir, arayüz canlı gösterir ([docs/pipeline.md](docs/tr/pipeline.md#paralel-adımlar)).
+- [ ] Artifact'lar: build'in ürettiği dosyaları saklamak ve job sayfasından indirmek.
+- [ ] Agent etiketleri: job'ları yalnızca ihtiyaç duyduklarına sahip agent'lara göndermek (ör. `arm64`, `gpu`).
+- [ ] Fork'lardan gelen pull request'ler için onay: build'lerini bir maintainer başlatır.
