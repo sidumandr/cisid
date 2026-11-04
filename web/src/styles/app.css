@@ -153,6 +153,23 @@ svg.logo .logo-letter.logo-d { stroke: var(--brand); }
 svg.logo .logo-ink { fill: var(--brand-ink); stroke: none; }
 svg.logo .logo-mask-keep { fill: #fff; }
 svg.logo .logo-mask-cut { stroke: #000; stroke-width: 22px; stroke-linecap: butt; }
+/* The eyes look where --look-x and --look-y say (useGaze), and blink. */
+svg.logo .logo-eye { transform: translate(var(--look-x, 0px), var(--look-y, 0px)); transition: transform 220ms ease-out; }
+svg.logo .logo-blink { transform-box: fill-box; transform-origin: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .owl svg.logo .logo-blink { animation: blink 6.5s infinite; }
+}
+@keyframes blink { 0%, 93%, 100% { transform: none; } 95% { transform: scaleY(0.1); } }
+
+/* The pointer is an owl: hollow over the page, filled over what can be
+   clicked. The point is the tip of the left lens. */
+:root {
+  --cursor: url("/ui/cursor-owl.svg") 4 3, auto;
+  --cursor-pointer: url("/ui/cursor-owl-pointer.svg") 4 3, pointer;
+}
+html { cursor: var(--cursor); }
+a[href], button:not(:disabled), summary, [role="option"] { cursor: var(--cursor-pointer); }
+input:not([type="checkbox"]):not([type="radio"]), textarea { cursor: text; }
 
 /* ---------- shell: an icon rail on the ground ---------- */
 .shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); min-height: 100vh; }
@@ -183,7 +200,7 @@ svg.logo .logo-mask-cut { stroke: #000; stroke-width: 22px; stroke-linecap: butt
   border-radius: var(--radius);
   background: none;
   color: var(--faint);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: color 150ms ease;
 }
 .rail-item:hover { color: var(--text); }
@@ -244,7 +261,7 @@ h2 { margin: 0; font-size: var(--fs-section); line-height: 22px; font-weight: 60
   color: var(--text);
   font-weight: 600;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   transition: background-color 150ms ease, transform 120ms ease;
 }
 .btn:hover { background: var(--raised); }
@@ -260,7 +277,7 @@ h2 { margin: 0; font-size: var(--fs-section); line-height: 22px; font-weight: 60
   border: 0;
   background: none;
   color: var(--muted);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   white-space: nowrap;
 }
 .text-action:hover { color: var(--text); }
@@ -296,7 +313,7 @@ select { font: inherit; }
   background: none;
   color: var(--muted);
   white-space: nowrap;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--text); }
@@ -429,7 +446,7 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
   background: none;
   text-align: left;
   color: inherit;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .strip.big .seg-bar { height: 12px; transition: filter 150ms ease; }
 .strip.big .seg:hover .seg-bar { filter: brightness(1.15); }
@@ -474,7 +491,7 @@ a.tr:hover { outline: 1px solid var(--control); outline-offset: -1px; }
   border-radius: 4px;
   background: none;
   color: var(--faint);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .icon-btn:hover { color: var(--text); background: var(--raised); }
 
@@ -577,7 +594,7 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   color: var(--text);
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 .select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .select svg { color: var(--muted); transition: transform 150ms ease; }
@@ -593,7 +610,7 @@ dialog p { margin: 0 0 20px; color: var(--muted); }
   animation: drop-in 140ms ease-out;
 }
 .dropdown-list:focus { outline: none; }
-.dropdown-list li { padding: 8px 10px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.dropdown-list li { padding: 8px 10px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: var(--cursor-pointer); }
 .dropdown-list li[data-active] { background: color-mix(in srgb, var(--text) 10%, transparent); }
 .dropdown-list [role="option"][aria-selected="true"] { color: var(--accent-text); font-weight: 600; }
 @keyframes drop-in { from { opacity: 0; transform: translateY(-4px); } }

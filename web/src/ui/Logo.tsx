@@ -22,8 +22,12 @@ function MarkShapes() {
         d="M88.9 77.9 L111.1 42.1 A34 34 0 0 1 129.66 27.61 L166 16 L173.36 53.46 A34 34 0 0 1 111.1 77.9 L88.9 42.1 A34 34 0 0 0 70.34 27.61 L34 16 L26.64 53.46 A34 34 0 0 0 88.9 77.9 Z"
       />
       <line className="logo-line" x1="88.9" y1="77.9" x2="111.1" y2="42.1" />
-      <path className="logo-ink" d="M66.16 48.77 L68.75 50.97 A4.76 4.76 0 1 0 75.75 56.91 L79.73 60.3 A10 10 0 1 1 66.16 48.77 Z" />
-      <path className="logo-ink" d="M133.84 48.77 L131.25 50.97 A4.76 4.76 0 1 1 124.25 56.91 L120.27 60.3 A10 10 0 1 0 133.84 48.77 Z" />
+      <g className="logo-eye"><g className="logo-blink">
+        <path className="logo-ink" d="M66.16 48.77 L68.75 50.97 A4.76 4.76 0 1 0 75.75 56.91 L79.73 60.3 A10 10 0 1 1 66.16 48.77 Z" />
+      </g></g>
+      <g className="logo-eye"><g className="logo-blink">
+        <path className="logo-ink" d="M133.84 48.77 L131.25 50.97 A4.76 4.76 0 1 1 124.25 56.91 L120.27 60.3 A10 10 0 1 0 133.84 48.77 Z" />
+      </g></g>
     </>
   );
 }

@@ -5,12 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router";
 
 import { getJSON } from "../lib/api";
+import { CYCLE_MS, frameAt } from "../lib/heroRun";
 import { ago, fmtDuration, seconds, shortSHA, trigger } from "../lib/format";
 import { useMe } from "../lib/session";
 import type { Job } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
 import { Icon } from "../ui/Icon";
 import { LogoMark, Wordmark } from "../ui/Logo";
+import { useGaze } from "../ui/useGaze";
 import { useTheme } from "../ui/Shell";
 import { Pill, Strip } from "../ui/parts";
 
@@ -42,14 +44,6 @@ steps:
       - go vet ./...
       - go test ./...
     timeout: 10m`;
-
-// An example of a job in flight, drawn with the real strip, for when the
-// server shows no builds of its own.
-const EXAMPLE: Job = {
-  id: 0, repo: "your-org/api", clone_url: "", branch: "main", commit_sha: "4f2a9c1e", status: "running",
-  created_at: new Date().toISOString(), event: "push", steps: ["clone", "lint", "test", "chart", "artifacts"],
-  step_results: [{ state: "success" }, { state: "success" }, { state: "running" }, { state: "running" }, { state: "pending" }],
-};
 
 const FLOW = [
   { step: "push", title: "A change arrives", text: "A push or pull request on GitHub, Gitea, Forgejo, GitLab or Bitbucket, a branch the server polls, a schedule, or Run build." },
@@ -163,8 +157,50 @@ function SiteNav({ signupOpen }: { signupOpen: boolean }) {
   );
 }
 
+// ExampleRun plays a build from push to Passed, over and over: the strip
+// fills, lint and test run side by side, the log arrives line by line.
+function ExampleRun() {
+  const [clock, setClock] = useState({ ms: 0, run: 0 });
+  useEffect(() => {
+    let last = performance.now();
+    const id = setInterval(() => {
+      const now = performance.now();
+      const dt = Math.min(now - last, 400);
+      last = now;
+      if (document.hidden) return;
+      setClock((c) => (c.ms + dt >= CYCLE_MS ? { ms: 0, run: c.run + 1 } : { ms: c.ms + dt, run: c.run }));
+    }, 100);
+    return () => clearInterval(id);
+  }, []);
+  const f = frameAt(clock.ms, clock.run);
+  const running = f.job.status === "running";
+  return (
+    <figure className="hero-screen" aria-label="An example build">
+      <figcaption>
+        <span className={running ? "live-dot running" : "live-dot passed"} aria-hidden="true" />
+        {running ? "An example build in flight" : "An example build, passed"}
+      </figcaption>
+      <div className="hero-rows">
+        <div className="hero-row">
+          <div className="hero-row-top">
+            <span className="name">{f.job.repo}</span>
+            <Pill status={f.job.status} />
+          </div>
+          <Strip job={f.job} />
+          <div className="line2">
+            {trigger(f.job)} · <span className="num">{f.job.commit_sha}</span> · <span className="num">{fmtDuration(f.seconds)}</span>
+          </div>
+        </div>
+      </div>
+      <pre className="hero-log" aria-hidden="true">
+        {f.lines.map((l) => <span key={`${clock.run}-${l.key}`} className={l.echo ? "log-line err" : "log-line"}>{l.text}</span>)}
+      </pre>
+    </figure>
+  );
+}
+
 // LiveBuilds shows the latest builds on this server when reading is
-// public, else an example of one in flight.
+// public and there are some, else the example playing.
 function LiveBuilds({ publicRead }: { publicRead: boolean }) {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   useEffect(() => {
@@ -179,33 +215,32 @@ function LiveBuilds({ publicRead }: { publicRead: boolean }) {
     };
   }, [publicRead]);
 
-  const real = jobs && jobs.length > 0;
-  const shown = real ? jobs : [EXAMPLE];
+  if (!jobs || jobs.length === 0) return <ExampleRun />;
   return (
-    <figure className="hero-screen" aria-label={real ? "The latest builds on this server" : "An example build"}>
+    <figure className="hero-screen" aria-label="The latest builds on this server">
       <figcaption>
-        <span className={real ? "live-dot" : "example-dot"} aria-hidden="true" />
-        {real ? "Latest builds on this server, live" : "An example build in flight"}
+        <span className="live-dot" aria-hidden="true" />
+        Latest builds on this server, live
       </figcaption>
       <div className="hero-rows">
-        {shown.map((j) => (
+        {jobs.map((j) => (
           <div key={j.id} className="hero-row">
             <div className="hero-row-top">
               <span className="name">{j.repo}</span>
-              {j.id ? <span className="num muted">#{j.id}</span> : null}
+              <span className="num muted">#{j.id}</span>
               <Pill status={j.status} />
             </div>
             <Strip job={j} />
             <div className="line2">
               {trigger(j)} · <span className="num">{shortSHA(j.commit_sha)}</span>
               {j.started_at ? <> · <span className="num">{fmtDuration(seconds(j))}</span></> : null}
-              {j.id ? <> · {ago(j.created_at)}</> : null}
+              {" · "}{ago(j.created_at)}
             </div>
           </div>
         ))}
       </div>
       <pre className="hero-log" aria-hidden="true">
-        {LOG_LINES.map(([stream, line], i) => <span key={i} className={stream === "err" ? "err" : undefined}>{line + "\n"}</span>)}
+        {LOG_LINES.map(([stream, line], i) => <span key={i} className={stream === "err" ? "log-line err" : "log-line"}>{line}</span>)}
       </pre>
     </figure>
   );
@@ -214,6 +249,10 @@ function LiveBuilds({ publicRead }: { publicRead: boolean }) {
 export function Landing() {
   useTitle("");
   const me = useMe();
+  const heroOwl = useRef<HTMLSpanElement>(null);
+  const ctaOwl = useRef<HTMLSpanElement>(null);
+  useGaze(heroOwl);
+  useGaze(ctaOwl);
   if (me.user) return <Navigate to="/jobs" replace />;
   const signupOpen = me.accounts && (me.signup === "first" || me.signup === "open");
   const primary = signupOpen
@@ -242,7 +281,7 @@ export function Landing() {
           </div>
           {/* The cisid mark, large, behind the glass the builds sit on. */}
           <div className="hero-visual">
-            <span className="hero-logo" aria-hidden="true"><LogoMark size={640} /></span>
+            <span className="hero-logo owl" ref={heroOwl} aria-hidden="true"><LogoMark size={640} /></span>
             <LiveBuilds publicRead={me.public_read} />
           </div>
         </section>
@@ -297,7 +336,7 @@ export function Landing() {
         </section>
 
         <section className="cta" aria-labelledby="cta-title">
-          <span className="cta-logo" aria-hidden="true"><LogoMark size={560} /></span>
+          <span className="cta-logo owl" ref={ctaOwl} aria-hidden="true"><LogoMark size={560} /></span>
           <div className="cta-card">
             <div>
               <h2 id="cta-title">{signupOpen ? "Start building here." : "Sign in to build."}</h2>
