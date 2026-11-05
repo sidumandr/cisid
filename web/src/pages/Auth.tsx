@@ -1,6 +1,6 @@
 // Login and Register: every way into cisid, on a page of its own.
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 
 import { login, register } from "../lib/api";
@@ -9,8 +9,9 @@ import { N_, t } from "../lib/i18n";
 import { loadMe, useMe } from "../lib/session";
 import { useTitle } from "../lib/useTitle";
 import { LangSwitch } from "../ui/LangSwitch";
-import { Wordmark } from "../ui/Logo";
+import { LogoMark, Wordmark } from "../ui/Logo";
 import { ProviderLink, Strip } from "../ui/parts";
+import { useGaze } from "../ui/useGaze";
 import type { Job } from "../lib/types";
 
 // SIGNIN_PROBLEMS explain why signing in through a forge came back here.
@@ -42,6 +43,9 @@ const PASSED: Job = {
 type Aside = { statement: string; text: string };
 
 function AuthFrame({ title, lede, children, aside }: { title: string; lede: ReactNode; children: ReactNode; aside: Aside }) {
+  // The form sits on glass over the owl, as the builds do on the landing page.
+  const owl = useRef<HTMLSpanElement>(null);
+  useGaze(owl);
   return (
     <div className="auth">
       <aside className="auth-side">
@@ -57,10 +61,13 @@ function AuthFrame({ title, lede, children, aside }: { title: string; lede: Reac
         <span className="auth-tagline">{t("Self-hosted CI/CD. MIT licensed.")}</span>
       </aside>
       <main className="auth-main">
-        <div className="auth-card">
-          <h1>{title}</h1>
-          <p className="lede">{lede}</p>
-          {children}
+        <div className="auth-stage">
+          <span className="auth-logo owl" ref={owl} aria-hidden="true"><LogoMark size={560} /></span>
+          <div className="auth-card">
+            <h1>{title}</h1>
+            <p className="lede">{lede}</p>
+            {children}
+          </div>
         </div>
       </main>
     </div>
