@@ -15,6 +15,7 @@ import { LangSwitch } from "../ui/LangSwitch";
 import { LogoMark, Wordmark } from "../ui/Logo";
 import { useGaze } from "../ui/useGaze";
 import { useTheme } from "../ui/Shell";
+import { DotOwl } from "../ui/DotOwl";
 import { ExampleRun } from "../ui/ExampleRun";
 import { Pill, Strip } from "../ui/parts";
 
@@ -250,9 +251,8 @@ function LiveBuilds({ publicRead }: { publicRead: boolean }) {
 export function Landing() {
   useTitle("");
   const me = useMe();
-  const heroOwl = useRef<HTMLSpanElement>(null);
+  const heroVisual = useRef<HTMLDivElement>(null);
   const ctaOwl = useRef<HTMLSpanElement>(null);
-  useGaze(heroOwl);
   useGaze(ctaOwl);
   if (me.user) return <Navigate to="/jobs" replace />;
   const signupOpen = me.accounts && (me.signup === "first" || me.signup === "open");
@@ -264,27 +264,30 @@ export function Landing() {
     <div className="site">
       <SiteNav signupOpen={signupOpen} />
       <main>
-        <section className="hero">
-          <div className="hero-copy">
-            <h1>{t("Your builds, on your machines.")}</h1>
-            <p className="hero-sub">
-              {t("cisid is a self-hosted CI/CD server. A push runs your pipeline in Docker on agents you own, and you watch every step, and every line of its log, as it happens.")}
-            </p>
-            <div className="hero-actions">
-              {primary}
-              {me.public_read ? <Link className="btn big" to="/jobs">{t("Browse the builds")}</Link> : null}
-              {signupOpen ? <Link className="text-action" to="/login">{t("I have an account")}</Link> : null}
+        {/* A grid of dots behind the introduction, the owl set in it behind the builds. */}
+        <div className="hero-band">
+          <DotOwl anchor={heroVisual} />
+          <section className="hero">
+            <div className="hero-copy">
+              <h1>{t("Your builds, on your machines.")}</h1>
+              <p className="hero-sub">
+                {t("cisid is a self-hosted CI/CD server. A push runs your pipeline in Docker on agents you own, and you watch every step, and every line of its log, as it happens.")}
+              </p>
+              <div className="hero-actions">
+                {primary}
+                {me.public_read ? <Link className="btn big" to="/jobs">{t("Browse the builds")}</Link> : null}
+                {signupOpen ? <Link className="text-action" to="/login">{t("I have an account")}</Link> : null}
+              </div>
+              {me.signup === "first" ? (
+                <p className="hero-note">{t("This server has no accounts yet: the first one you create is its admin.")}</p>
+              ) : null}
             </div>
-            {me.signup === "first" ? (
-              <p className="hero-note">{t("This server has no accounts yet: the first one you create is its admin.")}</p>
-            ) : null}
-          </div>
-          {/* The cisid mark, large, behind the glass the builds sit on. */}
-          <div className="hero-visual">
-            <span className="hero-logo owl" ref={heroOwl} aria-hidden="true"><LogoMark size={640} /></span>
-            <LiveBuilds publicRead={me.public_read} />
-          </div>
-        </section>
+            {/* The builds sit on glass, over the owl the dots draw (DotOwl). */}
+            <div className="hero-visual" ref={heroVisual}>
+              <LiveBuilds publicRead={me.public_read} />
+            </div>
+          </section>
+        </div>
 
         <section className="flow" id="how" aria-labelledby="how-title">
           <div className="section-intro">
