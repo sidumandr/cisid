@@ -80,7 +80,7 @@ function Providers({ label, next }: { label: (forge: string) => string; next: st
   return (
     <>
       <div className="providers">
-        {me.providers.map((p) => <ProviderLink key={p} provider={p} label={label} next={next} />)}
+        {me.providers.map((p) => <ProviderLink key={p} provider={p} label={label} next={next} short />)}
       </div>
       <div className="or" role="separator"><span>{t("or")}</span></div>
     </>

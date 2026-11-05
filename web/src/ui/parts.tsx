@@ -135,11 +135,14 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
 
 // ProviderLink starts a sign-in through a forge, coming back to next;
 // label words the button for the forge's name.
-export function ProviderLink({ provider, label, next }: { provider: string; label: (forge: string) => string; next: string }) {
+// short shows only the forge's name, where the page around says what the
+// button does; its label still says it in full to screen readers.
+export function ProviderLink({ provider, label, next, short = false }: { provider: string; label: (forge: string) => string; next: string; short?: boolean }) {
+  const name = forgeName(provider);
   return (
-    <a className="btn provider" href={`/auth/${provider}/login?next=${encodeURIComponent(next)}`}>
+    <a className="btn provider" href={`/auth/${provider}/login?next=${encodeURIComponent(next)}`} aria-label={short ? label(name) : undefined}>
       <ProviderMark provider={provider} />
-      <span>{label(forgeName(provider))}</span>
+      <span>{short ? name : label(name)}</span>
     </a>
   );
 }
