@@ -178,7 +178,7 @@ function SiteNav({ signupOpen }: { signupOpen: boolean }) {
     return () => window.removeEventListener("scroll", on);
   }, []);
   return (
-    <header className="site-nav" data-stuck={stuck || undefined}>
+    <header className="site-nav" data-stuck={stuck || undefined} data-signup={signupOpen || undefined}>
       <div className="site-nav-bar">
         <Link className="site-mark" to="/"><Wordmark height={24} /></Link>
         <nav className="site-links" aria-label={t("Site")}>
