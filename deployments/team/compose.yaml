@@ -84,6 +84,9 @@ services:
       CISID_HOST: ${CISID_HOST:?set CISID_HOST}
       # Who may reach cisid at all; everyone else gets 403.
       CISID_ALLOW_FROM: ${CISID_ALLOW_FROM:-0.0.0.0/0 ::/0}
+      # The server's IP address, when people open cisid by it; localhost
+      # when they only use its name.
+      CISID_DEFAULT_SNI: ${CISID_DEFAULT_SNI:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # A certificate from the company's CA, if there is one (see Caddyfile).

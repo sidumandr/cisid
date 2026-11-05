@@ -78,6 +78,8 @@ Açık kayıt yalnızca şirket ağının dışından kimse server'a ulaşamadı
 
 **80 ve 443 doluysa.** Bu portlar başka bir web server'daysa Caddy'ye başka portlar ver: `CISID_PROXY_HTTPS_PORT=9443` ve `CISID_PROXY_HTTP_PORT=127.0.0.1:8089` (düz HTTP server'da kalır). Port URL'de de olur: `CISID_PUBLIC_URL=https://ci.company.internal:9443`, OAuth uygulamalarının callback URL'lerinde de. Diğer web server'da hiçbir şey değişmez.
 
+**DNS'te henüz ad yoksa.** Ekip arkadaşları bu arada server'ı adresiyle açabilir. Adresi adın arkasına ekle, `CISID_HOST=ci.company.internal, 203.0.113.7`, ve `CISID_DEFAULT_SNI=203.0.113.7` yaz: tarayıcı bir adresi açarken ad göndermez, bu ayar Caddy'ye hangi sertifikayı göstereceğini söyler. Adresi `CISID_PUBLIC_URL` içine yaz ve OAuth uygulamalarına `https://203.0.113.7/auth/<forge>/callback` adresini ekle (iki sağlayıcı da birden çok callback URL'i alır). Ad çalışınca `CISID_PUBLIC_URL` yeniden ada döner.
+
 Server'ın diğer her ayarı ([server.md](server.md)) aynı dosyaya yazılabilir: server hepsini okur.
 
 ## 4. Başlat

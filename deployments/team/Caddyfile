@@ -1,5 +1,12 @@
+{
+	# A browser that opens the server by its IP address sends no name
+	# (SNI); it gets the certificate of CISID_DEFAULT_SNI, that address.
+	default_sni {$CISID_DEFAULT_SNI}
+}
+
 # HTTPS in front of cisid. CISID_HOST is the name teammates open, such as
-# ci.company.internal; plain HTTP on port 80 is sent on to HTTPS.
+# ci.company.internal, or several separated by commas, such as the name and
+# the server's IP address; plain HTTP on port 80 is sent on to HTTPS.
 {$CISID_HOST} {
 	# Let's Encrypt cannot reach a server inside the company network, so
 	# Caddy signs the certificate with a CA of its own, whose root each

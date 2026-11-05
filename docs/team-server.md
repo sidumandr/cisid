@@ -78,6 +78,8 @@ Open sign-up is only safe because nobody outside the company network reaches the
 
 **Ports 80 and 443 taken.** If another web server already holds them, give Caddy other ports: `CISID_PROXY_HTTPS_PORT=9443` and `CISID_PROXY_HTTP_PORT=127.0.0.1:8089` (plain HTTP stays on the server), with the port in the URL: `CISID_PUBLIC_URL=https://ci.company.internal:9443`, and in the OAuth apps' callback URLs. Nothing of the other web server changes.
 
+**No name in DNS yet.** Teammates can open the server by its address meanwhile. List the address after the name, `CISID_HOST=ci.company.internal, 203.0.113.7`, and set `CISID_DEFAULT_SNI=203.0.113.7`: a browser sends no name when it opens an address, and this tells Caddy which certificate to show. Put the address in `CISID_PUBLIC_URL` and add `https://203.0.113.7/auth/<forge>/callback` to the OAuth apps (both forges take several callback URLs). Once the name works, `CISID_PUBLIC_URL` goes back to it.
+
 Every other server setting ([server.md](server.md)) can go into the same file: the server reads all of it.
 
 ## 4. Start
