@@ -370,18 +370,13 @@
 .auth-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .auth .field .hint { line-height: 1.4; }
 .auth-main { position: relative; isolation: isolate; display: grid; place-items: center; padding: 24px clamp(16px, 4vw, 48px); overflow-x: clip; overflow-y: auto; }
-/* Builds flow through a pipeline behind the form (PipelineFlow), fading out
-   at the sides, and show through its frosted glass. */
-.pipeline-flow {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
-}
+/* Two example builds play behind the form, as on the landing page, one
+   peeking out above it on the left, the other below it on the right; the
+   form's frosted glass blurs what lies under it. */
+.auth-runs { position: absolute; inset: 0; z-index: -1; pointer-events: none; --glass-thin: color-mix(in srgb, var(--raised) 58%, transparent); }
+.auth-runs .hero-screen { position: absolute; width: min(520px, 64%); opacity: 0.9; }
+.auth-runs .hero-screen:first-child { top: 6%; left: 4%; }
+.auth-runs .hero-screen:last-child { right: 4%; bottom: 6%; }
 .auth-card {
   width: 100%;
   max-width: 440px;

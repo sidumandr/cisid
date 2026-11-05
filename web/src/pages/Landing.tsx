@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router";
 
 import { getJSON } from "../lib/api";
-import { CYCLE_MS, frameAt } from "../lib/heroRun";
 import { ago, fmtDuration, seconds, shortSHA, trigger } from "../lib/format";
 import { N_, t } from "../lib/i18n";
 import { useMe } from "../lib/session";
@@ -16,6 +15,7 @@ import { LangSwitch } from "../ui/LangSwitch";
 import { LogoMark, Wordmark } from "../ui/Logo";
 import { useGaze } from "../ui/useGaze";
 import { useTheme } from "../ui/Shell";
+import { ExampleRun } from "../ui/ExampleRun";
 import { Pill, Strip } from "../ui/parts";
 
 // The pipeline cisid builds itself with, as it is in the repository.
@@ -197,48 +197,6 @@ function SiteNav({ signupOpen }: { signupOpen: boolean }) {
         </div>
       </div>
     </header>
-  );
-}
-
-// ExampleRun plays a build from push to Passed, over and over: the strip
-// fills, lint and test run side by side, the log arrives line by line.
-function ExampleRun() {
-  const [clock, setClock] = useState({ ms: 0, run: 0 });
-  useEffect(() => {
-    let last = performance.now();
-    const id = setInterval(() => {
-      const now = performance.now();
-      const dt = Math.min(now - last, 400);
-      last = now;
-      if (document.hidden) return;
-      setClock((c) => (c.ms + dt >= CYCLE_MS ? { ms: 0, run: c.run + 1 } : { ms: c.ms + dt, run: c.run }));
-    }, 100);
-    return () => clearInterval(id);
-  }, []);
-  const f = frameAt(clock.ms, clock.run);
-  const running = f.job.status === "running";
-  return (
-    <figure className="hero-screen" aria-label={t("An example build")}>
-      <figcaption>
-        <span className={running ? "live-dot running" : "live-dot passed"} aria-hidden="true" />
-        {running ? t("An example build in flight") : t("An example build, passed")}
-      </figcaption>
-      <div className="hero-rows">
-        <div className="hero-row">
-          <div className="hero-row-top">
-            <span className="name">{f.job.repo}</span>
-            <Pill status={f.job.status} />
-          </div>
-          <Strip job={f.job} />
-          <div className="line2">
-            {trigger(f.job)} · <span className="num">{f.job.commit_sha}</span> · <span className="num">{fmtDuration(f.seconds)}</span>
-          </div>
-        </div>
-      </div>
-      <pre className="hero-log" aria-hidden="true">
-        {f.lines.map((l) => <span key={`${clock.run}-${l.key}`} className={l.echo ? "log-line err" : "log-line"}>{l.text}</span>)}
-      </pre>
-    </figure>
   );
 }
 

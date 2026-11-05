@@ -11,7 +11,7 @@ import { useTitle } from "../lib/useTitle";
 import { LangSwitch } from "../ui/LangSwitch";
 import { LogoMark, Wordmark } from "../ui/Logo";
 import { ProviderLink, Strip } from "../ui/parts";
-import { PipelineFlow } from "../ui/PipelineFlow";
+import { ExampleRun } from "../ui/ExampleRun";
 import { useGaze } from "../ui/useGaze";
 import type { Job } from "../lib/types";
 
@@ -63,7 +63,11 @@ function AuthFrame({ title, lede, children, aside }: { title: string; lede: Reac
         </div>
       </aside>
       <main className="auth-main">
-        <PipelineFlow />
+        {/* Builds play behind the form, as on the landing page. */}
+        <div className="auth-runs" aria-hidden="true">
+          <ExampleRun />
+          <ExampleRun offset={5200} />
+        </div>
         <div className="auth-card">
           <h1>{title}</h1>
           <p className="lede">{lede}</p>
