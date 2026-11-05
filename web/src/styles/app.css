@@ -72,7 +72,7 @@
   --text: #111111;
   --muted: #55595e;
   --faint: #6b6b6b;
-  --accent: #e0560b;           /* the logo's orange, on light ground */
+  --accent: #f26b1d;           /* the logo's orange, on light ground too: 3:1 on white, 6.2:1 under dark ink */
   --accent-text: #b84508;      /* the same orange, darker, for text: 5.4:1 on white */
   --on-accent: #111111;
   --positive: #1f7a4a;
@@ -82,7 +82,7 @@
   --pill-running-bg: #fceee7;  --pill-running-ink: #b84508;
   --pill-neutral-bg: #efefef;  --pill-neutral-ink: #3d3d3d;
   --seg-idle: #e2e2e2;
-  --brand: #e0560b;
+  --brand: #f26b1d;
   --brand-ink: #141414;
   --backdrop: rgba(17, 17, 17, 0.35);
   --float: 0 20px 48px rgba(0, 0, 0, 0.14);
@@ -101,7 +101,7 @@
     --text: #111111;
     --muted: #55595e;
     --faint: #6b6b6b;
-    --accent: #e0560b;
+    --accent: #f26b1d;
     --accent-text: #b84508;
     --on-accent: #111111;
     --positive: #1f7a4a;
@@ -111,7 +111,7 @@
     --pill-running-bg: #fceee7;  --pill-running-ink: #b84508;
     --pill-neutral-bg: #efefef;  --pill-neutral-ink: #3d3d3d;
     --seg-idle: #e2e2e2;
-    --brand: #e0560b;
+    --brand: #f26b1d;
     --brand-ink: #141414;
     --backdrop: rgba(17, 17, 17, 0.35);
     --float: 0 20px 48px rgba(0, 0, 0, 0.14);
