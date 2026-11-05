@@ -367,14 +367,28 @@
 .auth-tagline { margin: 28px 0 0; color: var(--muted); font-size: var(--fs-small); }
 .auth-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .auth .field .hint { line-height: 1.4; }
-.auth-main { display: grid; place-items: center; padding: 48px clamp(16px, 4vw, 48px); overflow: clip; }
+.auth-main { position: relative; isolation: isolate; display: grid; place-items: center; padding: 48px clamp(16px, 4vw, 48px); overflow: clip; }
+/* Builds flow through a pipeline behind the form (PipelineFlow), fading out
+   at the sides, and show through its frosted glass. */
+.pipeline-flow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+}
 .auth-card {
   width: 100%;
   max-width: 460px;
   padding: clamp(28px, 4vw, 44px);
   border: 1px solid var(--glass-edge);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--raised) 58%, transparent);
+  background: color-mix(in srgb, var(--raised) 62%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
 }
 .auth h1 { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 600; }
 .auth .lede { margin: 12px 0 32px; }
@@ -451,7 +465,7 @@
   .flow-steps, .feature-grid { grid-template-columns: minmax(0, 1fr); }
   .flow-steps p { padding-right: 0; }
   .hero-actions .btn.big { flex: 1 1 auto; }
-  .auth { grid-template-columns: minmax(0, 1fr); min-height: auto; }
+  .auth { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; min-height: 100dvh; }
   .auth-side { flex-direction: row; align-items: center; gap: 16px; padding: 18px 16px; }
   .auth-top { flex: 1; }
   .auth-side-copy, .auth-tagline, .auth-owl { display: none; }
