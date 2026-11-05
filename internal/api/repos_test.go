@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,18 +24,29 @@ type memRepos struct {
 	watches map[string]models.Watch // "repo branch"
 }
 
-func (m *memRepos) PutRepository(_ context.Context, r models.Repository) (bool, error) {
+func (m *memRepos) PutRepository(_ context.Context, r models.Repository) (models.Repository, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.repos == nil {
 		m.repos = map[string]models.Repository{}
 	}
 	old, existed := m.repos[r.Repo]
+	r.AddedAt = time.Now()
+	if r.ViaUserID != nil {
+		// The users are not here: the one who connects is the one whose access it is.
+		r.Via = r.AddedBy
+	}
 	if existed {
-		r.AddedBy = old.AddedBy
+		r.AddedBy, r.AddedAt = old.AddedBy, old.AddedAt
+		if r.ViaUserID == nil {
+			r.ViaUserID, r.Via = old.ViaUserID, old.Via
+		}
 	}
 	m.repos[r.Repo] = r
-	return !existed, nil
+	for _, w := range m.watches {
+		r.Polled = r.Polled || w.Repo == r.Repo
+	}
+	return r, !existed, nil
 }
 
 func (m *memRepos) DeleteRepository(_ context.Context, repo string) (bool, error) {
@@ -135,6 +147,7 @@ func TestConnectRepository(t *testing.T) {
 	assert.Equal(t, "sidumandr/biopotan", got.Repo)
 	assert.Equal(t, "trunk", got.DefaultBranch)
 	assert.Equal(t, "API token", got.AddedBy)
+	assert.WithinDuration(t, time.Now(), got.AddedAt, time.Minute, "the answer is the repository as stored")
 	assert.True(t, got.Polled)
 	assert.True(t, got.HasPipeline)
 	assert.Equal(t, "https://github.com/sidumandr/biopotan.git", store.watches["sidumandr/biopotan trunk"].CloneURL,

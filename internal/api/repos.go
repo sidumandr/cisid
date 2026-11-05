@@ -19,7 +19,7 @@ import (
 // RepoStore keeps the repositories connected to cisid. *db.Store
 // satisfies it.
 type RepoStore interface {
-	PutRepository(ctx context.Context, r models.Repository) (bool, error)
+	PutRepository(ctx context.Context, r models.Repository) (models.Repository, bool, error)
 	DeleteRepository(ctx context.Context, repo string) (bool, error)
 	Repositories(ctx context.Context) ([]models.Repository, error)
 	PutWatch(ctx context.Context, w models.Watch) (bool, error)
@@ -139,11 +139,8 @@ func (a *ReposAPI) connect(w http.ResponseWriter, r *http.Request) {
 	if p, ok := caller(r); ok && p.name != "" {
 		by = p.name
 	}
-	rec := models.Repository{Repo: repo, CloneURL: info.CloneURL, DefaultBranch: info.DefaultBranch, AddedBy: by, ViaUserID: via}
-	if via != nil {
-		rec.Via = by
-	}
-	created, err := a.store.PutRepository(ctx, rec)
+	rec, created, err := a.store.PutRepository(ctx, models.Repository{
+		Repo: repo, CloneURL: info.CloneURL, DefaultBranch: info.DefaultBranch, AddedBy: by, ViaUserID: via})
 	if err != nil {
 		a.internalError(w, r, "connect repository", err)
 		return

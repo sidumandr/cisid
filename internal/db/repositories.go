@@ -10,19 +10,32 @@ import (
 )
 
 // PutRepository connects r.Repo, or updates its clone URL and default
-// branch when it is connected already, and reports whether it is new.
-func (s *Store) PutRepository(ctx context.Context, r models.Repository) (bool, error) {
+// branch when it is connected already. It returns the repository as it is
+// stored (who added it and when, whose access reaches it, whether it is
+// polled), and reports whether it is new.
+func (s *Store) PutRepository(ctx context.Context, r models.Repository) (models.Repository, bool, error) {
 	// Connecting again with one's own access makes it the repository's.
 	const q = `
-		INSERT INTO repositories (repo, clone_url, default_branch, added_by, via_user_id) VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (repo) DO UPDATE SET clone_url = EXCLUDED.clone_url, default_branch = EXCLUDED.default_branch,
-			via_user_id = COALESCE(EXCLUDED.via_user_id, repositories.via_user_id)
-		RETURNING xmax = 0`
-	var created bool
-	if err := s.pool.QueryRow(ctx, q, r.Repo, r.CloneURL, r.DefaultBranch, r.AddedBy, r.ViaUserID).Scan(&created); err != nil {
-		return false, fmt.Errorf("connect repository %s: %w", r.Repo, err)
+		WITH up AS (
+			INSERT INTO repositories (repo, clone_url, default_branch, added_by, via_user_id) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (repo) DO UPDATE SET clone_url = EXCLUDED.clone_url, default_branch = EXCLUDED.default_branch,
+				via_user_id = COALESCE(EXCLUDED.via_user_id, repositories.via_user_id)
+			RETURNING repo, clone_url, default_branch, added_by, added_at, via_user_id, xmax = 0 AS created
+		)
+		SELECT up.repo, up.clone_url, up.default_branch, up.added_by, up.added_at,
+		       EXISTS (SELECT 1 FROM watches w WHERE w.repo = up.repo),
+		       up.via_user_id, COALESCE(u.username, ''), up.created
+		FROM up LEFT JOIN users u ON u.id = up.via_user_id`
+	var (
+		got     models.Repository
+		created bool
+	)
+	err := s.pool.QueryRow(ctx, q, r.Repo, r.CloneURL, r.DefaultBranch, r.AddedBy, r.ViaUserID).Scan(
+		&got.Repo, &got.CloneURL, &got.DefaultBranch, &got.AddedBy, &got.AddedAt, &got.Polled, &got.ViaUserID, &got.Via, &created)
+	if err != nil {
+		return models.Repository{}, false, fmt.Errorf("connect repository %s: %w", r.Repo, err)
 	}
-	return created, nil
+	return got, created, nil
 }
 
 // DeleteRepository disconnects repo: it is no longer listed, polled or

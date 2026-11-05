@@ -43,15 +43,17 @@ func TestStoreForgeAccounts(t *testing.T) {
 	assert.Equal(t, []string{"github", "gitlab"}, []string{list[0].Forge, list[1].Forge})
 	assert.Equal(t, "token", list[0].Kind)
 
-	// A repository connected with ilhan's access names him.
-	_, err = s.PutRepository(ctx, models.Repository{Repo: "sidumandr/biopotan", CloneURL: "u", DefaultBranch: "main", AddedBy: "ilhan", ViaUserID: &ilhan.ID})
+	// A repository connected with ilhan's access names that user.
+	stored, _, err := s.PutRepository(ctx, models.Repository{Repo: "sidumandr/biopotan", CloneURL: "u", DefaultBranch: "main", AddedBy: "ilhan", ViaUserID: &ilhan.ID})
 	require.NoError(t, err)
+	assert.Equal(t, "ilhan", stored.Via)
 	id, ok, err := s.RepositoryUser(ctx, "sidumandr/biopotan")
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, ilhan.ID, id)
-	_, err = s.PutRepository(ctx, models.Repository{Repo: "sidumandr/biopotan", CloneURL: "u", DefaultBranch: "main", AddedBy: "API token"})
+	stored, _, err = s.PutRepository(ctx, models.Repository{Repo: "sidumandr/biopotan", CloneURL: "u", DefaultBranch: "main", AddedBy: "API token"})
 	require.NoError(t, err)
+	assert.Equal(t, "ilhan", stored.Via)
 	_, ok, err = s.RepositoryUser(ctx, "sidumandr/biopotan")
 	require.NoError(t, err)
 	assert.True(t, ok, "connecting again without one's own access keeps the access it had")
