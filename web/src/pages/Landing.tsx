@@ -208,10 +208,10 @@ function SiteNav({ signupOpen, signedIn }: { signupOpen: boolean; signedIn: bool
           <LangSwitch className="wide-tool" />
           <ThemeButton theme={theme} toggle={toggle} className="wide-tool" />
           <CursorButton className="wide-tool" />
-          {signedIn ? <Link className="btn round primary" to="/jobs">{t("Go to your builds")}</Link> : <>
+          {signedIn ? <Link className="btn primary" to="/jobs">{t("Go to your builds")}</Link> : <>
             {/* On a phone the nav keeps one button: Create an account when sign-up is open, else Sign in. */}
-            <Link className={signupOpen ? "btn round nav-extra" : "btn round"} to="/login">{t("Sign in")}</Link>
-            {signupOpen ? <Link className="btn round primary" to="/register">{t("Create an account")}</Link> : null}
+            <Link className={signupOpen ? "btn nav-extra" : "btn"} to="/login">{t("Sign in")}</Link>
+            {signupOpen ? <Link className="btn primary" to="/register">{t("Create an account")}</Link> : null}
           </>}
           <NavMenu theme={theme} toggle={toggle} signedIn={signedIn} />
         </div>

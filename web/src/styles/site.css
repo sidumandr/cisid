@@ -81,7 +81,6 @@
 .site-links a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); }
 .site-links a[aria-current="true"] { color: var(--text); background: color-mix(in srgb, var(--text) 12%, transparent); }
 .site-tools { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
-.btn.round { border-radius: 999px; }
 
 /* An icon in a circle: the theme, and the menu on narrow screens. */
 .icon-toggle {
