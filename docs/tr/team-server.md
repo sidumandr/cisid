@@ -69,8 +69,14 @@ Sonra `deployments/team/.env` dosyasını doldur. Önemli olanlar:
 | `CISID_POLL_INTERVAL=1m` | cisid'in yeni commit'leri sağlayıcılara ne sıklıkla sorduğu ([polling.md](polling.md)) |
 | `CISID_*_OAUTH_CLIENT_ID`, `..._SECRET` | 2. adımdaki OAuth uygulamaları |
 | `CISID_STEP_MEMORY`, `CISID_STEP_CPUS` | Her build container'ının sınırları |
+| `CISID_ALLOW_FROM` | cisid'e ulaşabilen adresler, boşlukla ayrılmış; örneğin ofisin dış adresi ya da VPN'in aralığı. Diğer herkes `403` alır. Boşsa herkes girer. |
+| `CISID_PROXY_HTTPS_PORT`, `CISID_PROXY_HTTP_PORT` | Caddy'nin server'daki portları; verilmezse `443` ve `80` |
 
 Açık kayıt yalnızca şirket ağının dışından kimse server'a ulaşamadığı için güvenli. Bir gün dışarıdan erişilebilir olacaksa, önce iki kayıt rolünü de boşalt.
+
+**İnternetteki bir server.** Makinanın dış adresi varsa ve VPN yoksa yalnızca ofisi içeri al: `CISID_ALLOW_FROM=<ofisin dış adresi>`. Caddy diğer herkese, istek cisid'e ulaşmadan `403` döner. Docker, Caddy'nin portlarını makinanın güvenlik duvarını (ufw) aşarak açar; diğerlerini dışarıda tutan bu ayardır.
+
+**80 ve 443 doluysa.** Bu portlar başka bir web server'daysa Caddy'ye başka portlar ver: `CISID_PROXY_HTTPS_PORT=9443` ve `CISID_PROXY_HTTP_PORT=127.0.0.1:8089` (düz HTTP server'da kalır). Port URL'de de olur: `CISID_PUBLIC_URL=https://ci.company.internal:9443`, OAuth uygulamalarının callback URL'lerinde de. Diğer web server'da hiçbir şey değişmez.
 
 Server'ın diğer her ayarı ([server.md](server.md)) aynı dosyaya yazılabilir: server hepsini okur.
 

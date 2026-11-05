@@ -8,7 +8,14 @@
 	#   tls /certs/cert.pem /certs/key.pem
 	tls internal
 
-	# Live logs (server-sent events) and the agents' WebSockets pass
-	# through as they are.
-	reverse_proxy server:8080
+	# Only the addresses in CISID_ALLOW_FROM (such as the office's) reach
+	# cisid; everyone else gets 403. Live logs (server-sent events) and the
+	# agents' WebSockets pass through as they are.
+	@allowed remote_ip {$CISID_ALLOW_FROM}
+	handle @allowed {
+		reverse_proxy server:8080
+	}
+	handle {
+		respond 403
+	}
 }

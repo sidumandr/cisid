@@ -69,8 +69,14 @@ Then fill in `deployments/team/.env`. The important ones:
 | `CISID_POLL_INTERVAL=1m` | How often cisid asks the forges for new commits ([polling.md](polling.md)) |
 | `CISID_*_OAUTH_CLIENT_ID`, `..._SECRET` | The OAuth apps from step 2 |
 | `CISID_STEP_MEMORY`, `CISID_STEP_CPUS` | Limits of each build container |
+| `CISID_ALLOW_FROM` | The addresses that reach cisid at all, separated by spaces, such as the office's public address or the VPN's range; everyone else gets `403`. Empty lets everyone in. |
+| `CISID_PROXY_HTTPS_PORT`, `CISID_PROXY_HTTP_PORT` | Caddy's ports on the server, `443` and `80` unless set |
 
 Open sign-up is only safe because nobody outside the company network reaches the server. If it ever becomes reachable from outside, empty both sign-up roles first.
+
+**A server on the internet.** If the machine has a public address and no VPN, let only the office in: `CISID_ALLOW_FROM=<the office's public address>`. Caddy then answers everyone else with `403`, before anything reaches cisid. Docker publishes Caddy's ports past the host's firewall (ufw), so this setting is what keeps others out.
+
+**Ports 80 and 443 taken.** If another web server already holds them, give Caddy other ports: `CISID_PROXY_HTTPS_PORT=9443` and `CISID_PROXY_HTTP_PORT=127.0.0.1:8089` (plain HTTP stays on the server), with the port in the URL: `CISID_PUBLIC_URL=https://ci.company.internal:9443`, and in the OAuth apps' callback URLs. Nothing of the other web server changes.
 
 Every other server setting ([server.md](server.md)) can go into the same file: the server reads all of it.
 

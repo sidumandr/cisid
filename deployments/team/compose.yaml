@@ -75,10 +75,15 @@ services:
     image: caddy:2.10-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      # On a server whose ports 80 and 443 are taken, choose others in
+      # .env, such as CISID_PROXY_HTTPS_PORT=9443 and, to keep plain HTTP
+      # off the network, CISID_PROXY_HTTP_PORT=127.0.0.1:8089.
+      - "${CISID_PROXY_HTTP_PORT:-80}:80"
+      - "${CISID_PROXY_HTTPS_PORT:-443}:443"
     environment:
       CISID_HOST: ${CISID_HOST:?set CISID_HOST}
+      # Who may reach cisid at all; everyone else gets 403.
+      CISID_ALLOW_FROM: ${CISID_ALLOW_FROM:-0.0.0.0/0 ::/0}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # A certificate from the company's CA, if there is one (see Caddyfile).
