@@ -329,13 +329,30 @@
 /* ---------- sign in, sign up ---------- */
 .auth { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); min-height: 100vh; }
 .auth-side {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   gap: 48px;
-  padding: 32px clamp(24px, 4vw, 56px);
+  /* The bottom is the owl's. */
+  padding: 32px clamp(24px, 4vw, 56px) clamp(170px, 26vh, 240px);
   background: var(--surface);
 }
+.auth-side-copy { margin-block: auto; }
+/* The cisid owl peeks, faintly, over the side's bottom edge: its eyes, which
+   follow the pointer, just above it. */
+.auth-owl {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  bottom: 0;
+  width: min(560px, 115%);
+  transform: translate(-50%, 34%);
+  opacity: 0.22;
+  pointer-events: none;
+}
+.auth-owl svg { display: block; width: 100%; height: auto; }
 .auth-statement {
   max-width: 11ch;
   margin: 0;
@@ -347,32 +364,17 @@
 }
 .auth-text { max-width: 34ch; margin: 24px 0 40px; color: var(--muted); font-size: var(--fs-lead); }
 .auth-strip { max-width: 440px; }
-.auth-tagline { color: var(--muted); font-size: var(--fs-small); }
+.auth-tagline { margin: 28px 0 0; color: var(--muted); font-size: var(--fs-small); }
 .auth-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .auth .field .hint { line-height: 1.4; }
 .auth-main { display: grid; place-items: center; padding: 48px clamp(16px, 4vw, 48px); overflow: clip; }
-/* The form sits on glass over the cisid mark, set large and softened, as
-   the builds do on the landing page. */
-.auth-stage { position: relative; isolation: isolate; width: 100%; max-width: 460px; --glass-thin: color-mix(in srgb, var(--raised) 58%, transparent); }
-.auth-logo {
-  position: absolute;
-  z-index: -1;
-  top: 50%;
-  left: 50%;
-  width: 128%;
-  transform: translate(-50%, -50%);
-  filter: blur(3px);
-  opacity: 0.9;
-  pointer-events: none;
-}
-.auth-logo svg { display: block; width: 100%; height: auto; }
 .auth-card {
+  width: 100%;
+  max-width: 460px;
   padding: clamp(28px, 4vw, 44px);
   border: 1px solid var(--glass-edge);
   border-radius: 18px;
-  background: var(--glass-thin);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
-  backdrop-filter: blur(14px) saturate(150%);
+  background: color-mix(in srgb, var(--raised) 58%, transparent);
 }
 .auth h1 { margin: 0; font-size: 34px; line-height: 1.1; font-weight: 600; }
 .auth .lede { margin: 12px 0 32px; }
@@ -404,7 +406,7 @@
   .auth-strip .seg:nth-child(2) .seg-bar { animation-delay: 720ms; }
   .auth-strip .seg:nth-child(3) .seg-bar { animation-delay: 1140ms; }
   .hero-row { transition: background-color 150ms ease; }
-  .hero-logo, .cta-logo, .auth-logo { animation: float 9s ease-in-out infinite; }
+  .hero-logo, .cta-logo, .auth-owl { animation: float 9s ease-in-out infinite; }
   .cta-logo { animation-delay: -4s; }
   .hero-log .log-line { animation: line-in 260ms ease-out; }
   .hero-screen .seg-bar { transition: background-color 300ms ease; }
@@ -452,7 +454,7 @@
   .auth { grid-template-columns: minmax(0, 1fr); min-height: auto; }
   .auth-side { flex-direction: row; align-items: center; gap: 16px; padding: 18px 16px; }
   .auth-top { flex: 1; }
-  .auth-side-copy, .auth-tagline { display: none; }
+  .auth-side-copy, .auth-tagline, .auth-owl { display: none; }
   .auth-main { place-items: start center; padding-top: 32px; }
 }
 @media (max-width: 420px) {

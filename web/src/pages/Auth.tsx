@@ -43,12 +43,13 @@ const PASSED: Job = {
 type Aside = { statement: string; text: string };
 
 function AuthFrame({ title, lede, children, aside }: { title: string; lede: ReactNode; children: ReactNode; aside: Aside }) {
-  // The form sits on glass over the owl, as the builds do on the landing page.
+  // The owl peeks, faintly, over the bottom edge of the side.
   const owl = useRef<HTMLSpanElement>(null);
   useGaze(owl);
   return (
     <div className="auth">
       <aside className="auth-side">
+        <span className="auth-owl owl" ref={owl} aria-hidden="true"><LogoMark size={560} /></span>
         <div className="auth-top">
           <Link className="site-mark" to="/"><Wordmark height={28} /></Link>
           <LangSwitch />
@@ -57,17 +58,14 @@ function AuthFrame({ title, lede, children, aside }: { title: string; lede: Reac
           <p className="auth-statement">{aside.statement}</p>
           <p className="auth-text">{aside.text}</p>
           <div className="auth-strip" aria-hidden="true"><Strip job={PASSED} /></div>
+          <p className="auth-tagline">{t("Self-hosted CI/CD. MIT licensed.")}</p>
         </div>
-        <span className="auth-tagline">{t("Self-hosted CI/CD. MIT licensed.")}</span>
       </aside>
       <main className="auth-main">
-        <div className="auth-stage">
-          <span className="auth-logo owl" ref={owl} aria-hidden="true"><LogoMark size={560} /></span>
-          <div className="auth-card">
-            <h1>{title}</h1>
-            <p className="lede">{lede}</p>
-            {children}
-          </div>
+        <div className="auth-card">
+          <h1>{title}</h1>
+          <p className="lede">{lede}</p>
+          {children}
         </div>
       </main>
     </div>
