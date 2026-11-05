@@ -28,6 +28,8 @@ const REACH_Y = 2.4;
 const BLINK_EVERY = 6.5; // seconds
 const BLINK_FOR = 0.16;
 const NEAR = 120; // px around the pointer that warm up
+const CLEAR = 18; // px kept free above and below the owl, from the nav and the anchor
+const MIN_OWL = 340; // px: an owl narrower than this hides behind the anchor instead
 
 interface Dot {
   x: number;
@@ -91,20 +93,30 @@ export function DotOwl({ anchor }: { anchor: RefObject<HTMLElement | null> }) {
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      gap = w < 600 ? 12 : 14;
-
-      // The owl sits behind the anchor, wider than it. On a wide screen its
-      // eyes look over the anchor's top edge; on a narrow one, where the
-      // anchor comes under the words, it hides behind the anchor whole.
+      // On a wide screen the whole owl sits between the nav and the anchor,
+      // its eyes just over the anchor's top edge, as large as that room
+      // allows. Where there is too little room, or on a narrow screen with
+      // the anchor under the words, it hides behind the anchor, wider than it.
       const c = canvas.getBoundingClientRect();
       const a = anchor.current?.getBoundingClientRect();
-      const wide = w >= 1000;
-      const width = a ? a.width * (wide ? 1.08 : 1.12) : w * 0.45;
-      s = width / 172;
-      const cx = a ? a.left + a.width / 2 - c.left : w * 0.72;
+      // The canvas reaches up under the nav by as much as its top is raised.
+      const below = -parseFloat(getComputedStyle(canvas).top) || 0;
+      let width = a ? a.width * 1.12 : w * 0.45;
       let eyeY = a ? a.top + a.height / 2 - c.top : h * 0.5;
-      // The lenses' tops are 41.6 units above the eyes; keep them on the canvas.
-      if (a && wide) eyeY = Math.max(41.6 * s + gap, a.top - c.top - (EYE_R * s + gap));
+      if (a && w >= 1000) {
+        const top = a.top - c.top;
+        // From the top of the lenses' stroke (y 16, less half the stroke) to
+        // the eyes' bottoms (y 57.6 + 10) is 57.6 units.
+        const fit = (top - below - 2 * CLEAR) / (57.6 - 16 + STROKE / 2 + EYE_R);
+        if (fit * 172 >= MIN_OWL) {
+          width = Math.min(a.width * 1.08, fit * 172);
+          eyeY = top - CLEAR - EYE_R * (width / 172);
+        }
+      }
+      s = width / 172;
+      // Finer dots for a smaller owl, so its eyes keep their shape.
+      gap = w < 600 ? 12 : s >= 3.2 ? 14 : s >= 2.6 ? 12 : 10;
+      const cx = a ? a.left + a.width / 2 - c.left : w * 0.72;
       ox = cx - 100 * s;
       oy = eyeY - EYES[0]!.y * s;
 

@@ -167,7 +167,11 @@ svg.logo .logo-blink { transform-box: fill-box; transform-origin: center; }
   --cursor: url("/ui/cursor-owl.svg") 4 3, auto;
   --cursor-pointer: url("/ui/cursor-owl-pointer.svg") 4 3, pointer;
 }
+/* Or the system's own, if the reader chose it (ui/cursor.ts). */
+:root[data-cursor="plain"] { --cursor: auto; --cursor-pointer: pointer; }
 html { cursor: var(--cursor); }
+/* A touch screen has no pointer to choose. */
+@media (pointer: coarse) { .cursor-toggle { display: none; } }
 a[href], button:not(:disabled), summary, [role="option"] { cursor: var(--cursor-pointer); }
 input:not([type="checkbox"]):not([type="radio"]), textarea { cursor: text; }
 

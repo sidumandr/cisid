@@ -6,6 +6,7 @@ import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 
 import { LANGS, setLang, t, useLang } from "../lib/i18n";
 import { useMe } from "../lib/session";
+import { useCursor } from "./cursor";
 import { Icon, ThemeIcon } from "./Icon";
 import { LogoMark, Wordmark } from "./Logo";
 
@@ -46,6 +47,7 @@ export function Shell() {
   const me = useMe();
   const location = useLocation();
   const [theme, toggleTheme] = useTheme();
+  const [plainCursor, toggleCursor] = useCursor();
   const lang = useLang();
   const other = LANGS.find((l) => l.lang !== lang)!;
   // Where reading needs a sign-in, the working screens start at the sign-in
@@ -79,6 +81,11 @@ export function Shell() {
         <button className="rail-item" type="button" title={t("Switch light and dark")} onClick={toggleTheme}
           aria-label={theme === "dark" ? t("Switch to light") : t("Switch to dark")}>
           <ThemeIcon /><span className="rail-label">{t("Theme")}</span>
+        </button>
+        <button className="rail-item cursor-toggle" type="button" onClick={toggleCursor}
+          title={plainCursor ? t("Use the owl cursor") : t("Use the normal cursor")}
+          aria-label={plainCursor ? t("Use the owl cursor") : t("Use the normal cursor")}>
+          <Icon name={plainCursor ? "owl" : "pointer"} size={18} /><span className="rail-label">{t("Cursor")}</span>
         </button>
         <button className="rail-item" type="button" lang={other.lang} title={other.name} onClick={() => setLang(other.lang)}
           aria-label={other.name}>

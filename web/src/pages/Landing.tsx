@@ -2,7 +2,7 @@
 // them on to sign in, sign up or, where reading is public, the builds.
 
 import { useEffect, useRef, useState } from "react";
-import { Link, Navigate } from "react-router";
+import { Link } from "react-router";
 
 import { getJSON } from "../lib/api";
 import { ago, fmtDuration, seconds, shortSHA, trigger } from "../lib/format";
@@ -10,6 +10,7 @@ import { N_, t } from "../lib/i18n";
 import { useMe } from "../lib/session";
 import type { Job } from "../lib/types";
 import { useTitle } from "../lib/useTitle";
+import { useCursor } from "../ui/cursor";
 import { Icon } from "../ui/Icon";
 import { LangSwitch } from "../ui/LangSwitch";
 import { LogoMark, Wordmark } from "../ui/Logo";
@@ -121,9 +122,20 @@ function ThemeButton({ theme, toggle, className = "" }: { theme: string; toggle:
   );
 }
 
+// CursorButton switches between the owl pointer and the system's own.
+function CursorButton({ className = "" }: { className?: string }) {
+  const [plain, toggle] = useCursor();
+  const label = plain ? t("Use the owl cursor") : t("Use the normal cursor");
+  return (
+    <button className={"icon-toggle cursor-toggle " + className} type="button" onClick={toggle} title={label} aria-label={label}>
+      <Icon name={plain ? "owl" : "pointer"} size={18} />
+    </button>
+  );
+}
+
 // NavMenu holds the nav's links on screens too narrow to show them, in a
 // dropdown on the same glass as the nav.
-function NavMenu({ theme, toggle }: { theme: string; toggle: () => void }) {
+function NavMenu({ theme, toggle, signedIn }: { theme: string; toggle: () => void; signedIn: boolean }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -153,10 +165,13 @@ function NavMenu({ theme, toggle }: { theme: string; toggle: () => void }) {
         <div id="nav-menu-list" className="nav-menu-list glass">
           {SECTIONS.map((s) => <a key={s.href} href={s.href} onClick={() => setOpen(false)}>{t(s.label)}</a>)}
           <a href={SOURCE} rel="noreferrer" onClick={() => setOpen(false)}>{t("Source")}</a>
-          <Link to="/login" onClick={() => setOpen(false)}>{t("Sign in")}</Link>
+          {signedIn
+            ? <Link to="/jobs" onClick={() => setOpen(false)}>{t("Go to your builds")}</Link>
+            : <Link to="/login" onClick={() => setOpen(false)}>{t("Sign in")}</Link>}
           <div className="nav-menu-tools">
             <LangSwitch />
             <ThemeButton theme={theme} toggle={toggle} />
+            <CursorButton />
           </div>
         </div>
       ) : null}
@@ -167,8 +182,9 @@ function NavMenu({ theme, toggle }: { theme: string; toggle: () => void }) {
 const SECTION_IDS = ["how", "pipeline", "features"];
 
 // SiteNav floats over the page as a capsule of glass: the mark, the
-// sections in a track with the one in view lit, and the ways in.
-function SiteNav({ signupOpen }: { signupOpen: boolean }) {
+// sections in a track with the one in view lit, and the ways in; for
+// someone signed in, the way back to their builds.
+function SiteNav({ signupOpen, signedIn }: { signupOpen: boolean; signedIn: boolean }) {
   const [theme, toggle] = useTheme();
   const active = useSection(SECTION_IDS);
   const [stuck, setStuck] = useState(false);
@@ -191,10 +207,13 @@ function SiteNav({ signupOpen }: { signupOpen: boolean }) {
         <div className="site-tools">
           <LangSwitch className="wide-tool" />
           <ThemeButton theme={theme} toggle={toggle} className="wide-tool" />
-          {/* On a phone the nav keeps one button: Create an account when sign-up is open, else Sign in. */}
-          <Link className={signupOpen ? "btn round nav-extra" : "btn round"} to="/login">{t("Sign in")}</Link>
-          {signupOpen ? <Link className="btn round primary" to="/register">{t("Create an account")}</Link> : null}
-          <NavMenu theme={theme} toggle={toggle} />
+          <CursorButton className="wide-tool" />
+          {signedIn ? <Link className="btn round primary" to="/jobs">{t("Go to your builds")}</Link> : <>
+            {/* On a phone the nav keeps one button: Create an account when sign-up is open, else Sign in. */}
+            <Link className={signupOpen ? "btn round nav-extra" : "btn round"} to="/login">{t("Sign in")}</Link>
+            {signupOpen ? <Link className="btn round primary" to="/register">{t("Create an account")}</Link> : null}
+          </>}
+          <NavMenu theme={theme} toggle={toggle} signedIn={signedIn} />
         </div>
       </div>
     </header>
@@ -254,15 +273,19 @@ export function Landing() {
   const heroVisual = useRef<HTMLDivElement>(null);
   const ctaOwl = useRef<HTMLSpanElement>(null);
   useGaze(ctaOwl);
-  if (me.user) return <Navigate to="/jobs" replace />;
-  const signupOpen = me.accounts && (me.signup === "first" || me.signup === "open");
-  const primary = signupOpen
-    ? <Link className="btn primary big" to="/register">{me.signup === "first" ? t("Set up this server") : t("Create an account")}<Icon name="arrow" /></Link>
-    : <Link className="btn primary big" to="/login">{t("Sign in")}<Icon name="arrow" /></Link>;
+  // Someone signed in sees this page too, with the way to their builds in
+  // place of the ways in.
+  const signedIn = Boolean(me.user);
+  const signupOpen = !signedIn && me.accounts && (me.signup === "first" || me.signup === "open");
+  const primary = signedIn
+    ? <Link className="btn primary big" to="/jobs">{t("Go to your builds")}<Icon name="arrow" /></Link>
+    : signupOpen
+      ? <Link className="btn primary big" to="/register">{me.signup === "first" ? t("Set up this server") : t("Create an account")}<Icon name="arrow" /></Link>
+      : <Link className="btn primary big" to="/login">{t("Sign in")}<Icon name="arrow" /></Link>;
 
   return (
     <div className="site">
-      <SiteNav signupOpen={signupOpen} />
+      <SiteNav signupOpen={signupOpen} signedIn={signedIn} />
       <main>
         {/* A grid of dots behind the introduction, the owl set in it behind the builds. */}
         <div className="hero-band">
@@ -275,7 +298,7 @@ export function Landing() {
               </p>
               <div className="hero-actions">
                 {primary}
-                {me.public_read ? <Link className="btn big" to="/jobs">{t("Browse the builds")}</Link> : null}
+                {me.public_read && !signedIn ? <Link className="btn big" to="/jobs">{t("Browse the builds")}</Link> : null}
                 {signupOpen ? <Link className="text-action" to="/login">{t("I have an account")}</Link> : null}
               </div>
               {me.signup === "first" ? (
@@ -284,7 +307,7 @@ export function Landing() {
             </div>
             {/* The builds sit on glass, over the owl the dots draw (DotOwl). */}
             <div className="hero-visual" ref={heroVisual}>
-              <LiveBuilds publicRead={me.public_read} />
+              <LiveBuilds publicRead={me.public_read || signedIn} />
             </div>
           </section>
         </div>
@@ -341,9 +364,11 @@ export function Landing() {
           <span className="cta-logo owl" ref={ctaOwl} aria-hidden="true"><LogoMark size={560} /></span>
           <div className="cta-card">
             <div>
-              <h2 id="cta-title">{signupOpen ? t("Start building here.") : t("Sign in to build.")}</h2>
+              <h2 id="cta-title">{signedIn ? t("Back to your builds.") : signupOpen ? t("Start building here.") : t("Sign in to build.")}</h2>
               <p>
-                {me.signup === "first"
+                {signedIn
+                  ? t("Connect a repository and cisid builds it as new commits arrive, or see what ran last.")
+                  : me.signup === "first"
                   ? t("Create the first account. It can add your team, connect forges and run the first build.")
                   : signupOpen
                     ? t("Create an account, or sign in with the one you have.")
@@ -354,6 +379,7 @@ export function Landing() {
             </div>
             <div className="hero-actions">
               {primary}
+              {signedIn ? <Link className="btn big" to="/repos">{t("Connect a repository")}</Link> : null}
               {signupOpen ? <Link className="btn big" to="/login">{t("Sign in")}</Link> : null}
             </div>
           </div>

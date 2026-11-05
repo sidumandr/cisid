@@ -13,6 +13,9 @@ const ICONS = {
   close: ["M6 6l12 12M18 6L6 18"],
   sun: ["M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"],
   moon: ["M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"],
+  // The system's arrow, and the owl's two lenses.
+  pointer: ["M6 3.5l12.5 7-5.6 1.6-2.4 5.4z"],
+  owl: ["M12 15.5L8.5 9.5M12 15.5l3.5-6M8.5 9.5A4.5 4.5 0 1 1 3.6 13.4L4.6 7l3.9 2.5zM15.5 9.5a4.5 4.5 0 1 0 4.9 3.9L19.4 7l-3.9 2.5z"],
 } as const;
 
 export type IconName = keyof typeof ICONS;
