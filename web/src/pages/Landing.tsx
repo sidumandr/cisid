@@ -289,7 +289,7 @@ export function Landing() {
       <main>
         {/* A grid of dots behind the introduction, the owl set in it behind the builds. */}
         <div className="hero-band">
-          <DotOwl anchor={heroVisual} />
+          <DotOwl anchor={heroVisual} avoid=".site-nav-bar" />
           <section className="hero">
             <div className="hero-copy">
               <h1>{t("Your builds, on your machines.")}</h1>

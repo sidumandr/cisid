@@ -30,6 +30,7 @@ const BLINK_FOR = 0.16;
 const NEAR = 120; // px around the pointer that warm up
 const CLEAR = 18; // px kept free above and below the owl, from the nav and the anchor
 const MIN_OWL = 340; // px: an owl narrower than this hides behind the anchor instead
+const SPREAD = 24; // px a glass's blur spreads what lies under it
 
 interface Dot {
   x: number;
@@ -58,7 +59,8 @@ function readColors(): Colors {
   return { ink, brand, eye: v("--brand-ink", "#141414"), accent: rgb(brand, [242, 107, 29]), base: rgb(ink, [17, 17, 17]) };
 }
 
-export function DotOwl({ anchor }: { anchor: RefObject<HTMLElement | null> }) {
+// avoid names an element on glass over the canvas, such as the nav.
+export function DotOwl({ anchor, avoid }: { anchor: RefObject<HTMLElement | null>; avoid?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -175,9 +177,20 @@ export function DotOwl({ anchor }: { anchor: RefObject<HTMLElement | null> }) {
         g.restore();
       }
       const eyes = eyeDots(t);
-      const warm = pointer && !still;
+      // Nothing warms under the glass of the element avoid names (the nav),
+      // which would spread it into a haze around its buttons, nor while the
+      // pointer is on it. Its box, on the canvas, grown by the glass's blur.
+      let box = [0, 0, -1, -1];
+      const el = avoid ? document.querySelector(avoid) : null;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const c = canvas.getBoundingClientRect();
+        box = [r.left - c.left - SPREAD, r.top - c.top - SPREAD, r.right - c.left + SPREAD, r.bottom - c.top + SPREAD];
+      }
+      const inBox = (x: number, y: number) => x >= box[0]! && x <= box[2]! && y >= box[1]! && y <= box[3]!;
+      const warm = pointer && !still && !inBox(px, py);
       for (const d of dots) {
-        const dist = warm ? Math.hypot(d.x - px, d.y - py) : Infinity;
+        const dist = warm && !inBox(d.x, d.y) ? Math.hypot(d.x - px, d.y - py) : Infinity;
         const k = dist < NEAR ? 1 - dist / NEAR : 0;
         let eye = false;
         for (const e of eyes) {
@@ -288,7 +301,7 @@ export function DotOwl({ anchor }: { anchor: RefObject<HTMLElement | null> }) {
       window.removeEventListener("pointermove", onMove);
       document.documentElement.removeEventListener("pointerleave", onLeave);
     };
-  }, [anchor]);
+  }, [anchor, avoid]);
 
   return <canvas className="dot-owl" ref={ref} aria-hidden="true" />;
 }
